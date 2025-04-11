@@ -15,7 +15,6 @@ echo -e "${BLUE}Setting up QA System...${NC}"
 echo -e "${BLUE}Creating required directories...${NC}"
 mkdir -p config
 mkdir -p secrets
-mkdir -p data/vectordb
 
 # Create virtual environment if it doesn't exist
 if [ ! -d ".venv" ]; then
