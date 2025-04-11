@@ -1,281 +1,178 @@
 """
 Query processing and answer generation using Google Gemini with thinking capabilities
 """
-from typing import List, Dict, Any
-import google.generativeai as genai
+from typing import List, Dict, Any, Optional
 import os
 import json
+import logging
 from pathlib import Path
-import numpy as np
+import google.generativeai as genai
 
 from .vector_store import VectorStore
 
+logger = logging.getLogger(__name__)
+
 class QueryEngine:
-    """Handles query processing and answer generation using Gemini with thinking capabilities."""
+    """Processes queries and generates answers using stored documents."""
     
-    def __init__(self, config: Dict[str, Any], vector_store: VectorStore):
+    def __init__(self, config: Dict[str, Any], vector_store: Optional[VectorStore] = None):
         """Initialize the query engine.
         
         Args:
-            config: Configuration dictionary
-            vector_store: Vector store instance
+            config: Configuration dictionary containing settings
+            vector_store: Optional VectorStore instance. If not provided, one will be created.
         """
         self.config = config
-        self.vector_store = vector_store
+        self.vector_store = vector_store or VectorStore(config)
         
-        # Initialize Gemini client with API key from security config
-        api_key = config.get("SECURITY", {}).get("API_KEY") or config.get("API_KEY")
-        genai.configure(api_key=api_key)
-        self.generation_model = genai.GenerativeModel('models/gemini-2.5-pro-exp-03-25')
+        # Load system prompt from config
+        self.system_prompt = self._load_prompt_template()
         
-        # Query processing settings from new config structure
-        query_config = config.get("QUERY_ENGINE", {})
-        self.max_context_docs = query_config.get("MAX_CONTEXT_DOCS", 10)
-        self.min_relevance_score = query_config.get("MIN_RELEVANCE_SCORE", 0.4)
-        self.enable_query_expansion = query_config.get("ENABLE_QUERY_EXPANSION", False)
-        self.max_tokens = query_config.get("MAX_TOKENS", 2048)
-        self.temperature = query_config.get("TEMPERATURE", 0.3)
-        self.top_p = query_config.get("TOP_P", 0.95)
-        self.response_mode = query_config.get("RESPONSE_MODE", "comprehensive")
+        # Initialize model
+        self._initialize_model()
         
-    async def process_query(self, question: str) -> Dict:
-        """Process a question and generate an answer.
+    def _load_prompt_template(self) -> str:
+        """Load the prompt template from the local config directory."""
+        try:
+            config_dir = Path(os.path.dirname(os.path.dirname(__file__))) / "config"
+            prompt_path = config_dir / "prompts.py"
+            
+            # Import the prompts module dynamically
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("prompts", prompt_path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Could not load prompt template from {prompt_path}")
+                
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            
+            return module.ANSWER_GENERATION_PROMPT
+            
+        except Exception as e:
+            logger.error(f"Failed to load prompt template: {str(e)}")
+            raise RuntimeError(f"Failed to load prompt template: {str(e)}")
+        
+    def _initialize_model(self):
+        """Initialize the language model based on configuration."""
+        try:
+            # Get API key from config or environment
+            api_key = (
+                self.config.get("API_KEY") or
+                self.config.get("SECURITY", {}).get("API_KEY") or
+                os.getenv("API_KEY")
+            )
+            
+            if not api_key:
+                raise ValueError("No API key found in config or environment")
+                
+            # Configure Gemini
+            genai.configure(api_key=api_key)
+            
+            # Initialize model with configured parameters
+            model_config = self.config.get("QUERY_ENGINE", {})
+            self.model = genai.GenerativeModel(
+                model_name="gemini-pro",
+                generation_config={
+                    "temperature": model_config.get("TEMPERATURE", 0.7),
+                    "top_p": model_config.get("TOP_P", 0.95),
+                    "max_output_tokens": model_config.get("MAX_TOKENS", 2048)
+                }
+            )
+            
+            logger.info("Successfully initialized Gemini model")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize model: {str(e)}")
+            raise
+        
+    async def generate_answer(self, question: str, context: List[str]) -> Dict[str, Any]:
+        """Generate an answer for the given question using the provided context.
         
         Args:
-            question: User's question
+            question: The user's question
+            context: List of relevant document chunks
             
         Returns:
-            Dict containing answer and sources
+            Dictionary containing answer, sources, confidence score, and reasoning path
         """
-        # Expand query for better semantic matching
-        expanded_queries = await self._expand_query(question) if self.enable_query_expansion else [question]
-        
-        # Collect relevant documents from all expanded queries
-        all_relevant_docs = []
-        for query in expanded_queries:
-            # Generate question embedding
-            query_embedding = await self._get_embedding(query)
-            
-            # Find relevant documents
-            docs = await self.vector_store.similarity_search(
-                query_embedding,
-                k=self.max_context_docs
-            )
-            all_relevant_docs.extend(docs)
-        
-        # Filter and deduplicate documents
-        relevant_docs = self._filter_and_dedupe_docs(all_relevant_docs)
-        
-        # Prepare context for Gemini
-        context = self._prepare_context(relevant_docs)
-        
-        # Generate answer using Gemini
-        answer = await self._generate_answer(question, context, relevant_docs)
-        
-        return {
-            "question": question,
-            "answer": answer["answer"],
-            "sources": answer["sources"],
-            "confidence": answer.get("confidence", None)
-        }
-        
-    async def _expand_query(self, question: str) -> List[str]:
-        """Expand the query to capture different semantic aspects."""
-        prompt = f"""Given this question, generate 2-3 alternative phrasings that capture different semantic aspects.
-Focus on identifying key concepts and their relationships.
-
-Question: {question}
-
-Return ONLY a JSON array of strings with no additional text or explanation.
-Example format: ["first phrasing", "second phrasing", "third phrasing"]"""
-        
         try:
-            response = self.generation_model.generate_content(prompt)
-            text = response.text.strip()
-            
-            # Handle common formatting issues
-            if not text.startswith('['):
-                # Try to find JSON array in the response
-                start_idx = text.find('[')
-                end_idx = text.rfind(']') + 1
-                if start_idx >= 0 and end_idx > start_idx:
-                    text = text[start_idx:end_idx]
-                else:
-                    # If no JSON array found, create one with the original question
-                    return [question]
-                
-            expanded = json.loads(text)
-            if not isinstance(expanded, list):
-                return [question]
-            
-            # Add original question and return unique queries
-            expanded.append(question)
-            return list(set(expanded))
-        except Exception as e:
-            print(f"Query expansion failed: {str(e)}")
-            # Fallback to original question
-            return [question]
-            
-    def _filter_and_dedupe_docs(self, docs: List[Dict]) -> List[Dict]:
-        """Filter and deduplicate documents based on relevance and content."""
-        # Sort by relevance score
-        docs = sorted(docs, key=lambda x: 1 - (x["distance"] if x["distance"] is not None else 0), reverse=True)
-        
-        # Filter by minimum relevance score
-        docs = [doc for doc in docs if 1 - (doc["distance"] if doc["distance"] is not None else 0) >= self.min_relevance_score]
-        
-        # Deduplicate based on content
-        seen_contents = set()
-        unique_docs = []
-        for doc in docs:
-            content = doc["content"]
-            if content not in seen_contents:
-                seen_contents.add(content)
-                unique_docs.append(doc)
-        
-        return unique_docs[:self.max_context_docs]
-        
-    async def _get_embedding(self, text: str) -> List[float]:
-        """Generate embedding for text."""
-        result = genai.embed_content(
-            model="models/embedding-001",
-            content=text
-        )
-        return result['embedding']
-        
-    def _prepare_context(self, relevant_docs: List[Dict]) -> str:
-        """Prepare context from relevant documents."""
-        # Sort documents by relevance score
-        sorted_docs = sorted(
-            relevant_docs,
-            key=lambda x: 1 - (x["distance"] if x["distance"] is not None else 0),
-            reverse=True
-        )
-        
-        context_parts = []
-        for doc in sorted_docs:
-            relevance_score = 1 - (doc["distance"] if doc["distance"] is not None else 0)
-            context_parts.append(
-                f"Content from {doc['metadata']['filename']} (relevance: {relevance_score:.2f}):\n{doc['content']}\n"
+            # Format the prompt with the question and context
+            formatted_prompt = self.system_prompt.format(
+                question=question,
+                context="\n".join(context)
             )
             
-        return "\n".join(context_parts)
-        
-    async def _generate_answer(self, question: str, context: str, relevant_docs: List[Dict]) -> Dict:
-        """Generate answer using Gemini with structured thinking."""
-        prompt = f"""You are a knowledgeable research assistant with access to specific context information.
-Your goal is to provide well-reasoned, comprehensive answers based on the available information.
-
-Think through this task step by step:
-
-1. First, carefully analyze the provided context:
-   - Identify key concepts and their relationships
-   - Note any conflicting or complementary information
-   - Consider the reliability and relevance of each source
-
-2. Then, break down the question:
-   - Identify the main concepts and requirements
-   - Consider any implicit assumptions or related aspects
-   - Determine what information is needed to provide a complete answer
-
-3. Finally, formulate a clear and comprehensive answer:
-   - Start with a direct response to the main question
-   - Provide supporting evidence and explanations
-   - Address any uncertainties or limitations
-   - Include relevant examples or analogies if helpful
-
-Context:
-{context}
-
-Question: {question}
-
-Think through your response carefully and provide:
-1. A clear, well-reasoned answer that:
-   - Directly addresses the question
-   - Explains your reasoning
-   - Provides relevant examples or analogies
-   - Acknowledges any uncertainties or limitations
-
-2. The source documents used, including:
-   - Filename
-   - Relevance to specific parts of your answer
-   - Any conflicting or complementary information between sources
-
-3. A confidence score (0-1) based on:
-   - How directly the context addresses the question
-   - The completeness and coherence of the information
-   - The reliability and relevance of the sources
-   - The presence of any significant gaps or uncertainties
-
-If you cannot answer based on the context, explain:
-- What information is missing
-- What assumptions would be needed
-- What additional research might be helpful
-
-Format your response as JSON with these keys: "answer", "sources", "confidence", "reasoning_path"
-"""
-        try:
-            # Generate content with thinking capabilities
-            response = self.generation_model.generate_content(prompt)
+            # Get response from model
+            response = await self.model.generate_content(formatted_prompt)
             
-            if not response:
+            try:
+                # Parse JSON response
+                result = json.loads(response.text)
                 return {
-                    "answer": "Error: No response from the model",
+                    "answer": result.get("answer", ""),
+                    "sources": result.get("sources", []),
+                    "confidence": result.get("confidence", 0.0),
+                    "reasoning_path": result.get("reasoning_path", [])
+                }
+            except json.JSONDecodeError:
+                logger.error("Failed to parse model response as JSON")
+                return {
+                    "answer": response.text,
                     "sources": [],
-                    "confidence": 0,
+                    "confidence": 0.0,
                     "reasoning_path": []
                 }
-
-            # Parse response
-            try:
-                parsed_response = json.loads(response.text)
-            except json.JSONDecodeError:
-                # Extract JSON from text if needed
-                start_idx = response.text.find("{")
-                end_idx = response.text.rfind("}") + 1
                 
-                if start_idx >= 0 and end_idx > start_idx:
-                    json_str = response.text[start_idx:end_idx]
-                    try:
-                        parsed_response = json.loads(json_str)
-                    except json.JSONDecodeError:
-                        parsed_response = {
-                            "answer": response.text,
-                            "sources": [],
-                            "confidence": 0.5,
-                            "reasoning_path": []
-                        }
-                else:
-                    parsed_response = {
-                        "answer": response.text,
-                        "sources": [],
-                        "confidence": 0.5,
-                        "reasoning_path": []
-                    }
+        except Exception as e:
+            logger.error(f"Error generating answer: {str(e)}")
+            raise
             
-            # Clean up and format sources
-            sources = []
-            for doc in relevant_docs:
-                filepath = Path(doc["metadata"]["filename"])
-                if filepath.is_file() and not filepath.name.startswith('.'):
-                    sources.append({
-                        "filename": filepath.name,
-                        "chunk_index": doc["metadata"]["chunk_index"],
-                        "relevance_score": 1 - (doc["distance"] if doc["distance"] is not None else 0)
-                    })
+    async def process_query(self, question: str) -> Dict[str, Any]:
+        """Process a query and generate an answer using relevant context.
+        
+        Args:
+            question: The user's question
             
-            return {
-                "answer": parsed_response.get("answer", response.text),
-                "sources": sources,
-                "confidence": parsed_response.get("confidence", 0.5),
-                "reasoning_path": parsed_response.get("reasoning_path", [])
-            }
+        Returns:
+            Dict containing answer, sources, confidence and reasoning
+        """
+        try:
+            # Search for relevant documents
+            matches = await self.vector_store.search(question, k=self.config.get("TOP_K_RESULTS", 5))
+            
+            if not matches:
+                return {
+                    "answer": "I could not find any relevant information to answer your question.",
+                    "sources": [],
+                    "confidence": 0.0,
+                    "reasoning": "No relevant documents found in knowledge base."
+                }
+            
+            # Extract content and sources
+            context = "\n\n".join(match["content"] for match in matches)
+            sources = [match["metadata"].get("source", "Unknown") for match in matches]
+            
+            # Generate answer using context
+            response = await self.generate_answer(question, context)
+            response["sources"] = sources
+            
+            return response
             
         except Exception as e:
-            print(f"Error in _generate_answer: {str(e)}")
+            logger.error(f"Error processing query: {str(e)}", exc_info=True)
             return {
-                "answer": f"Error generating answer: {str(e)}",
+                "answer": "Sorry, I encountered an error while processing your question.",
                 "sources": [],
-                "confidence": 0,
-                "reasoning_path": []
-            } 
+                "confidence": 0.0,
+                "reasoning": f"Error: {str(e)}"
+            }
+
+    async def cleanup(self) -> None:
+        """Clean up resources and close connections."""
+        try:
+            if hasattr(self, 'vector_store'):
+                await self.vector_store.cleanup()
+            logger.info("Query engine cleanup complete")
+        except Exception as e:
+            logger.error(f"Error during cleanup: {str(e)}")
+            raise 

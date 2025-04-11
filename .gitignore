@@ -33,6 +33,7 @@ wheels/
 *.egg
 
 # Virtual Environment
+.venv/
 venv/
 ENV/
 env/
@@ -43,14 +44,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Environment variables
+# Secrets and Data
+secrets/
+!secrets/.env.example
 .env
 .env.local
 .env.*.local
-
-# Secrets and Data
-secrets/
-.env
 *.pem
 *.key
 *.crt

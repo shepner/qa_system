@@ -285,18 +285,47 @@ class VectorStore:
 
 #### 8.1.1 Command Line Interface (CLI)
 ```bash
-# Add documents to the system
-qa-tool add /path/to/documents/*
+# Show help message
+qa_system
 
-# Ask a question
-qa-tool ask "What is the release schedule for the product?"
+# Enter interactive conversation mode
+qa_system config.yaml
+
+# Add documents to the system
+qa_system config.yaml --add /path/to/documents/*
+
+# Ask a question (non-interactive mode)
+qa_system config.yaml --ask "What is the release schedule for the product?"
 
 # List indexed documents
-qa-tool list-docs
+qa_system config.yaml --list
 
 # Remove documents
-qa-tool remove doc_id
+qa_system config.yaml --remove doc_id
 ```
+
+#### Command Line Modes
+
+1. **Help Mode** (no parameters)
+   - Displays comprehensive help message
+   - Shows available commands and their usage
+   - Provides configuration file format example
+   - Lists common use cases
+
+2. **Interactive Mode** (config file only)
+   - Enters conversational interface
+   - Maintains conversation context
+   - Allows direct question input
+   - Supports conversation history
+
+3. **Directive Mode** (config file + directive)
+   - Executes specific command and exits
+   - Available directives:
+     - `add`: Index new documents
+     - `ask`: One-time question answering
+     - `list`: Show indexed documents
+     - `remove`: Delete documents
+     - `cleanup`: Automatically remove excluded files from the vector DB
 
 #### 8.1.2 Slack Interface
 - Interactive Slack bot integration using Slack's Bolt framework
@@ -333,14 +362,20 @@ qa.remove_document(doc_id)
 
 #### 8.2.1 CLI Usage
 ```bash
+# receive help menu
+$ qa_system
+
+# Enter interactive chat mode
+$ qa_system ./config/config.yaml 
+
 # Index a directory of technical documentation
-$ qa-tool add ./technical-docs/
+$ qa_system ./config/config.yaml --add ./technical-docs/
 ✓ Processing 23 files...
 ✓ Generated embeddings for 156 chunks
 ✓ Documents indexed successfully
 
 # Ask a question
-$ qa-tool ask "What are the system requirements for deployment?"
+$ qa_system ./config/config.yaml --ask "What are the system requirements for deployment?"
 Searching relevant documents...
 Answer: The system requires:
 - Minimum 16GB RAM
@@ -348,14 +383,26 @@ Answer: The system requires:
 - SSD storage
 - Python 3.9+
 Source: technical-docs/deployment.md
+
+# List the files in the vector DB
+$ qa_system ./config/config.yaml --list
+
+# Remove files from the vector DB
+$ qa_system ./config/config.yaml --remove ./docs/path/filename.md
+
+# Cleanup the vector DB
+$ qa_system ./config/config.yaml --cleanup
+
+# Show the system status
+$ qa_system ./config/config.yaml --status
 ```
 
 #### 8.2.2 Slack Interface Workflow
 1. **Document Management**
    - Upload files directly in Slack channels or DMs
-   - Use `/qa-docs list` to view indexed documents
+   - Use `/qa_system list` to view indexed documents
    - Organize documents by channels
-   - Use `/qa-docs remove` to delete documents
+   - Use `/qa_system remove` to delete documents
 
 2. **Research Assistant Interaction**
    - Ask complex or nebulous questions

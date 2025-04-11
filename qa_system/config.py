@@ -3,7 +3,7 @@ Configuration management for the QA system
 """
 import os
 import re
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Union
 from pathlib import Path
 from dotenv import load_dotenv
 import yaml
@@ -52,77 +52,47 @@ def flatten_config(config: Dict[str, Any], prefix: str = '') -> Dict[str, Any]:
             
     return flattened
 
-def load_config(config_path: str = None) -> Dict[str, Any]:
-    """Load configuration from environment variables and config file.
+def load_config(config_path: Union[str, Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Load configuration from environment variables and a config file or dictionary.
     
     Args:
-        config_path: Optional path to config file
+        config_path: Path to config file (with optional @ prefix for absolute path) or a configuration dictionary
         
     Returns:
-        Configuration dictionary
+        Dict containing the merged configuration
     """
-    # Load environment variables
-    load_dotenv()
+    # Initialize config
+    config = None
     
-    # Create data directory if it doesn't exist
-    data_dir = Path("./data/vectordb")
-    data_dir.mkdir(parents=True, exist_ok=True)
-    
-    config = {}
-    
-    # Load YAML config if provided
-    if config_path:
+    # Handle different input types
+    if isinstance(config_path, dict):
+        config = config_path
+    else:
+        # Default to config/config.yaml if no path provided
+        yaml_path = Path('config/config.yaml') if config_path is None else (
+            Path(config_path[1:]).resolve() if isinstance(config_path, str) and config_path.startswith('@')
+            else Path(config_path)
+        )
+        
         try:
-            with open(config_path, 'r') as f:
-                yaml_config = yaml.safe_load(f)
-                if yaml_config:
-                    # Process and interpolate environment variables
-                    config = process_config_values(yaml_config)
-        except Exception as e:
-            logger.error(f"Failed to load YAML config from {config_path}: {str(e)}")
+            with open(yaml_path, 'r') as f:
+                config = yaml.safe_load(f)
+        except FileNotFoundError:
+            logging.error(f"Configuration file not found at: {yaml_path.absolute()}")
             raise
+        except Exception as e:
+            logging.error(f"Error loading configuration: {str(e)}")
+            raise
+
+    if not config:
+        raise ValueError("Failed to load configuration")
+
+    # Process configuration values
+    config = process_config_values(config)
     
-    # Flatten the configuration for easier access
-    flat_config = flatten_config(config)
-    
-    # Add security variables from environment if not in config
-    security_vars = {
-        'SECURITY_API_KEY': os.getenv('API_KEY'),
-        'SECURITY_GOOGLE_CLOUD_PROJECT': os.getenv('GOOGLE_CLOUD_PROJECT'),
-        'SECURITY_GOOGLE_APPLICATION_CREDENTIALS': os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-    }
-    
-    # Update flat_config with environment variables if they exist
-    for key, value in security_vars.items():
-        if value is not None:
-            flat_config[key] = value
-    
-    # Override with QA_ prefixed environment variables
-    for key in flat_config:
-        env_value = os.getenv(f"QA_{key}")
-        if env_value is not None:
-            # Convert string to appropriate type
-            current_value = flat_config[key]
-            if isinstance(current_value, bool):
-                flat_config[key] = env_value.lower() in ('true', '1', 'yes')
-            elif isinstance(current_value, int):
-                flat_config[key] = int(env_value)
-            elif isinstance(current_value, float):
-                flat_config[key] = float(env_value)
-            elif isinstance(current_value, list):
-                flat_config[key] = env_value.split(',')
-            else:
-                flat_config[key] = env_value
-    
-    # Validate required configuration
-    required_vars = [
-        'SECURITY_API_KEY',
-        'SECURITY_GOOGLE_CLOUD_PROJECT',
-        'SECURITY_GOOGLE_APPLICATION_CREDENTIALS'
-    ]
-    
-    missing = [var for var in required_vars if not flat_config.get(var)]
-    if missing:
-        raise ValueError(f"Missing required configuration: {', '.join(missing)}")
-    
-    return flat_config 
+    # Validate required environment variables
+    if not os.getenv('OPENAI_API_KEY'):
+        raise ValueError("OPENAI_API_KEY environment variable is required")
+        
+    return config 

@@ -10,8 +10,8 @@ SECURITY:
 
 # Vector Database Configuration
 VECTOR_STORE:
-  TYPE: "chroma"
-  PERSIST_DIRECTORY: "./data/vectordb"
+  TYPE: "chroma"  # Using ChromaDB as the vector store implementation
+  PERSIST_DIRECTORY: "./data/vector_store"
   COLLECTION_NAME: "qa_documents"
   # Distance metric used to calculate similarity between queries and documents
   # Options:
@@ -70,16 +70,22 @@ QUERY_ENGINE:
   # When true: System will try to add relevant terms to improve search accuracy
   # When false: System will use the exact query as provided
   # Default: false
-  ENABLE_QUERY_EXPANSION: false
+  ENABLE_QUERY_EXPANSION: true  # Enable query expansion for better search results
 
 # Document Processing
 DOCUMENT_PROCESSING:
+  # Default path for documents to be processed and indexed
+  # This can be overridden by command line arguments
+  # Can be a file path or directory path
+  # Default: "./documents"
+  DOCUMENT_PATH: "./documents"
+
   # Maximum size of each text chunk when splitting documents
   # Documents are split into smaller chunks for better processing and retrieval
   # Larger chunks retain more context but may be less precise
   # Smaller chunks are more precise but may lose context
   # Range: 100-2000, Default: 1000 characters
-  MAX_CHUNK_SIZE: 1000
+  MAX_CHUNK_SIZE: 800  # Optimized for better context preservation
 
   # Number of characters to overlap between consecutive chunks
   # Helps maintain context across chunk boundaries
@@ -115,6 +121,39 @@ LOGGING:
   DATE_FORMAT: "%Y-%m-%d %H:%M:%S"
   LOG_FILE: "logs/qa_system.log"
   ENABLE_DEBUG: false
+
+# Embedding Model Configuration
+EMBEDDING_MODEL:
+  # Type of embedding model to use
+  # Options:
+  #   "openai" - OpenAI's text-embedding-ada-002 model
+  #   "huggingface" - HuggingFace models
+  #   "local" - Local models
+  #   "gemini" - Google's Gemini embedding model
+  TYPE: "gemini"
+  
+  # Model name for Gemini embeddings
+  MODEL_NAME: "models/gemini-embedding-exp-03-07"
+  
+  # Batch size for processing multiple texts at once
+  # Higher values are more efficient but use more memory
+  # Limited by rate limit of 1,500 requests per minute
+  # Range: 1-100, Default: 8
+  BATCH_SIZE: 10
+  
+  # Maximum length of text to embed (in tokens)
+  # Texts longer than this will be truncated
+  # For Gemini embeddings: max 8,192 tokens
+  MAX_LENGTH: 8192
+  
+  # Output embedding dimensions
+  # Gemini embeddings support flexible dimensions:
+  # Options: 3072, 1536, or 768
+  # Choose based on your needs:
+  # - 3072: Highest quality but more storage/compute intensive
+  # - 1536: Good balance of quality and resource usage
+  # - 768: Most efficient, suitable for many applications
+  DIMENSIONS: 768
 
 # Application Settings
 APP:

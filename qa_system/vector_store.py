@@ -8,7 +8,6 @@ from chromadb.config import Settings
 import numpy as np
 from pathlib import Path
 
-# Get logger for this module
 logger = logging.getLogger(__name__)
 
 class VectorStore:
@@ -18,37 +17,186 @@ class VectorStore:
         """Initialize the vector store.
         
         Args:
-            config: Configuration dictionary
+            config: Configuration dictionary containing vector store settings
         """
-        self.config = config
-        
-        # Use new config structure
         vector_store_config = config.get("VECTOR_STORE", {})
-        self.db_path = str(vector_store_config.get("PERSIST_DIRECTORY") or config.get("VECTOR_DB_PATH", "./data/vectordb"))
-        self.db_type = vector_store_config.get("TYPE") or config.get("VECTOR_DB_TYPE", "chroma")
+        self.db_path = vector_store_config.get("PERSIST_DIRECTORY", "./data/vector_store")
+        self.db_type = vector_store_config.get("TYPE", "chroma").lower()
+        self.collection_name = vector_store_config.get("COLLECTION_NAME", "qa_documents")
+        self.distance_metric = vector_store_config.get("DISTANCE_METRIC", "cosine")
+        self.top_k = vector_store_config.get("TOP_K", 40)
+        self.embedding_dim = vector_store_config.get("EMBEDDING_DIM", 768)
+        self._store = None
+        self._initialized = False
         
         logger.info(f"Initializing vector store type {self.db_type} at {self.db_path}")
         
-        if self.db_type.lower() == "chroma":
-            # Initialize ChromaDB
-            self.client = chromadb.PersistentClient(
+    async def initialize(self):
+        """Initialize the vector store."""
+        if self.db_type != "chroma":
+            raise ValueError(f"Unsupported vector store type: {self.db_type}")
+            
+        try:
+            client = chromadb.PersistentClient(
                 path=self.db_path,
                 settings=Settings(
-                    anonymized_telemetry=False
+                    anonymized_telemetry=False,
+                    allow_reset=True
                 )
             )
             
-            # Create or get the collection with configured name
-            collection_name = vector_store_config.get("COLLECTION_NAME", "documents")
-            self.collection = self.client.get_or_create_collection(
-                name=collection_name,
-                metadata={"description": "Document embeddings for QA system"}
+            self._store = client.get_or_create_collection(
+                name=self.collection_name,
+                metadata={
+                    "distance_metric": self.distance_metric,
+                    "embedding_dim": self.embedding_dim
+                }
             )
-        else:
-            raise ValueError(f"Unsupported vector store type: {self.db_type}")
+            
+            self._initialized = True
+            logger.info("Vector store initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize vector store: {str(e)}")
+            raise
+
+    async def store_embeddings(self, embeddings: List[Dict], doc_metadata: Dict) -> None:
+        """Store document embeddings in the vector store.
         
-        logger.info("Vector store initialized successfully")
+        Args:
+            embeddings: List of embeddings with metadata. Each dict must contain:
+                - embedding: List[float] - The embedding vector
+                - doc_id: str - Unique document identifier
+                - chunk_index: int - Index of the chunk within the document
+                - text: str - The text content for this chunk
+            doc_metadata: Document metadata containing:
+                - path: str - Path to the document
+                - file_type: str - Type of document
+                - classification: str - Document classification
+                - created_at: str - Creation timestamp
+                - last_modified: str - Last modification timestamp
+                - processing_status: str - Processing status
+        """
+        if not self._initialized:
+            raise RuntimeError("Vector store not initialized")
+            
+        try:
+            # Validate inputs
+            if not embeddings:
+                raise ValueError("No embeddings provided")
+                
+            if not doc_metadata or not doc_metadata.get("path"):
+                raise ValueError("Invalid document metadata")
+                
+            path = str(Path(doc_metadata["path"]).resolve())
+            
+            # Validate and prepare embeddings
+            vectors = []
+            metadatas = []
+            ids = []
+            texts = []
+            
+            for e in embeddings:
+                # Validate embedding format
+                if not isinstance(e.get("embedding"), list):
+                    raise ValueError(f"Invalid embedding format for chunk {e.get('chunk_index')}")
+                    
+                embedding = np.array(e["embedding"])
+                if embedding.shape[0] != self.embedding_dim:
+                    raise ValueError(
+                        f"Invalid embedding dimension {embedding.shape[0]}, "
+                        f"expected {self.embedding_dim}"
+                    )
+                
+                # Required fields
+                if not all(k in e for k in ["doc_id", "chunk_index", "text"]):
+                    raise ValueError("Missing required fields in embedding metadata")
+                
+                vectors.append(embedding)
+                metadatas.append({
+                    "doc_id": e["doc_id"],
+                    "chunk_index": e["chunk_index"],
+                    "filename": path,
+                    "file_type": doc_metadata["file_type"],
+                    "classification": doc_metadata.get("classification", "internal"),
+                    "created_at": doc_metadata.get("created_at"),
+                    "last_modified": doc_metadata.get("last_modified"),
+                    "processing_status": doc_metadata.get("processing_status", "success"),
+                    "chunk_size": len(e["text"])
+                })
+                ids.append(f"{e['doc_id']}_{e['chunk_index']}")
+                texts.append(e["text"])
+            
+            # Remove any existing embeddings for this document
+            await self.remove_document(embeddings[0]["doc_id"])
+            
+            # Store new embeddings
+            self._store.add(
+                embeddings=vectors,
+                documents=texts,
+                metadatas=metadatas,
+                ids=ids
+            )
+            
+            logger.info(
+                f"Stored {len(embeddings)} embeddings for document {path} "
+                f"with status {doc_metadata.get('processing_status', 'success')}"
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to store embeddings: {str(e)}")
+            raise
+
+    async def similarity_search(
+        self, 
+        query_embedding: List[float], 
+        k: Optional[int] = None,
+        filters: Optional[Dict] = None
+    ) -> List[Dict]:
+        """Search for similar documents using embedding.
         
+        Args:
+            query_embedding: Query embedding vector
+            k: Number of results to return (defaults to config TOP_K)
+            filters: Optional metadata filters for search
+            
+        Returns:
+            List of similar documents with metadata and distance scores
+        """
+        if not self._initialized:
+            raise RuntimeError("Vector store not initialized")
+            
+        try:
+            results = self._store.query(
+                query_embeddings=[query_embedding],
+                n_results=k or self.top_k,
+                where=filters,
+                include=["metadatas", "documents", "distances"]
+            )
+            
+            return [{
+                "id": results["ids"][0][i],
+                "content": results["documents"][0][i],
+                "metadata": results["metadatas"][0][i],
+                "score": 1.0 - (results["distances"][0][i] / 2.0)  # Normalize to 0-1 score
+            } for i in range(len(results["ids"][0]))]
+            
+        except Exception as e:
+            logger.error(f"Error in similarity search: {str(e)}")
+            return []
+
+    async def cleanup(self) -> None:
+        """Clean up resources and close connections."""
+        if self._initialized and self._store is not None:
+            try:
+                # ChromaDB PersistentClient handles persistence automatically
+                self._store = None
+                self._initialized = False
+                logger.info("Vector store cleanup complete")
+            except Exception as e:
+                logger.error(f"Error during cleanup: {str(e)}")
+                raise
+
     def get_document_by_path(self, file_path: str) -> Optional[Dict]:
         """Find a document in the store by its file path.
         
@@ -58,104 +206,29 @@ class VectorStore:
         Returns:
             Document metadata if found, None otherwise
         """
-        # Normalize input path
-        normalized_path = str(Path(file_path).resolve())
-        
-        # Get all metadata
-        all_metadata = self.collection.get()["metadatas"]
-        
-        # Find document with matching path
-        for metadata in all_metadata:
-            # Compare normalized paths
-            stored_path = metadata.get("filename")
-            if stored_path and str(Path(stored_path).resolve()) == normalized_path:
-                return {
-                    "id": metadata["doc_id"],
-                    "filename": metadata["filename"],
-                    "file_type": metadata["file_type"],
-                    "processing_status": metadata.get("processing_status", "unknown")
-                }
-        return None
-    
-    async def store_embeddings(self, embeddings: List[Dict], doc_metadata: Dict) -> None:
-        """Store document embeddings in the vector store.
-        
-        Args:
-            embeddings: List of embeddings with metadata
-            doc_metadata: Document metadata
-        """
-        # Normalize the path before storing
-        normalized_path = str(Path(doc_metadata["path"]).resolve())
-        
-        # Convert embeddings to format expected by Chroma
-        vectors = [np.array(e["embedding"]) for e in embeddings]
-        metadatas = [{
-            "doc_id": e["doc_id"],
-            "chunk_index": e["chunk_index"],
-            "filename": normalized_path,  # Store normalized path
-            "file_type": doc_metadata["file_type"],
-            "processing_status": "success"
-        } for e in embeddings]
-        ids = [f"{e['doc_id']}_{e['chunk_index']}" for e in embeddings]
-        
-        # Store in collection
-        self.collection.add(
-            embeddings=vectors,
-            metadatas=metadatas,
-            ids=ids
-        )
-        
-    async def similarity_search(self, query_embedding: List[float], k: int = 5) -> List[Dict]:
-        """Search for similar documents using embedding.
-        
-        Args:
-            query_embedding: Query embedding vector
-            k: Number of results to return
+        if not self._initialized:
+            raise RuntimeError("Vector store not initialized")
             
-        Returns:
-            List of similar documents with metadata
-        """
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=k
-        )
-        
-        # Format results
-        matches = []
-        for i in range(len(results["ids"][0])):
-            matches.append({
-                "id": results["ids"][0][i],
-                "content": results["documents"][0][i],
-                "metadata": results["metadatas"][0][i],
-                "distance": results["distances"][0][i] if "distances" in results else None
-            })
+        try:
+            path = str(Path(file_path).resolve())
+            results = self._store.get(where={"filename": path})
             
-        return matches
-    
-    def list_documents(self) -> List[Dict]:
-        """List all unique documents in the store.
-        
-        Returns:
-            List of document metadata
-        """
-        # Get all metadata
-        all_metadata = self.collection.get()["metadatas"]
-        
-        # Group by doc_id
-        docs = {}
-        for metadata in all_metadata:
-            doc_id = metadata["doc_id"]
-            if doc_id not in docs:
-                docs[doc_id] = {
-                    "id": doc_id,
-                    "filename": metadata["filename"],
-                    "file_type": metadata["file_type"],
-                    "chunk_count": 0
-                }
-            docs[doc_id]["chunk_count"] += 1
+            if not results["ids"]:
+                return None
+                
+            return {
+                "id": results["ids"][0],
+                "filename": results["metadatas"][0]["filename"],
+                "file_type": results["metadatas"][0]["file_type"],
+                "classification": results["metadatas"][0].get("classification"),
+                "created_at": results["metadatas"][0].get("created_at"),
+                "last_modified": results["metadatas"][0].get("last_modified")
+            }
             
-        return list(docs.values())
-    
+        except Exception as e:
+            logger.error(f"Error getting document by path: {str(e)}")
+            return None
+
     async def remove_document(self, doc_id: str) -> bool:
         """Remove a document and its chunks from the store.
         
@@ -163,32 +236,29 @@ class VectorStore:
             doc_id: Document ID to remove
             
         Returns:
-            True if successful
+            True if successful, False otherwise
         """
+        if not self._initialized:
+            raise RuntimeError("Vector store not initialized")
+            
         try:
-            # Find all chunks for this document
-            logger.info(f"Finding chunks for document {doc_id}")
-            results = self.collection.get(
-                where={"doc_id": doc_id}
-            )
-            
-            if not results["ids"]:
-                logger.warning(f"No chunks found for document {doc_id}")
-                return True  # Document doesn't exist, so technically it's removed
-                
-            # Log what we're about to remove
-            chunk_count = len(results["ids"])
-            logger.info(f"Removing {chunk_count} chunks for document {doc_id}")
-            
-            # Remove all chunks - ChromaDB may show "Add of existing embedding ID" warnings
-            # but these are internal to ChromaDB and don't affect the deletion
-            self.collection.delete(
-                ids=results["ids"]
-            )
-            
-            logger.info(f"Successfully removed document {doc_id} ({chunk_count} chunks)")
+            results = self._store.get(where={"doc_id": doc_id})
+            if results["ids"]:
+                self._store.delete(ids=results["ids"])
+                logger.info(f"Removed document {doc_id} ({len(results['ids'])} chunks)")
             return True
             
         except Exception as e:
-            logger.error(f"Error removing document {doc_id}: {str(e)}", exc_info=True)
-            return False 
+            logger.error(f"Error removing document {doc_id}: {str(e)}")
+            return False
+
+    def get_index_size(self) -> int:
+        """Get the total number of embeddings in the store."""
+        if not self._initialized:
+            return 0
+            
+        try:
+            return len(self._store.get()["ids"])
+        except Exception as e:
+            logger.error(f"Error getting index size: {str(e)}")
+            return 0

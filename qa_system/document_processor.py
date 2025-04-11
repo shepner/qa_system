@@ -3,7 +3,8 @@ Document processing and embedding generation
 """
 import os
 import logging
-from typing import List, Dict, Any, Optional
+import asyncio
+from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 import hashlib
 import PyPDF2
@@ -122,16 +123,6 @@ class DocumentProcessor:
             
             logger.info(f"Using credentials from: {credentials_path}")
             
-            # Configure Gemini API
-            try:
-                logger.info("Configuring Generative AI API...")
-                genai.configure(api_key=api_key)
-                self.embedding_model = "models/embedding-001"
-                logger.info("Successfully configured Generative AI API")
-            except Exception as e:
-                logger.error(f"Failed to initialize Generative AI API: {str(e)}")
-                raise
-            
         except Exception as e:
             logger.error(f"Failed to initialize Google AI clients: {str(e)}")
             raise
@@ -145,39 +136,30 @@ class DocumentProcessor:
         })
 
     def _initialize_apis(self):
-        """Initialize Google Cloud APIs with enhanced logging."""
+        """Initialize API clients."""
         try:
-            project_id = os.getenv('GOOGLE_CLOUD_PROJECT')
-            if not project_id:
-                logger.error("GOOGLE_CLOUD_PROJECT environment variable not set")
-                raise ValueError("GOOGLE_CLOUD_PROJECT environment variable is required")
+            # Get API key from config
+            api_key = self.config["SECURITY"]["API_KEY"]
             
-            logger.info("Initializing APIs with project ID: %s", project_id)
+            # Initialize Google Generative AI client
+            logger.info("Configuring Generative AI API...")
+            genai.configure(
+                api_key=api_key,
+                transport="rest"
+            )
             
-            # Initialize Vertex AI
-            try:
-                logger.debug("Initializing Vertex AI...")
-                vertexai.init(project=project_id)
-                self.generation_model = generative_models.GenerativeModel("gemini-pro")
-                logger.info("Successfully initialized Vertex AI generation model")
-            except Exception as e:
-                logger.error("Failed to initialize Vertex AI: %s", str(e))
-                raise
-
-            # Initialize Vision AI
-            try:
-                logger.debug("Initializing Vision AI client...")
-                self.vision_client = vision.ImageAnnotatorClient()
-                logger.info("Successfully initialized Vision AI client")
-            except Exception as e:
-                logger.error("Failed to initialize Vision AI client: %s", str(e))
-                raise
-
-            logger.info("All APIs successfully initialized")
+            # Get embedding model configuration
+            embedding_config = self.config.get("EMBEDDING_MODEL", {})
+            model_name = embedding_config.get("MODEL_NAME", "models/gemini-embedding-exp-03-07")
+            
+            # Initialize embedding model
+            self.embedding_model = genai.GenerativeModel(model_name)
+            
+            logger.info(f"APIs initialized successfully with embedding model {model_name}")
             
         except Exception as e:
-            logger.critical("Critical error during API initialization: %s", str(e))
-            raise
+            logger.error(f"Failed to initialize APIs: {str(e)}", exc_info=True)
+            raise RuntimeError("Failed to initialize required APIs") from e
 
     def _needs_reprocessing(self, file_path: Path, existing_doc_id: Optional[str] = None, was_successful: Optional[bool] = None) -> bool:
         """Check if a document needs to be reprocessed based on modification time and previous processing status.
@@ -426,25 +408,69 @@ class DocumentProcessor:
             raise
     
     def _chunk_text(self, text: str) -> List[str]:
-        """Split text into chunks of approximately equal size."""
-        words = text.split()
+        """Split text into chunks of approximately equal size.
+        
+        Args:
+            text: Text to split into chunks
+            
+        Returns:
+            List of text chunks with specified overlap
+            
+        Raises:
+            ValueError: If chunk_size or chunk_overlap parameters are invalid
+        """
+        # Validate chunk parameters
+        if self.chunk_size <= 0:
+            raise ValueError("Chunk size must be positive")
+        if self.chunk_overlap < 0:
+            raise ValueError("Chunk overlap must be non-negative") 
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("Chunk overlap must be less than chunk size")
+            
+        # Split text into sentences
+        import re
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        
         chunks = []
         current_chunk = []
         current_size = 0
         
-        for word in words:
-            word_size = len(word) + 1  # Add 1 for space
-            if current_size + word_size > self.chunk_size and current_chunk:
-                chunks.append(" ".join(current_chunk))
-                current_chunk = [word]
-                current_size = word_size
-            else:
-                current_chunk.append(word)
-                current_size += word_size
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            sentence_size = len(sentence)
+            
+            # If adding this sentence would exceed chunk size, save current chunk
+            if current_size + sentence_size > self.chunk_size and current_chunk:
+                chunk_text = " ".join(current_chunk)
+                chunks.append(chunk_text)
+                
+                # Keep overlap sentences for next chunk
+                overlap_size = 0
+                overlap_chunk = []
+                
+                for prev_sentence in reversed(current_chunk):
+                    if overlap_size + len(prev_sentence) > self.chunk_overlap:
+                        break
+                    overlap_chunk.insert(0, prev_sentence)
+                    overlap_size += len(prev_sentence) + 1  # +1 for space
+                
+                current_chunk = overlap_chunk
+                current_size = overlap_size
+            
+            current_chunk.append(sentence)
+            current_size += sentence_size + 1  # +1 for space
         
+        # Add final chunk if any sentences remain
         if current_chunk:
             chunks.append(" ".join(current_chunk))
             
+        # Log chunking results
+        logger.info(f"Split text into {len(chunks)} chunks")
+        logger.debug(f"Average chunk size: {sum(len(c) for c in chunks)/len(chunks):.1f} characters")
+        
         return chunks
     
     def _generate_doc_id(self, file_path: Path) -> str:
@@ -465,8 +491,27 @@ class DocumentProcessor:
         return sha256_hash.hexdigest()[:16]
     
     async def _get_embedding(self, text: str) -> List[float]:
-        """Get embedding from Google's Generative AI embedding model."""
+        """Get embedding from Google's Generative AI embedding model.
+        
+        Args:
+            text: Text to generate embedding for
+            
+        Returns:
+            List of floats representing the embedding vector
+            
+        Raises:
+            ValueError: If embedding generation fails or dimensions don't match
+        """
         try:
+            # Truncate text if needed
+            max_length = self.config.get("max_text_length", 1024)
+            if len(text) > max_length:
+                logger.warning(f"Text length {len(text)} exceeds max length {max_length}. Truncating.")
+                text = text[:max_length]
+            
+            # Add rate limiting delay
+            await asyncio.sleep(self.config.get("rate_limit_delay", 0.1))
+            
             # Call the Google embedding model
             result = genai.embed_content(
                 model=self.embedding_model,
@@ -477,7 +522,21 @@ class DocumentProcessor:
             if not result or 'embedding' not in result:
                 raise ValueError("No embeddings returned from the model")
             
-            return result['embedding']
+            embedding = result['embedding']
+            
+            # Validate embedding dimensions
+            expected_dim = self.config.get("embedding_dimensions", 768)
+            if len(embedding) != expected_dim:
+                raise ValueError(f"Embedding dimension mismatch. Expected {expected_dim}, got {len(embedding)}")
+            
+            # Validate embedding values
+            if not all(isinstance(x, float) for x in embedding):
+                raise ValueError("Embedding contains non-float values")
+            
+            if not all(-1 <= x <= 1 for x in embedding):
+                raise ValueError("Embedding values outside expected range [-1, 1]")
+            
+            return embedding
             
         except Exception as e:
             logger.error(f"Failed to generate embedding: {str(e)}")
@@ -557,4 +616,110 @@ class DocumentProcessor:
                 logger.info(f"Excluding file {file_path} - matches pattern '{pattern}'")
                 return True
                 
-        return False 
+        return False
+
+    @property
+    def supported_types(self) -> List[str]:
+        """Get list of supported file extensions."""
+        return [
+            '.txt', '.pdf', '.docx', '.doc', '.rtf', '.odt', '.md',
+            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.py'
+        ]
+
+    async def _should_process_file(self, file_path: Path) -> bool:
+        """Check if a file should be processed based on exclude patterns.
+        
+        Args:
+            file_path: Path to the file to check
+            
+        Returns:
+            True if file should be processed, False if it should be excluded
+        """
+        # Convert path to string for pattern matching
+        file_str = str(file_path)
+        
+        # Check against exclude patterns
+        for pattern in self.exclude_patterns:
+            if fnmatch.fnmatch(file_str, pattern):
+                logger.debug(f"File {file_path} matches exclude pattern {pattern}")
+                return False
+                
+        return True
+
+    async def process(self, path: Union[str, Path]) -> Dict[str, int]:
+        """Process documents from a file or directory path.
+        
+        Args:
+            path: Path to a file or directory to process
+            
+        Returns:
+            Dict containing processing statistics:
+                - total_files: Total number of files found
+                - processed: Number of files successfully processed
+                - failed: Number of files that failed processing
+                - skipped: Number of files skipped (excluded or already processed)
+        """
+        path = Path(path)
+        logger.info(f"Starting document processing for path: {path}")
+        
+        stats = {
+            "total_files": 0,
+            "processed": 0,
+            "failed": 0,
+            "skipped": 0
+        }
+        
+        if path.is_file():
+            # Process single file
+            logger.info(f"Processing single file: {path}")
+            stats["total_files"] = 1
+            try:
+                should_process = await self._should_process_file(path)
+                if should_process:
+                    await self.process_document(path)
+                    stats["processed"] += 1
+                else:
+                    logger.info(f"Skipping excluded file: {path}")
+                    stats["skipped"] += 1
+            except Exception as e:
+                logger.error(f"Failed to process file {path}: {str(e)}")
+                stats["failed"] += 1
+            
+        elif path.is_dir():
+            # Process directory recursively
+            logger.info(f"Processing directory recursively: {path}")
+            tasks = []
+            
+            # First, collect all files and check which ones should be processed
+            for file_path in path.rglob("*"):
+                if file_path.is_file():
+                    stats["total_files"] += 1
+                    try:
+                        should_process = await self._should_process_file(file_path)
+                        if should_process:
+                            # Create task for processing the document
+                            task = asyncio.create_task(self.process_document(file_path))
+                            tasks.append(task)
+                        else:
+                            logger.info(f"Skipping excluded file: {file_path}")
+                            stats["skipped"] += 1
+                    except Exception as e:
+                        logger.error(f"Failed to check file {file_path}: {str(e)}")
+                        stats["failed"] += 1
+                        continue
+            
+            # Process files in batches to control concurrency
+            while tasks:
+                batch = tasks[:self.concurrent_tasks]
+                tasks = tasks[self.concurrent_tasks:]
+                
+                try:
+                    # Wait for batch to complete
+                    await asyncio.gather(*batch)
+                    stats["processed"] += len(batch)
+                except Exception as e:
+                    logger.error(f"Batch processing failed: {str(e)}")
+                    stats["failed"] += len(batch)
+        
+        logger.info(f"Document processing complete. Stats: {stats}")
+        return stats 
