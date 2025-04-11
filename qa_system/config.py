@@ -62,6 +62,9 @@ def load_config(config_path: Union[str, Dict[str, Any]] = None) -> Dict[str, Any
     Returns:
         Dict containing the merged configuration
     """
+    # Load environment variables from .env file
+    load_dotenv()
+    
     # Initialize config
     config = None
     

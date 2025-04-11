@@ -7,6 +7,8 @@ import json
 import logging
 from pathlib import Path
 import google.generativeai as genai
+from vertexai import generative_models
+import vertexai
 
 from .vector_store import VectorStore
 
@@ -55,31 +57,18 @@ class QueryEngine:
     def _initialize_model(self):
         """Initialize the language model based on configuration."""
         try:
-            # Get API key from config or environment
-            api_key = (
-                self.config.get("API_KEY") or
-                self.config.get("SECURITY", {}).get("API_KEY") or
-                os.getenv("API_KEY")
-            )
+            # Get project ID from environment
+            project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+            if not project_id:
+                raise ValueError("GOOGLE_CLOUD_PROJECT environment variable not set")
             
-            if not api_key:
-                raise ValueError("No API key found in config or environment")
-                
-            # Configure Gemini
-            genai.configure(api_key=api_key)
+            # Initialize Vertex AI with project and location
+            location = "us-central1"  # default location
+            vertexai.init(project=project_id, location=location)
             
-            # Initialize model with configured parameters
-            model_config = self.config.get("QUERY_ENGINE", {})
-            self.model = genai.GenerativeModel(
-                model_name="gemini-pro",
-                generation_config={
-                    "temperature": model_config.get("TEMPERATURE", 0.7),
-                    "top_p": model_config.get("TOP_P", 0.95),
-                    "max_output_tokens": model_config.get("MAX_TOKENS", 2048)
-                }
-            )
-            
-            logger.info("Successfully initialized Gemini model")
+            # Initialize Gemini
+            genai.configure(transport="rest")
+            logger.info("Initialized query engine with Gemini")
             
         except Exception as e:
             logger.error(f"Failed to initialize model: {str(e)}")

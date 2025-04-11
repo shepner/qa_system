@@ -66,3 +66,6 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# ignore all files in the docs directory
+docs/*

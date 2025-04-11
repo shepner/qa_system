@@ -6,6 +6,8 @@ import os
 from typing import List, Dict, Any, Optional
 import numpy as np
 import google.generativeai as genai
+from vertexai import generative_models
+import vertexai
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +32,13 @@ class EmbeddingGenerator:
         self.dimensions = embedding_config.get("DIMENSIONS", 768)
         self.batch_size = embedding_config.get("BATCH_SIZE", 10)
         
-        # Initialize Gemini
-        api_key = os.getenv("API_KEY")
-        if not api_key:
-            raise ValueError("API_KEY environment variable not set")
-        genai.configure(api_key=api_key)
+        # Initialize Vertex AI with project and location
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+        location = "us-central1"  # default location
+        vertexai.init(project=project_id, location=location)
         
+        # Initialize Gemini
+        genai.configure(transport="rest")
         logger.info(f"Initialized embedding generator with model {self.model_name}")
         
     async def generate_embeddings(
@@ -80,8 +83,14 @@ class EmbeddingGenerator:
                         task_type="retrieval_document"
                     )
                     
+                    # Extract embedding values from the response
+                    if isinstance(result, dict):
+                        embedding_values = result.get('embedding', [])
+                    else:
+                        embedding_values = result
+                    
                     # Convert to numpy array
-                    embedding_array = np.array(result, dtype=np.float32)
+                    embedding_array = np.array(embedding_values, dtype=np.float32)
                     
                     # Verify embedding dimensions
                     if embedding_array.shape[0] != self.dimensions:

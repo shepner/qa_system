@@ -54,7 +54,6 @@ class DocumentProcessor:
         logger.info("Starting API configuration and project ID resolution")
         
         # First check environment variables directly
-        api_key = os.getenv("API_KEY")
         project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         
@@ -62,14 +61,6 @@ class DocumentProcessor:
         logger.debug(f"Initial environment check - Credentials path from env: {'Found' if credentials_path else 'Not found'}")
         
         # If not in environment, try config
-        if not api_key:
-            security_config = config.get("SECURITY", {})
-            api_key = (
-                security_config.get("API_KEY") or 
-                config.get("SECURITY_API_KEY")
-            )
-            logger.debug("API key not found in environment, attempting to load from config")
-        
         if not project_id:
             security_config = config.get("SECURITY", {})
             project_id = (
@@ -87,9 +78,6 @@ class DocumentProcessor:
             logger.debug("Credentials path not found in environment, attempting to load from config")
         
         # Log the final resolution status of required configurations
-        if not api_key:
-            logger.error("Google API key not found in environment or config")
-            raise ValueError("Google API key not found in environment or config")
         if not project_id:
             logger.error("Google Cloud project ID not found in environment or config")
             raise ValueError("Google Cloud project ID not found in environment or config")
@@ -123,6 +111,14 @@ class DocumentProcessor:
             
             logger.info(f"Using credentials from: {credentials_path}")
             
+            # Initialize Vertex AI with project and location
+            location = "us-central1"  # default location
+            vertexai.init(project=project_id, location=location)
+            
+            # Initialize Gemini
+            genai.configure(transport="rest")
+            logger.info("Initialized document processor with Gemini")
+            
         except Exception as e:
             logger.error(f"Failed to initialize Google AI clients: {str(e)}")
             raise
@@ -138,22 +134,12 @@ class DocumentProcessor:
     def _initialize_apis(self):
         """Initialize API clients."""
         try:
-            # Get API key from config
-            api_key = self.config["SECURITY"]["API_KEY"]
-            
-            # Initialize Google Generative AI client
-            logger.info("Configuring Generative AI API...")
-            genai.configure(
-                api_key=api_key,
-                transport="rest"
-            )
-            
             # Get embedding model configuration
             embedding_config = self.config.get("EMBEDDING_MODEL", {})
             model_name = embedding_config.get("MODEL_NAME", "models/gemini-embedding-exp-03-07")
             
             # Initialize embedding model
-            self.embedding_model = genai.GenerativeModel(model_name)
+            self.embedding_model = model_name
             
             logger.info(f"APIs initialized successfully with embedding model {model_name}")
             
@@ -193,7 +179,7 @@ class DocumentProcessor:
             
         return needs_reprocessing
 
-    async def process_document(self, file_path: str) -> Dict:
+    async def process_document(self, file_path: str) -> Optional[Dict]:
         """Process a document and prepare it for embedding generation.
         
         Args:
@@ -201,13 +187,14 @@ class DocumentProcessor:
             
         Returns:
             Document metadata including chunks, directory structure, and extracted metadata
+            Returns None if file should be skipped
         """
         file_path = Path(file_path)
         
         # Only check for supported file types
         if file_path.suffix.lower() not in self.supported_types:
             logger.info(f"Skipping unsupported file type: {file_path}")
-            raise ValueError(f"Unsupported file type: {file_path}")
+            return None
             
         logger.info(f"Processing document: {file_path}")
         

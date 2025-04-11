@@ -78,7 +78,7 @@ DOCUMENT_PROCESSING:
   # This can be overridden by command line arguments
   # Can be a file path or directory path
   # Default: "./documents"
-  DOCUMENT_PATH: "./documents"
+  DOCUMENT_PATH: "./docs"
 
   # Maximum size of each text chunk when splitting documents
   # Documents are split into smaller chunks for better processing and retrieval
@@ -153,7 +153,7 @@ EMBEDDING_MODEL:
   # - 3072: Highest quality but more storage/compute intensive
   # - 1536: Good balance of quality and resource usage
   # - 768: Most efficient, suitable for many applications
-  DIMENSIONS: 768
+  DIMENSIONS: 1536
 
 # Application Settings
 APP:
