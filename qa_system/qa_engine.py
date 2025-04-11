@@ -246,6 +246,15 @@ class QAEngine(QAEngineInterface):
             processor = DocumentProcessor(self.config)
             doc_metadata = await processor.process_document(file_path)
             
+            # If document processor returns None (unsupported file type), return early
+            if doc_metadata is None:
+                return {
+                    "status": "skipped",
+                    "reason": "unsupported_file_type",
+                    "file_path": file_path,
+                    "chunks": 0
+                }
+            
             # Generate embeddings for chunks
             logger.info(f"Generating embeddings for {len(doc_metadata['chunks'])} chunks from {file_path}")
             chunks_with_embeddings = await self.embedding_generator.generate_document_embeddings(doc_metadata["chunks"])
@@ -255,7 +264,11 @@ class QAEngine(QAEngineInterface):
             logger.info(f"Storing {len(chunks_with_embeddings)} embeddings for {file_path}")
             await self.vector_store.store_embeddings(chunks_with_embeddings, doc_metadata)
             
-            return doc_metadata
+            return {
+                "status": "success",
+                "file_path": file_path,
+                "chunks": len(chunks_with_embeddings)
+            }
             
         except Exception as e:
             logger.error(f"Failed to add document {file_path}: {str(e)}")

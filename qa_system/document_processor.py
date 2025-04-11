@@ -414,25 +414,51 @@ class DocumentProcessor:
         if self.chunk_overlap >= self.chunk_size:
             raise ValueError("Chunk overlap must be less than chunk size")
             
+        # Clean and normalize input text
+        text = text.strip()
+        if not text:
+            return []
+            
         # Split text into sentences
         import re
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
         
         chunks = []
         current_chunk = []
         current_size = 0
         
         for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
-                continue
-                
             sentence_size = len(sentence)
+            
+            # If this single sentence is larger than chunk_size, split it further
+            if sentence_size > self.chunk_size:
+                if current_chunk:  # Save current chunk if it exists
+                    chunks.append(" ".join(current_chunk))
+                    current_chunk = []
+                    current_size = 0
+                
+                # Split long sentence into smaller pieces
+                words = sentence.split()
+                temp_chunk = []
+                temp_size = 0
+                
+                for word in words:
+                    if temp_size + len(word) + 1 > self.chunk_size:
+                        if temp_chunk:  # Save accumulated words if any
+                            chunks.append(" ".join(temp_chunk))
+                        temp_chunk = [word]
+                        temp_size = len(word)
+                    else:
+                        temp_chunk.append(word)
+                        temp_size += len(word) + 1
+                
+                if temp_chunk:  # Save any remaining words
+                    chunks.append(" ".join(temp_chunk))
+                continue
             
             # If adding this sentence would exceed chunk size, save current chunk
             if current_size + sentence_size > self.chunk_size and current_chunk:
-                chunk_text = " ".join(current_chunk)
-                chunks.append(chunk_text)
+                chunks.append(" ".join(current_chunk))
                 
                 # Keep overlap sentences for next chunk
                 overlap_size = 0
@@ -442,21 +468,27 @@ class DocumentProcessor:
                     if overlap_size + len(prev_sentence) > self.chunk_overlap:
                         break
                     overlap_chunk.insert(0, prev_sentence)
-                    overlap_size += len(prev_sentence) + 1  # +1 for space
+                    overlap_size += len(prev_sentence) + 1
                 
                 current_chunk = overlap_chunk
                 current_size = overlap_size
             
             current_chunk.append(sentence)
-            current_size += sentence_size + 1  # +1 for space
+            current_size += sentence_size + 1
         
         # Add final chunk if any sentences remain
         if current_chunk:
             chunks.append(" ".join(current_chunk))
             
+        # Validate final chunks
+        chunks = [chunk for chunk in chunks if chunk.strip()]
+        
         # Log chunking results
-        logger.info(f"Split text into {len(chunks)} chunks")
-        logger.debug(f"Average chunk size: {sum(len(c) for c in chunks)/len(chunks):.1f} characters")
+        if chunks:
+            logger.info(f"Split text into {len(chunks)} chunks")
+            logger.debug(f"Average chunk size: {sum(len(c) for c in chunks)/len(chunks):.1f} characters")
+        else:
+            logger.warning("No valid chunks were generated from the input text")
         
         return chunks
     
@@ -490,40 +522,61 @@ class DocumentProcessor:
             ValueError: If embedding generation fails or dimensions don't match
         """
         try:
+            # Get embedding model configuration
+            embedding_config = self.config.get("EMBEDDING_MODEL", {})
+            max_length = embedding_config.get("MAX_LENGTH", 8192)
+            expected_dim = embedding_config.get("DIMENSIONS", 3072)
+            
+            # Get rate limit settings
+            rate_limits = embedding_config.get("RATE_LIMITS", {})
+            max_retries = rate_limits.get("MAX_RETRIES", 5)
+            initial_delay = rate_limits.get("INITIAL_RETRY_DELAY", 1)
+            max_delay = rate_limits.get("MAX_RETRY_DELAY", 60)
+            backoff_factor = rate_limits.get("BACKOFF_FACTOR", 2)
+            
             # Truncate text if needed
-            max_length = self.config.get("max_text_length", 1024)
             if len(text) > max_length:
                 logger.warning(f"Text length {len(text)} exceeds max length {max_length}. Truncating.")
                 text = text[:max_length]
             
-            # Add rate limiting delay
-            await asyncio.sleep(self.config.get("rate_limit_delay", 0.1))
+            # Implement retry logic with exponential backoff
+            for retry in range(max_retries):
+                try:
+                    # Call the Google embedding model
+                    result = genai.embed_content(
+                        model=self.embedding_model,
+                        content=text,
+                        task_type="retrieval_document"
+                    )
+                    
+                    if not result or 'embedding' not in result:
+                        raise ValueError("No embeddings returned from the model")
+                    
+                    embedding = result['embedding']
+                    
+                    # Validate embedding dimensions
+                    if len(embedding) != expected_dim:
+                        raise ValueError(f"Embedding dimension mismatch. Expected {expected_dim}, got {len(embedding)}")
+                    
+                    # Validate embedding values
+                    if not all(isinstance(x, float) for x in embedding):
+                        raise ValueError("Embedding contains non-float values")
+                    
+                    if not all(-1 <= x <= 1 for x in embedding):
+                        raise ValueError("Embedding values outside expected range [-1, 1]")
+                    
+                    return embedding
+                    
+                except Exception as e:
+                    if retry < max_retries - 1:
+                        # Calculate exponential backoff delay
+                        delay = min(initial_delay * (backoff_factor ** retry), max_delay)
+                        logger.warning(f"Retry {retry + 1}/{max_retries} after error: {str(e)}. Waiting {delay}s...")
+                        await asyncio.sleep(delay)
+                    else:
+                        raise
             
-            # Call the Google embedding model
-            result = genai.embed_content(
-                model=self.embedding_model,
-                content=text,
-                task_type="retrieval_document"
-            )
-            
-            if not result or 'embedding' not in result:
-                raise ValueError("No embeddings returned from the model")
-            
-            embedding = result['embedding']
-            
-            # Validate embedding dimensions
-            expected_dim = self.config.get("embedding_dimensions", 768)
-            if len(embedding) != expected_dim:
-                raise ValueError(f"Embedding dimension mismatch. Expected {expected_dim}, got {len(embedding)}")
-            
-            # Validate embedding values
-            if not all(isinstance(x, float) for x in embedding):
-                raise ValueError("Embedding contains non-float values")
-            
-            if not all(-1 <= x <= 1 for x in embedding):
-                raise ValueError("Embedding values outside expected range [-1, 1]")
-            
-            return embedding
+            raise ValueError(f"Failed to generate embedding after {max_retries} retries")
             
         except Exception as e:
             logger.error(f"Failed to generate embedding: {str(e)}")
@@ -656,6 +709,22 @@ class DocumentProcessor:
             "skipped": 0
         }
         
+        # Get rate limit settings
+        rate_limits = self.config.get("EMBEDDING_MODEL", {}).get("RATE_LIMITS", {})
+        max_concurrent = rate_limits.get("MAX_CONCURRENT_REQUESTS", 5)
+        
+        # Create semaphore for concurrent processing
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def process_with_semaphore(file_path: Path) -> bool:
+            async with semaphore:
+                try:
+                    await self.process_document(file_path)
+                    return True
+                except Exception as e:
+                    logger.error(f"Failed to process file {file_path}: {str(e)}")
+                    return False
+        
         if path.is_file():
             # Process single file
             logger.info(f"Processing single file: {path}")
@@ -663,8 +732,11 @@ class DocumentProcessor:
             try:
                 should_process = await self._should_process_file(path)
                 if should_process:
-                    await self.process_document(path)
-                    stats["processed"] += 1
+                    success = await process_with_semaphore(path)
+                    if success:
+                        stats["processed"] += 1
+                    else:
+                        stats["failed"] += 1
                 else:
                     logger.info(f"Skipping excluded file: {path}")
                     stats["skipped"] += 1
@@ -685,7 +757,7 @@ class DocumentProcessor:
                         should_process = await self._should_process_file(file_path)
                         if should_process:
                             # Create task for processing the document
-                            task = asyncio.create_task(self.process_document(file_path))
+                            task = asyncio.create_task(process_with_semaphore(file_path))
                             tasks.append(task)
                         else:
                             logger.info(f"Skipping excluded file: {file_path}")
@@ -695,18 +767,17 @@ class DocumentProcessor:
                         stats["failed"] += 1
                         continue
             
-            # Process files in batches to control concurrency
-            while tasks:
-                batch = tasks[:self.concurrent_tasks]
-                tasks = tasks[self.concurrent_tasks:]
+            # Process all tasks with progress logging
+            total_tasks = len(tasks)
+            for i, task in enumerate(asyncio.as_completed(tasks)):
+                success = await task
+                if success:
+                    stats["processed"] += 1
+                else:
+                    stats["failed"] += 1
                 
-                try:
-                    # Wait for batch to complete
-                    await asyncio.gather(*batch)
-                    stats["processed"] += len(batch)
-                except Exception as e:
-                    logger.error(f"Batch processing failed: {str(e)}")
-                    stats["failed"] += len(batch)
+                if (i + 1) % 10 == 0 or i + 1 == total_tasks:
+                    logger.info(f"Processed {i + 1}/{total_tasks} files")
         
         logger.info(f"Document processing complete. Stats: {stats}")
         return stats 

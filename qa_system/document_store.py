@@ -15,14 +15,15 @@ class DocumentStore:
         
         Args:
             config: Configuration dictionary that may contain:
-                - 'data_dir': Directory for file storage
+                - 'VECTOR_STORE.PERSIST_DIRECTORY': Directory for file storage
                 - 'mongodb_uri': MongoDB connection URI
                 - 'mongodb_db': MongoDB database name
                 - 'mongodb_collection': MongoDB collection name
         """
         # File storage setup
-        data_dir = config.get('data_dir') if isinstance(config, dict) else None
-        self.data_dir = Path(data_dir) if data_dir else Path("data/vectordb")
+        vector_store_config = config.get('VECTOR_STORE', {})
+        data_dir = vector_store_config.get('PERSIST_DIRECTORY', './data/vector_store')
+        self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
         # MongoDB setup

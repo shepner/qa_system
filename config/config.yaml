@@ -34,6 +34,8 @@ VECTOR_STORE:
   # Range: 1-4096, Default: 2048
   MAX_TOKENS: 2048
 
+  EMBEDDING_DIM: 3072  # This is the maximum dimension for Gemini's embedding model
+
 QUERY_ENGINE:
   # Controls the randomness/creativity of the response
   # Lower values (0.0-0.3) are more focused and deterministic
@@ -75,9 +77,6 @@ QUERY_ENGINE:
 # Document Processing
 DOCUMENT_PROCESSING:
   # Default path for documents to be processed and indexed
-  # This can be overridden by command line arguments
-  # Can be a file path or directory path
-  # Default: "./documents"
   DOCUMENT_PATH: "./docs"
 
   # Maximum size of each text chunk when splitting documents
@@ -85,7 +84,7 @@ DOCUMENT_PROCESSING:
   # Larger chunks retain more context but may be less precise
   # Smaller chunks are more precise but may lose context
   # Range: 100-2000, Default: 1000 characters
-  MAX_CHUNK_SIZE: 800  # Optimized for better context preservation
+  MAX_CHUNK_SIZE: 800
 
   # Number of characters to overlap between consecutive chunks
   # Helps maintain context across chunk boundaries
@@ -111,8 +110,9 @@ DOCUMENT_PROCESSING:
   # Range: 1-100, Default: 10
   BATCH_SIZE: 10
   EXCLUDE_PATTERNS:
-    - "**/.*/**"
-    - "**/_*/**"
+    - "**/.*/**"  # Hidden files and directories
+    - "**/_*/**"  # Files/dirs starting with underscore
+ 
 
 # Logging Configuration
 LOGGING:
@@ -153,7 +153,16 @@ EMBEDDING_MODEL:
   # - 3072: Highest quality but more storage/compute intensive
   # - 1536: Good balance of quality and resource usage
   # - 768: Most efficient, suitable for many applications
-  DIMENSIONS: 1536
+  DIMENSIONS: 3072  # Set to 3072 to match vector store configuration
+  
+  # Gemini API Rate Limiting Configuration
+  RATE_LIMITS:
+    MAX_REQUESTS_PER_MINUTE: 30    # Gemini API quota limit
+    MAX_CONCURRENT_REQUESTS: 5      # Maximum parallel requests
+    BACKOFF_FACTOR: 2              # Exponential backoff for retries
+    MAX_RETRIES: 5                 # Maximum retry attempts
+    INITIAL_RETRY_DELAY: 2         # Initial retry delay in seconds
+    MAX_RETRY_DELAY: 120           # Maximum retry delay in seconds
 
 # Application Settings
 APP:

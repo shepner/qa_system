@@ -25,11 +25,15 @@ class VectorStore:
         self.collection_name = vector_store_config.get("COLLECTION_NAME", "qa_documents")
         self.distance_metric = vector_store_config.get("DISTANCE_METRIC", "cosine")
         self.top_k = vector_store_config.get("TOP_K", 40)
-        self.embedding_dim = vector_store_config.get("EMBEDDING_DIM", 768)
+        
+        # Get embedding dimension from EMBEDDING_MODEL config
+        embedding_config = config.get("EMBEDDING_MODEL", {})
+        self.embedding_dim = embedding_config.get("DIMENSIONS", 3072)
+        
         self._store = None
         self._initialized = False
         
-        logger.info(f"Initializing vector store type {self.db_type} at {self.db_path}")
+        logger.info(f"Initializing vector store type {self.db_type} at {self.db_path} with embedding dimension {self.embedding_dim}")
         
     async def initialize(self):
         """Initialize the vector store."""
@@ -65,7 +69,7 @@ class VectorStore:
         
         Args:
             embeddings: List of embeddings with metadata. Each dict must contain:
-                - embedding: List[float] - The embedding vector
+                - embedding: List[float] or numpy.ndarray - The embedding vector
                 - doc_id: str - Unique document identifier
                 - chunk_index: int - Index of the chunk within the document
                 - text: str - The text content for this chunk
@@ -97,11 +101,18 @@ class VectorStore:
             texts = []
             
             for e in embeddings:
-                # Validate embedding format
-                if not isinstance(e.get("embedding"), list):
-                    raise ValueError(f"Invalid embedding format for chunk {e.get('chunk_index')}")
-                    
-                embedding = np.array(e["embedding"])
+                # Get the embedding value
+                embedding = e.get("embedding")
+                if embedding is None:
+                    raise ValueError(f"Missing embedding for chunk {e.get('chunk_index')}")
+                
+                # Convert to numpy array if it's a list
+                if isinstance(embedding, list):
+                    embedding = np.array(embedding, dtype=np.float32)
+                elif not isinstance(embedding, np.ndarray):
+                    raise ValueError(f"Invalid embedding type for chunk {e.get('chunk_index')}: {type(embedding)}")
+                
+                # Validate embedding dimensions
                 if embedding.shape[0] != self.embedding_dim:
                     raise ValueError(
                         f"Invalid embedding dimension {embedding.shape[0]}, "
