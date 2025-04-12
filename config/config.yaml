@@ -188,7 +188,8 @@ EMBEDDING_MODEL:
   # Based on Free Tier limits from https://ai.google.dev/gemini-api/docs/rate-limits#free-tier
   RATE_LIMITS:
     MAX_REQUESTS_PER_MINUTE: 60     # text-embedding-004 Free Tier RPM limit
-    MAX_REQUESTS_PER_DAY: 1000      # text-embedding-004 Free Tier RPD limit
+    #MAX_REQUESTS_PER_DAY: 1000      # text-embedding-004 Free Tier RPD limit
+    MAX_REQUESTS_PER_DAY: 5000      # I dont think they are limiting?
     MAX_CONCURRENT_REQUESTS: 10     # Increased for better throughput while staying safe
     BACKOFF_FACTOR: 1.2            # Gentler backoff for faster recovery
     MAX_RETRIES: 3                 # Reduced retries to fail faster if persistent issues
