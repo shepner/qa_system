@@ -9,19 +9,24 @@ import google.generativeai as genai
 from vertexai import generative_models
 import vertexai
 import asyncio
+import time
 
 logger = logging.getLogger(__name__)
 
 class EmbeddingGenerator:
-    """Generates embeddings for text using Google's Gemini API."""
-    
+    """Handles generation of embeddings using Google's Generative AI API."""
+
     def __init__(self, config: Dict[str, Any]):
-        """Initialize the embedding generator.
-        
-        Args:
-            config: Configuration dictionary containing embedding model settings
-        """
+        """Initialize the embedding generator with configuration."""
         self.config = config
+        self._setup_logging()
+        self._initialize_rate_limiter()
+        
+        # Track API usage statistics
+        self.request_count = 0
+        self.retry_count = 0
+        self.total_tokens = 0
+        self.start_time = None
         
         # Get embedding model configuration
         embedding_config = config.get("EMBEDDING_MODEL", {})
@@ -33,23 +38,6 @@ class EmbeddingGenerator:
         self.dimensions = embedding_config.get("DIMENSIONS", 768)
         self.batch_size = embedding_config.get("BATCH_SIZE", 3)  # Further reduced batch size
         
-        # Get rate limit settings with much more conservative defaults
-        rate_limits = embedding_config.get("RATE_LIMITS", {})
-        self.max_requests_per_minute = rate_limits.get("MAX_REQUESTS_PER_MINUTE", 10)  # Reduced from 20
-        self.max_concurrent = rate_limits.get("MAX_CONCURRENT_REQUESTS", 2)  # Reduced from 3
-        self.backoff_factor = rate_limits.get("BACKOFF_FACTOR", 4)  # Increased from 2
-        self.max_retries = rate_limits.get("MAX_RETRIES", 5)
-        self.initial_delay = rate_limits.get("INITIAL_RETRY_DELAY", 5)  # Increased from 2
-        self.max_delay = rate_limits.get("MAX_RETRY_DELAY", 300)  # Increased from 120
-        
-        # Calculate minimum delay between requests - add 20% buffer
-        self.min_delay = (60.0 / self.max_requests_per_minute) * 1.2
-        
-        # Add request tracking
-        self._last_request_time = 0
-        self._request_times = []
-        self._request_lock = asyncio.Lock()
-        
         # Initialize Vertex AI with project and location
         project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         location = "us-central1"  # default location
@@ -59,80 +47,183 @@ class EmbeddingGenerator:
         genai.configure(transport="rest")
         logger.info(f"Initialized embedding generator with model {self.model_name}")
         
+    def _setup_logging(self):
+        """Configure detailed logging for API operations."""
+        logger.info("Initializing EmbeddingGenerator with configuration")
+        
+    def _initialize_rate_limiter(self):
+        """Initialize rate limiting parameters."""
+        rate_limits = self.config.get("RATE_LIMITS", {})
+        self.max_rpm = rate_limits.get("MAX_REQUESTS_PER_MINUTE", 60)  # Free tier: 60 RPM
+        self.max_rpd = rate_limits.get("MAX_REQUESTS_PER_DAY", 1000)   # Free tier: 1000 RPD
+        self.request_timestamps = []
+        self.minute_window = []  # Track requests in current minute
+        self.day_window = []     # Track requests in current day
+        self.last_request_time = 0  # Track time of last request
+        logger.info(f"Rate limits configured - RPM: {self.max_rpm}, RPD: {self.max_rpd}")
+        
     async def _wait_for_rate_limit(self):
-        """Ensure we don't exceed rate limits by tracking request times."""
-        async with self._request_lock:
-            current_time = asyncio.get_event_loop().time()
+        """Wait if necessary to comply with rate limits.
+        
+        Implements intelligent rate limiting with rolling windows for both minute and day limits.
+        """
+        current_time = time.time()
+        
+        # Clean up expired timestamps
+        minute_ago = current_time - 60
+        day_ago = current_time - 86400
+        
+        self.minute_window = [t for t in self.minute_window if t > minute_ago]
+        self.day_window = [t for t in self.day_window if t > day_ago]
+        
+        # Calculate current usage
+        rpm_usage = len(self.minute_window)
+        rpd_usage = len(self.day_window)
+        
+        # Log current usage every 5 requests
+        if rpm_usage % 5 == 0:
+            logger.info(f"Current usage - RPM: {rpm_usage}/{self.max_rpm}, RPD: {rpd_usage}/{self.max_rpd}")
+        
+        # Calculate required delays
+        rpm_delay = 0
+        rpd_delay = 0
+        
+        # RPM limit check (start throttling at 80%)
+        if rpm_usage >= int(0.8 * self.max_rpm):
+            required_gap = 60.0 / self.max_rpm  # Minimum time between requests
+            if self.minute_window:
+                time_since_last = current_time - self.minute_window[-1]
+                rpm_delay = max(0, required_gap - time_since_last)
+        
+        # RPD limit check (aggressive throttling at 95%)
+        if rpd_usage >= int(0.95 * self.max_rpd):
+            seconds_left_in_day = 86400 - (current_time - day_ago)
+            requests_left = self.max_rpd - rpd_usage
+            if requests_left > 0:
+                rpd_delay = seconds_left_in_day / requests_left
+            else:
+                logger.warning("Daily quota nearly exhausted, implementing aggressive throttling")
+                rpd_delay = 300  # 5 minute delay when near quota
+        
+        # Use the longer of the two delays
+        delay = max(rpm_delay, rpd_delay)
+        
+        if delay > 0:
+            logger.info(f"Rate limit delay: {delay:.2f}s (RPM delay: {rpm_delay:.2f}s, RPD delay: {rpd_delay:.2f}s)")
+            await asyncio.sleep(delay)
+        
+        # Record the request
+        current_time = time.time()
+        self.minute_window.append(current_time)
+        self.day_window.append(current_time)
+        self.last_request_time = current_time
+        
+    async def generate_embedding(self, text: str) -> np.ndarray:
+        """Generate embedding for a single text."""
+        if not self.start_time:
+            self.start_time = time.time()
             
-            # Remove old request times
-            cutoff = current_time - 60
-            self._request_times = [t for t in self._request_times if t > cutoff]
+        # Track request
+        self.request_count += 1
+        request_start = time.time()
+        
+        try:
+            # Wait for rate limit if needed
+            await self._wait_for_rate_limit()
             
-            # If we've hit the limit, wait until we can make another request
-            if len(self._request_times) >= self.max_requests_per_minute:
-                wait_time = self._request_times[0] - cutoff + self.min_delay
-                if wait_time > 0:
-                    logger.info(f"Rate limit reached, waiting {wait_time:.2f}s")
-                    await asyncio.sleep(wait_time)
-                    
-            # Add the new request time
-            self._request_times.append(current_time)
+            # Generate embedding
+            embedding = await self._generate_embedding_with_retries(text)
             
-            # Ensure minimum delay between requests
-            if self._last_request_time:
-                elapsed = current_time - self._last_request_time
-                if elapsed < self.min_delay:
-                    await asyncio.sleep(self.min_delay - elapsed)
+            # Log success metrics
+            request_time = time.time() - request_start
+            total_time = time.time() - self.start_time
+            avg_rate = self.request_count / total_time if total_time > 0 else 0
             
-            self._last_request_time = current_time
-
-    async def process_text(self, text: str, task_type: str) -> np.ndarray:
-        """Process a single text with rate limiting and retries."""
-        async with self._request_lock:
-            for retry in range(self.max_retries):
-                try:
-                    # Wait for rate limit before making request
-                    await self._wait_for_rate_limit()
-                    
-                    # Truncate text if needed
-                    if len(text) > self.max_length:
-                        logger.warning(
-                            f"Text length {len(text)} exceeds max_length {self.max_length}, truncating..."
-                        )
-                        text = text[:self.max_length]
-                    
-                    # Get embedding using the embedding model
-                    result = genai.embed_content(
-                        model=self.model_name,
-                        content=text,
-                        task_type=task_type
+            logger.info(
+                f"Embedding generated successfully "
+                f"[Request: {self.request_count}, "
+                f"Time: {request_time:.2f}s, "
+                f"Avg Rate: {avg_rate:.1f} req/s]"
+            )
+            
+            return embedding
+            
+        except Exception as e:
+            logger.error(f"Failed to generate embedding: {str(e)}")
+            raise
+            
+    async def _generate_embedding_with_retries(self, text: str) -> np.ndarray:
+        """Generate embedding with retry logic."""
+        max_retries = self.config.get("MAX_RETRIES", 3)
+        base_delay = self.config.get("INITIAL_RETRY_DELAY", 1.0)
+        max_delay = self.config.get("MAX_RETRY_DELAY", 60.0)
+        
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
+                    logger.warning(f"Retry attempt {attempt}/{max_retries} after {delay:.1f}s delay")
+                    await asyncio.sleep(delay)
+                    self.retry_count += 1
+                
+                return await self._make_embedding_request(text)
+                
+            except Exception as e:
+                if attempt == max_retries:
+                    logger.error(
+                        f"Failed after {max_retries} retries. "
+                        f"Total retries: {self.retry_count}"
                     )
-                    
-                    # Extract embedding values from the response
-                    if isinstance(result, dict):
-                        embedding_values = result.get('embedding', [])
-                    else:
-                        embedding_values = result
-                    
-                    # Convert to numpy array
-                    embedding_array = np.array(embedding_values, dtype=np.float32)
-                    
-                    # Verify embedding dimensions
-                    if embedding_array.shape[0] != self.dimensions:
-                        raise ValueError(
-                            f"Embedding dimension mismatch. Expected {self.dimensions}, "
-                            f"got {embedding_array.shape[0]}"
-                        )
-                    
-                    return embedding_array
-                    
-                except Exception as e:
-                    if retry < self.max_retries - 1:
-                        delay = min(self.initial_delay * (self.backoff_factor ** retry), self.max_delay)
-                        logger.warning(f"Retry {retry + 1}/{self.max_retries} after error: {str(e)}. Waiting {delay}s...")
-                        await asyncio.sleep(delay)
-                    else:
-                        raise
+                    raise
+                logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
+                
+    async def _make_embedding_request(self, text: str) -> np.ndarray:
+        """Make the actual API request for embedding generation."""
+        # Add token counting
+        token_count = len(text.split())  # Simple approximation
+        self.total_tokens += token_count
+        
+        logger.debug(
+            f"Making embedding request "
+            f"[Tokens: {token_count}, "
+            f"Total Tokens: {self.total_tokens}]"
+        )
+        
+        # Log text length and truncation if needed
+        text_length = len(text)
+        if text_length > self.max_length:
+            logger.info(
+                f"Text length {text_length} exceeds max_length {self.max_length}, truncating..."
+            )
+            text = text[:self.max_length]
+        
+        logger.debug(f"Generating embedding for text of length {len(text)}")
+        
+        # Get embedding using the embedding model
+        result = genai.embed_content(
+            model=self.model_name,
+            content=text,
+            task_type="retrieval_document"
+        )
+        
+        # Extract embedding values from the response
+        if isinstance(result, dict):
+            embedding_values = result.get('embedding', [])
+        else:
+            embedding_values = result
+        
+        # Convert to numpy array
+        embedding_array = np.array(embedding_values, dtype=np.float32)
+        
+        # Verify embedding dimensions
+        if embedding_array.shape[0] != self.dimensions:
+            raise ValueError(
+                f"Embedding dimension mismatch. Expected {self.dimensions}, "
+                f"got {embedding_array.shape[0]}"
+            )
+        
+        logger.debug(f"Successfully generated embedding with dimension {self.dimensions}")
+        return embedding_array
 
     async def generate_embeddings(
         self, 
@@ -150,36 +241,66 @@ class EmbeddingGenerator:
         """
         try:
             embeddings = []
+            total_texts = len(texts)
+            logger.info(f"Starting embedding generation for {total_texts} texts")
+            logger.info(f"Using batch size of {self.batch_size}, max {self.max_rpm} concurrent requests")
             
             # Process in batches with rate limiting
-            semaphore = asyncio.Semaphore(self.max_concurrent)
+            semaphore = asyncio.Semaphore(self.max_rpm)
             
-            async def process_batch(batch: List[str]) -> List[np.ndarray]:
+            async def process_batch(batch: List[str], batch_num: int) -> List[np.ndarray]:
                 async with semaphore:
                     batch_embeddings = []
-                    for text in batch:
-                        embedding = await self.process_text(text, task_type)
+                    batch_size = len(batch)
+                    logger.info(f"Processing batch {batch_num}, size {batch_size}")
+                    
+                    for i, text in enumerate(batch, 1):
+                        start_time = asyncio.get_event_loop().time()
+                        embedding = await self.generate_embedding(text)
+                        end_time = asyncio.get_event_loop().time()
+                        
                         batch_embeddings.append(embedding)
+                        logger.info(
+                            f"Batch {batch_num}: {i}/{batch_size} complete "
+                            f"(took {end_time - start_time:.2f}s)"
+                        )
+                    
                     return batch_embeddings
             
             # Process texts in smaller batches
             tasks = []
-            for i in range(0, len(texts), self.batch_size):
+            for batch_num, i in enumerate(range(0, len(texts), self.batch_size), 1):
                 batch = texts[i:i + self.batch_size]
-                tasks.append(process_batch(batch))
+                tasks.append(process_batch(batch, batch_num))
                 
                 # Add extra delay between batches
                 if i + self.batch_size < len(texts):
-                    await asyncio.sleep(self.min_delay * 3)  # Triple delay between batches
+                    delay = 1  # Single delay between batches
+                    logger.info(f"Waiting {delay:.2f}s before starting next batch...")
+                    await asyncio.sleep(delay)
             
             # Wait for all embeddings with progress logging
-            total_texts = len(texts)
+            total_batches = len(tasks)
             completed = 0
+            start_time = asyncio.get_event_loop().time()
+            
             for batch_embeddings in await asyncio.gather(*tasks):
                 embeddings.extend(batch_embeddings)
                 completed += len(batch_embeddings)
-                if completed % 10 == 0 or completed == total_texts:
-                    logger.info(f"Generated embeddings for {completed}/{total_texts} texts")
+                elapsed = asyncio.get_event_loop().time() - start_time
+                rate = completed / elapsed if elapsed > 0 else 0
+                
+                logger.info(
+                    f"Progress: {completed}/{total_texts} texts embedded "
+                    f"({(completed/total_texts)*100:.1f}%) "
+                    f"[{elapsed:.1f}s elapsed, {rate:.1f} texts/s]"
+                )
+            
+            total_time = asyncio.get_event_loop().time() - start_time
+            logger.info(
+                f"Embedding generation complete: {total_texts} texts in {total_time:.1f}s "
+                f"({total_texts/total_time:.1f} texts/s average)"
+            )
             
             return embeddings
             

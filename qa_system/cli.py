@@ -255,12 +255,24 @@ class CLI:
                 
             print("\nIndexed Documents:")
             for doc in documents:
-                print(f"📄 {doc['filename']}")
-                if doc.get('chunk_count'):
-                    print(f"   • Contains {doc['chunk_count']} pieces of information")
-                print(f"   • ID: {doc['id']}")
-                if doc.get('file_type'):
-                    print(f"   • Type: {doc['file_type']}")
+                # Get filename from path if filename is not available
+                filename = doc.get('filename') or Path(doc.get('path', '')).name or 'Unknown'
+                print(f"📄 {filename}")
+                
+                chunk_count = doc.get('chunk_count')
+                if chunk_count:
+                    print(f"   • Contains {chunk_count} pieces of information")
+                    
+                doc_id = doc.get('id', 'Unknown')
+                print(f"   • ID: {doc_id}")
+                
+                file_type = doc.get('file_type', 'Unknown')
+                print(f"   • Type: {file_type}")
+                
+                path = doc.get('path')
+                if path:
+                    print(f"   • Path: {path}")
+                    
                 print("-" * 40)
         except Exception as e:
             print(f"Error listing documents: {str(e)}")

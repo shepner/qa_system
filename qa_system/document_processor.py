@@ -18,6 +18,8 @@ from google.auth import credentials
 import fnmatch
 from vertexai import generative_models
 import vertexai
+import time
+from datetime import datetime
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
@@ -42,6 +44,13 @@ class DocumentProcessor:
         self.concurrent_tasks = doc_config.get("CONCURRENT_TASKS", 4)
         self.batch_size = doc_config.get("BATCH_SIZE", 10)
         
+        # Add progress tracking
+        self.total_files = 0
+        self.processed_files = 0
+        self.total_chunks = 0
+        self.processed_chunks = 0
+        self.start_time = None
+        
         # Get exclude patterns
         self.exclude_patterns = doc_config.get("EXCLUDE_PATTERNS", [])
         if isinstance(self.exclude_patterns, str):
@@ -50,6 +59,9 @@ class DocumentProcessor:
         # Get application settings
         app_config = config.get("APP", {})
         self.base_dir = Path(app_config.get("BASE_DIR", "."))
+        
+        # Get allowed extensions
+        self.allowed_extensions = doc_config.get("ALLOWED_EXTENSIONS", [])
         
         logger.info("Starting API configuration and project ID resolution")
         
@@ -179,80 +191,131 @@ class DocumentProcessor:
             
         return needs_reprocessing
 
-    async def process_document(self, file_path: str) -> Optional[Dict]:
+    def convert_lists_to_strings(self, value: Any) -> Any:
+        """Convert any list values in metadata to comma-separated strings.
+        
+        Args:
+            value: The value to convert
+            
+        Returns:
+            Converted value with lists transformed to strings
+        """
+        try:
+            if isinstance(value, list):
+                logger.debug(f"Converting list to string: {value}")
+                # Handle empty lists
+                if not value:
+                    return ""
+                # Convert all elements to strings and filter out None values
+                str_values = [str(v) for v in value if v is not None]
+                result = ", ".join(str_values)
+                logger.debug(f"Converted list to string: {result}")
+                return result
+            elif isinstance(value, dict):
+                logger.debug(f"Converting dictionary values for keys: {list(value.keys())}")
+                converted = {}
+                for k, v in value.items():
+                    try:
+                        converted[k] = self.convert_lists_to_strings(v)
+                    except Exception as e:
+                        logger.warning(f"Failed to convert value for key '{k}': {str(e)}")
+                        converted[k] = str(v)  # Fallback to string conversion
+                return converted
+            elif value is None:
+                return ""
+            return value
+        except Exception as e:
+            logger.error(f"Error converting value {type(value)}: {str(e)}")
+            # Fallback to string conversion in case of errors
+            try:
+                return str(value)
+            except Exception as str_e:
+                logger.error(f"Failed even string conversion: {str_e}")
+                return ""
+
+    async def process_document(self, file_path: Union[str, Path]) -> Dict[str, Any]:
         """Process a document and prepare it for embedding generation.
         
         Args:
-            file_path: Path to the document
+            file_path: Path to the document to process (can be string or Path)
             
         Returns:
-            Document metadata including chunks, directory structure, and extracted metadata
-            Returns None if file should be skipped
+            Dict containing processed document data including:
+            - document_id: Unique identifier for the document
+            - content: Processed text content
+            - metadata: Document metadata including file info and extracted data
+            - chunks: List of text chunks for embedding
+            
+            Returns None if the file is empty or contains no processable content.
         """
-        file_path = Path(file_path)
-        
-        # Only check for supported file types
-        if file_path.suffix.lower() not in self.supported_types:
-            logger.info(f"Skipping unsupported file type: {file_path}")
-            return None
-            
-        logger.info(f"Processing document: {file_path}")
-        
-        # Extract directory structure information
         try:
-            relative_path = file_path.resolve().relative_to(self.base_dir.resolve())
-            dir_parts = list(relative_path.parent.parts)
-            
-            # Create directory hierarchy metadata
-            dir_metadata = {
-                "full_path": str(file_path.parent),
-                "relative_path": str(relative_path.parent),
-                "hierarchy": dir_parts,
-                "depth": len(dir_parts),
-                "parent_dir": str(file_path.parent.name),
-                "root_dir": dir_parts[0] if dir_parts else None
-            }
-            
-            logger.info("Extracting text content...")
+            # Ensure file_path is a Path object
+            if isinstance(file_path, str):
+                file_path = Path(file_path)
+
+            if not file_path.exists():
+                raise FileNotFoundError(f"Document not found: {file_path}")
+
+            if self.should_exclude(file_path):
+                logger.info(f"Skipping excluded file: {file_path}")
+                return None
+
+            # Generate unique document ID
+            document_id = self._generate_doc_id(file_path)
+            logger.info(f"Processing document: {file_path} (ID: {document_id})")
+
+            # Extract directory structure metadata first
+            metadata = self._extract_directory_metadata(file_path)
+            logger.debug("Directory metadata: %s", metadata)
+
+            # Process based on file type
             if file_path.suffix.lower() == '.md':
+                # Process markdown file
                 extracted = self._extract_markdown(file_path)
                 content = extracted["content"]
-                metadata = {
-                    "yaml_metadata": extracted["metadata"],
-                    "hashtags": extracted["hashtags"],
-                    "links": extracted["links"],
-                    "directory": dir_metadata  # Add directory structure metadata
-                }
+                # Merge markdown metadata with directory metadata (directory metadata takes precedence)
+                metadata.update(extracted.get("metadata", {}))
             else:
-                content = self._extract_text(file_path)
-                metadata = {
-                    "directory": dir_metadata  # Add directory structure metadata
-                }
-
-            if not content.strip():
-                raise ValueError(f"No text content extracted from {file_path}")
+                # Process non-markdown file
+                content = await self._extract_text(file_path)
                 
-            logger.info("Chunking text...")
+            # Check if content is empty after processing
+            if not content.strip():
+                logger.warning(f"File contains no processable content after extraction: {file_path}")
+                return None
+
+            # Ensure required metadata fields are present
+            metadata.update({
+                "document_id": document_id,
+                "id": document_id,  # Add id for compatibility
+                "file_name": file_path.name,
+                "file_type": file_path.suffix.lower()[1:] if file_path.suffix else "unknown",
+                "path": str(file_path.resolve())  # Ensure absolute path is always included
+            })
+
+            # Log metadata for debugging
+            logger.debug(f"Final metadata for {file_path}: {metadata}")
+
+            # Generate chunks
             chunks = self._chunk_text(content)
-            logger.info(f"Created {len(chunks)} chunks")
-            
-            doc_id = self._generate_doc_id(file_path)
-            logger.info(f"Generated document ID: {doc_id}")
-            
+            if not chunks:
+                logger.warning(f"No valid chunks could be generated from file: {file_path}")
+                return None
+                
+            logger.info(f"Generated {len(chunks)} chunks from document")
+
             return {
-                "id": doc_id,
-                "path": str(file_path),
-                "filename": file_path.name,
-                "chunks": chunks,
-                "chunk_count": len(chunks),
-                "file_type": file_path.suffix.lower()[1:],
-                "metadata": metadata
+                "document_id": document_id,
+                "id": document_id,  # Add id for compatibility
+                "content": content,
+                "metadata": metadata,
+                "chunks": chunks
             }
-            
+
         except Exception as e:
-            logger.error(f"Failed to process {file_path}: {str(e)}")
+            logger.error(f"Failed to process document {file_path}: {str(e)}")
             raise
-    
+
     async def generate_embeddings(self, doc_metadata: Dict) -> List[Dict]:
         """Generate embeddings for document chunks.
         
@@ -263,38 +326,80 @@ class DocumentProcessor:
             List of chunk embeddings with metadata
         """
         embeddings = []
+        chunk_start_time = time.time()
         total_chunks = len(doc_metadata["chunks"])
-        logger.info(f"Generating embeddings for {total_chunks} chunks from {doc_metadata['filename']}")
+        self.total_chunks += total_chunks
         
-        for i, chunk in enumerate(doc_metadata["chunks"]):
+        logger.info(f"Starting embedding generation for {total_chunks} chunks from {doc_metadata.get('metadata', {}).get('file_name', 'unknown')}")
+        logger.info(f"Total chunks processed so far: {self.processed_chunks}/{self.total_chunks}")
+        
+        for i, chunk in enumerate(doc_metadata["chunks"], 1):
+            chunk_process_start = time.time()
+            
             # Generate embedding using Google's Generative AI embedding model
-            logger.debug(f"Generating embedding for chunk {i+1}/{total_chunks}")
+            logger.debug(f"Generating embedding for chunk {i}/{total_chunks}")
             embedding = await self._get_embedding(chunk)
             
-            embeddings.append({
+            chunk_process_time = time.time() - chunk_process_start
+            logger.debug(f"Chunk {i} embedding generated in {chunk_process_time:.2f}s")
+            
+            # Create embedding dictionary with full metadata
+            embedding_dict = {
                 "id": f"{doc_metadata['id']}_chunk_{i}",
                 "doc_id": doc_metadata["id"],
-                "chunk_index": i,
+                "chunk_index": i-1,
                 "content": chunk,
                 "embedding": embedding,
-            })
+            }
             
-            if (i + 1) % 10 == 0 or i + 1 == total_chunks:
-                logger.info(f"Progress: {i+1}/{total_chunks} chunks processed ({((i+1)/total_chunks)*100:.1f}%)")
+            # Add all document metadata to each chunk
+            if "metadata" in doc_metadata:
+                embedding_dict.update(doc_metadata["metadata"])
             
+            embeddings.append(embedding_dict)
+            
+            self.processed_chunks += 1
+            
+            # Log progress every 5 chunks or on completion
+            if i % 5 == 0 or i == total_chunks:
+                self._log_progress(
+                    f"Chunks processed for {doc_metadata.get('metadata', {}).get('file_name', 'unknown')}", 
+                    i, 
+                    total_chunks,
+                    chunk_start_time
+                )
+                self._log_progress(
+                    "Total chunks processed",
+                    self.processed_chunks,
+                    self.total_chunks,
+                    self.start_time
+                )
+        
+        # Log completion for this document
+        total_time = time.time() - chunk_start_time
+        rate = total_chunks / total_time if total_time > 0 else 0
+        logger.info(
+            f"Completed embedding generation for {doc_metadata.get('metadata', {}).get('file_name', 'unknown')}: "
+            f"{total_chunks} chunks in {total_time:.1f}s ({rate:.1f} chunks/s)"
+        )
+        
         return embeddings
     
-    def _extract_text(self, file_path: Path) -> str:
+    async def _extract_text(self, file_path: Path) -> str:
         """Extract text content from a file."""
         suffix = file_path.suffix.lower()
         
         try:
             if suffix == ".pdf":
-                return self._extract_pdf(file_path)
+                return await self._extract_pdf(file_path)
             elif suffix in [".docx", ".doc"]:
-                return self._extract_docx(file_path)
+                return await self._extract_docx(file_path)
             elif suffix == ".txt":
                 return file_path.read_text()
+            elif suffix == ".md":
+                # Extract markdown content and return the main text
+                markdown_data = self._extract_markdown(file_path)
+                return markdown_data["content"]
             elif suffix in [".rtf", ".odt"]:
                 # Use Apache Tika for other supported formats
                 logger.info(f"Using Tika to extract text from {suffix} file")
@@ -305,7 +410,7 @@ class DocumentProcessor:
             elif suffix == ".py":
                 return file_path.read_text()
             elif suffix in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"]:
-                return self._extract_image(file_path)
+                return await self._extract_image(file_path)
             else:
                 raise ValueError(f"Unsupported file type: {suffix}")
                 
@@ -313,13 +418,13 @@ class DocumentProcessor:
             logger.error(f"Text extraction failed for {file_path}: {str(e)}")
             raise
     
-    def _extract_pdf(self, file_path: Path) -> str:
+    async def _extract_pdf(self, file_path: Path) -> str:
         """Extract text from PDF file."""
         with open(file_path, "rb") as f:
             reader = PyPDF2.PdfReader(f)
             return " ".join(page.extract_text() for page in reader.pages)
     
-    def _extract_docx(self, file_path: Path) -> str:
+    async def _extract_docx(self, file_path: Path) -> str:
         """Extract text from DOCX file."""
         doc = docx.Document(file_path)
         return " ".join(paragraph.text for paragraph in doc.paragraphs)
@@ -341,6 +446,7 @@ class DocumentProcessor:
             - links: List of extracted links
         """
         try:
+            logger.info(f"Starting markdown extraction for file: {file_path}")
             content = file_path.read_text()
             
             # Parse YAML frontmatter if present
@@ -353,6 +459,7 @@ class DocumentProcessor:
                     if end_idx != -1:
                         frontmatter = content[3:end_idx].strip()
                         metadata = yaml.safe_load(frontmatter)
+                        logger.debug(f"Extracted YAML frontmatter metadata: {metadata}")
                         # Remove frontmatter from content
                         content = content[end_idx + 3:].strip()
                 except ImportError:
@@ -372,6 +479,8 @@ class DocumentProcessor:
                     # Find hashtags that aren't part of URLs
                     tags = re.findall(r'(?<![\w/])\#([\w-]+)', line)
                     hashtags.extend(tags)
+            
+            logger.debug(f"Extracted hashtags: {hashtags}")
 
             # Extract links
             links = []
@@ -382,12 +491,46 @@ class DocumentProcessor:
                     links.append(match.group(2))
                 elif match.group(3):  # Bare URL
                     links.append(match.group(3))
+            
+            logger.debug(f"Extracted links: {links}")
+
+            # Extract linked document names
+            linked_docs = []
+            for link in links:
+                if isinstance(link, str) and link.endswith('.md'):
+                    linked_docs.append(Path(link).stem)
+            
+            logger.debug(f"Extracted linked documents: {linked_docs}")
+
+            # Build complete metadata dictionary
+            result_metadata = metadata.copy()  # Start with frontmatter metadata
+            logger.debug(f"Initial metadata from frontmatter: {result_metadata}")
+            
+            if hashtags:
+                result_metadata["hashtags"] = ", ".join(hashtags)  # Convert to string immediately
+            if links:
+                result_metadata["links"] = ", ".join(links)  # Convert to string immediately
+            if linked_docs:
+                result_metadata["linked_documents"] = ", ".join(linked_docs)  # Convert to string immediately
+            
+            logger.debug(f"Metadata after adding extracted fields: {result_metadata}")
+
+            # Convert any remaining list values in frontmatter metadata
+            result_metadata = self.convert_lists_to_strings(result_metadata)
+            
+            # Add required path metadata
+            result_metadata["path"] = str(file_path.resolve())
+            
+            # Log the final metadata state
+            logger.info("Final metadata after processing: %s", 
+                {k: v for k, v in result_metadata.items() if not any(s in k.lower() for s in ['secret', 'key', 'token'])})
 
             return {
                 "content": content,
-                "metadata": metadata,
-                "hashtags": list(set(hashtags)),  # Remove duplicates
-                "links": list(set(links))  # Remove duplicates
+                "metadata": result_metadata,
+                # Return original lists for potential future processing
+                "hashtags": hashtags,
+                "links": links
             }
             
         except Exception as e:
@@ -421,7 +564,28 @@ class DocumentProcessor:
             
         # Split text into sentences
         import re
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+        # Pattern to match sentence boundaries and list items
+        sentence_pattern = r'([.!?]|\n[-•]|\n\d+\.)\s+'
+        sentences = []
+        for line in text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            # Handle bullet points and numbered lists
+            if line.startswith(('-', '•')) or re.match(r'^\d+\.', line):
+                sentences.append(line)
+            else:
+                # Split normal sentences and keep the delimiter
+                parts = re.split(sentence_pattern, line)
+                # Reconstruct sentences with their delimiters
+                line_sentences = []
+                for i in range(0, len(parts)-1, 2):
+                    if i+1 < len(parts):
+                        sentence = parts[i] + parts[i+1]
+                        line_sentences.append(sentence.strip())
+                if parts and len(parts) % 2 == 1:  # Handle last part if it exists
+                    line_sentences.append(parts[-1].strip())
+                sentences.extend([s for s in line_sentences if s])
         
         chunks = []
         current_chunk = []
@@ -582,7 +746,7 @@ class DocumentProcessor:
             logger.error(f"Failed to generate embedding: {str(e)}")
             raise
     
-    def _extract_image(self, file_path: Path) -> str:
+    async def _extract_image(self, file_path: Path) -> str:
         """Extract text and generate description from image using Google Vision AI.
         
         This method:
@@ -635,7 +799,7 @@ class DocumentProcessor:
             raise
     
     def should_exclude(self, file_path: Path) -> bool:
-        """Check if a file should be excluded based on exclude patterns.
+        """Check if a file should be excluded based on exclude patterns and allowed extensions.
         
         Args:
             file_path: Path to the file to check
@@ -650,10 +814,16 @@ class DocumentProcessor:
             # If file is not under base_dir, use absolute path
             relative_path = str(file_path)
             
+        # Check if file extension is allowed (config has extensions without the dot)
+        file_ext = file_path.suffix.lstrip('.')  # Remove the dot from the extension
+        if not file_ext or file_ext.lower() not in (ext.lower() for ext in self.allowed_extensions):
+            logger.info(f"Excluding file with unsupported extension: {file_path}")
+            return True
+            
         # Check each exclude pattern
         for pattern in self.exclude_patterns:
             if fnmatch.fnmatch(relative_path, pattern):
-                logger.info(f"Excluding file {file_path} - matches pattern '{pattern}'")
+                logger.info(f"Excluding file matching pattern {pattern}: {file_path}")
                 return True
                 
         return False
@@ -665,26 +835,6 @@ class DocumentProcessor:
             '.txt', '.pdf', '.docx', '.doc', '.rtf', '.odt', '.md',
             '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.py'
         ]
-
-    async def _should_process_file(self, file_path: Path) -> bool:
-        """Check if a file should be processed based on exclude patterns.
-        
-        Args:
-            file_path: Path to the file to check
-            
-        Returns:
-            True if file should be processed, False if it should be excluded
-        """
-        # Convert path to string for pattern matching
-        file_str = str(file_path)
-        
-        # Check against exclude patterns
-        for pattern in self.exclude_patterns:
-            if fnmatch.fnmatch(file_str, pattern):
-                logger.debug(f"File {file_path} matches exclude pattern {pattern}")
-                return False
-                
-        return True
 
     async def process(self, path: Union[str, Path]) -> Dict[str, int]:
         """Process documents from a file or directory path.
@@ -730,8 +880,7 @@ class DocumentProcessor:
             logger.info(f"Processing single file: {path}")
             stats["total_files"] = 1
             try:
-                should_process = await self._should_process_file(path)
-                if should_process:
+                if not self.should_exclude(path):
                     success = await process_with_semaphore(path)
                     if success:
                         stats["processed"] += 1
@@ -754,8 +903,7 @@ class DocumentProcessor:
                 if file_path.is_file():
                     stats["total_files"] += 1
                     try:
-                        should_process = await self._should_process_file(file_path)
-                        if should_process:
+                        if not self.should_exclude(file_path):
                             # Create task for processing the document
                             task = asyncio.create_task(process_with_semaphore(file_path))
                             tasks.append(task)
@@ -780,4 +928,70 @@ class DocumentProcessor:
                     logger.info(f"Processed {i + 1}/{total_tasks} files")
         
         logger.info(f"Document processing complete. Stats: {stats}")
-        return stats 
+        return stats
+
+    def _log_progress(self, message: str, current: int, total: int, start_time: float = None):
+        """Log progress with percentage and rate information."""
+        percentage = (current / total * 100) if total > 0 else 0
+        progress_msg = f"{message}: {current}/{total} ({percentage:.1f}%)"
+        
+        if start_time is not None:
+            elapsed = time.time() - start_time
+            rate = current / elapsed if elapsed > 0 else 0
+            eta = (total - current) / rate if rate > 0 else 0
+            progress_msg += f" [Rate: {rate:.1f}/s, ETA: {eta:.1f}s]"
+        
+        logger.info(progress_msg)
+
+    def _extract_directory_metadata(self, file_path: Path) -> Dict[str, Any]:
+        """Extract metadata from the directory structure.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            Dict containing directory-based metadata:
+            - path: Full path to the file (required)
+            - file_type: File extension without dot (required)
+            - relative_path: Path relative to workspace root
+            - directory: Full directory hierarchy
+            - parent_directory: Immediate parent directory
+        """
+        try:
+            # Get absolute paths
+            abs_file_path = file_path.resolve()
+            abs_base_dir = self.base_dir.resolve()
+            
+            # Get relative path from base directory
+            try:
+                relative_path = str(abs_file_path.relative_to(abs_base_dir))
+            except ValueError:
+                # If file is not under base_dir, use absolute path
+                relative_path = str(abs_file_path)
+            
+            # Get directory hierarchy
+            directory = str(abs_file_path.parent)
+            parent_directory = abs_file_path.parent.name
+            
+            metadata = {
+                "path": str(abs_file_path),  # Required field
+                "file_type": file_path.suffix.lower()[1:] if file_path.suffix else "unknown",  # Required field
+                "relative_path": relative_path,
+                "directory": directory,
+                "parent_directory": parent_directory,
+                "filename_stem": file_path.stem
+            }
+            
+            logger.debug(f"Extracted directory metadata: {metadata}")
+            return metadata
+            
+        except Exception as e:
+            logger.error(f"Failed to extract directory metadata for {file_path}: {str(e)}")
+            # Return minimal metadata on error, but ensure required fields are present
+            return {
+                "path": str(file_path),  # Required field
+                "file_type": file_path.suffix.lower()[1:] if file_path.suffix else "unknown",  # Required field
+                "relative_path": str(file_path),
+                "directory": str(file_path.parent),
+                "parent_directory": file_path.parent.name,
+            } 

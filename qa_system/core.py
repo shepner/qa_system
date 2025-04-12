@@ -72,24 +72,36 @@ class QASystem:
         await self.initialize()  # Ensure system is initialized
         
         path_obj = Path(path)
-        if path_obj.is_file():
-            files = [path_obj]
-            logger.info(f"Adding single file: {path_obj}")
-        else:
-            # Get all files but filter out excluded ones
-            files = [f for f in path_obj.glob("**/*") 
-                    if f.is_file() and not self.qa_engine.document_store.should_exclude(f)]
-            logger.info(f"Found {len(files)} valid files in directory: {path_obj}")
-            
         stats = {
             "processed": 0, 
             "failed": 0, 
             "skipped": 0,
             "unchanged": 0,
             "excluded": 0,
-            "chunks": 0
+            "total_chunks": 0
         }
-        
+
+        if path_obj.is_file():
+            # Check exclusion before processing
+            if self.qa_engine.document_processor.should_exclude(path_obj):
+                logger.info(f"Excluding file: {path_obj}")
+                stats["excluded"] += 1
+                return stats
+            files = [path_obj]
+            logger.info(f"Adding single file: {path_obj}")
+        else:
+            # Get all files but filter out excluded ones first
+            files = []
+            for f in path_obj.glob("**/*"):
+                if not f.is_file():
+                    continue
+                if self.qa_engine.document_processor.should_exclude(f):
+                    logger.info(f"Excluding file: {f}")
+                    stats["excluded"] += 1
+                    continue
+                files.append(f)
+            logger.info(f"Found {len(files)} valid files in directory: {path_obj}")
+            
         total_files = len(files)
         
         for i, file in enumerate(files, 1):
@@ -99,13 +111,11 @@ class QASystem:
                 
                 if result["status"] == "success":
                     stats["processed"] += 1
-                    stats["chunks"] += result["chunks"]
+                    stats["total_chunks"] += result["chunks"]
                 elif result["status"] == "skipped":
                     stats["skipped"] += 1
                 elif result["status"] == "unchanged":
                     stats["unchanged"] += 1
-                elif result["status"] == "excluded":
-                    stats["excluded"] += 1
                 
             except Exception as e:
                 stats["failed"] += 1
@@ -116,14 +126,14 @@ class QASystem:
                        f"Failed: {stats['failed']}, Skipped: {stats['skipped']}, "
                        f"Excluded: {stats['excluded']}, "
                        f"Unchanged: {stats['unchanged']}, "
-                       f"Total Chunks: {stats['chunks']}")
+                       f"Total Chunks: {stats['total_chunks']}")
                 
         logger.info("Document processing complete!")
         logger.info(f"Final stats - Processed: {stats['processed']}, "
                    f"Failed: {stats['failed']}, Skipped: {stats['skipped']}, "
                    f"Excluded: {stats['excluded']}, "
                    f"Unchanged: {stats['unchanged']}, "
-                   f"Total Chunks: {stats['chunks']}")
+                   f"Total Chunks: {stats['total_chunks']}")
         return stats
     
     async def ask(self, question: str) -> Dict:

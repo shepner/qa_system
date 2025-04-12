@@ -7,6 +7,8 @@ import chromadb
 from chromadb.config import Settings
 import numpy as np
 from pathlib import Path
+import json
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -35,178 +37,261 @@ class VectorStore:
         
         logger.info(f"Initializing vector store type {self.db_type} at {self.db_path} with embedding dimension {self.embedding_dim}")
         
-    async def initialize(self):
-        """Initialize the vector store."""
+    async def initialize(self) -> None:
+        """Initialize the vector store.
+        
+        Raises:
+            ValueError: If store type is not supported
+        """
+        if self._initialized:
+            return
+            
         if self.db_type != "chroma":
             raise ValueError(f"Unsupported vector store type: {self.db_type}")
             
         try:
-            client = chromadb.PersistentClient(
-                path=self.db_path,
-                settings=Settings(
-                    anonymized_telemetry=False,
-                    allow_reset=True
-                )
-            )
+            # ChromaDB client initialization is synchronous
+            self._store = chromadb.PersistentClient(path=self.db_path)
             
-            self._store = client.get_or_create_collection(
+            # Collection creation/getting is also synchronous
+            self._collection = self._store.get_or_create_collection(
                 name=self.collection_name,
                 metadata={
-                    "distance_metric": self.distance_metric,
-                    "embedding_dim": self.embedding_dim
+                    "hnsw:space": self.distance_metric,
+                    "dimension": self.embedding_dim
                 }
             )
             
             self._initialized = True
-            logger.info("Vector store initialized successfully")
+            logger.info(f"Initialized vector store at {self.db_path}")
             
         except Exception as e:
-            logger.error(f"Failed to initialize vector store: {str(e)}")
+            logger.error(f"Failed to initialize vector store: {e}")
             raise
 
-    async def store_embeddings(self, embeddings: List[Dict], doc_metadata: Dict) -> None:
+    def _validate_metadata(self, metadata: Dict) -> Dict:
+        """Validate and transform document metadata.
+        
+        Args:
+            metadata: Document metadata to validate
+            
+        Returns:
+            Validated and transformed metadata
+        """
+        if not isinstance(metadata, dict):
+            raise ValueError("Metadata must be a dictionary")
+            
+        required_fields = ["path", "file_type"]
+        for field in required_fields:
+            if field not in metadata:
+                raise ValueError(f"Missing required metadata field: {field}")
+                
+        # Ensure path is resolved and converted to string
+        metadata["path"] = str(Path(metadata["path"]).resolve())
+        
+        # Set defaults for optional fields
+        metadata.setdefault("classification", "internal")
+        metadata.setdefault("created_at", "")
+        metadata.setdefault("last_modified", "")
+        
+        # Ensure doc_id exists for document-level identification
+        if "doc_id" not in metadata:
+            metadata["doc_id"] = str(uuid.uuid4())
+            
+        return metadata
+
+    async def store_embeddings(self, embeddings: List[List[float]], chunks: List[str], doc_id: str, metadata: Optional[Dict] = None) -> None:
         """Store document embeddings in the vector store.
         
         Args:
-            embeddings: List of embeddings with metadata. Each dict must contain:
-                - embedding: List[float] or numpy.ndarray - The embedding vector
-                - doc_id: str - Unique document identifier
-                - chunk_index: int - Index of the chunk within the document
-                - text: str - The text content for this chunk
-            doc_metadata: Document metadata containing:
-                - path: str - Path to the document
-                - file_type: str - Type of document
-                - classification: str - Document classification
-                - created_at: str - Creation timestamp
-                - last_modified: str - Last modification timestamp
-                - processing_status: str - Processing status
+            embeddings: List of embeddings to store
+            chunks: List of text chunks corresponding to embeddings
+            doc_id: Document ID to associate with embeddings
+            metadata: Optional metadata to store with embeddings
+            
+        Raises:
+            RuntimeError: If vector store is not initialized
+            ValueError: If embeddings or chunks are empty or lengths don't match
         """
         if not self._initialized:
-            raise RuntimeError("Vector store not initialized")
+            raise RuntimeError("Vector store not initialized. Call initialize() first.")
             
+        if not embeddings or not chunks:
+            raise ValueError("Embeddings and chunks cannot be empty")
+            
+        if len(embeddings) != len(chunks):
+            raise ValueError(f"Number of embeddings ({len(embeddings)}) must match number of chunks ({len(chunks)})")
+            
+        # Create chunk-level metadata
+        chunk_metadata = []
+        for i in range(len(chunks)):
+            chunk_meta = {"doc_id": doc_id, "chunk_index": i}
+            if metadata:
+                chunk_meta.update(metadata)
+            chunk_metadata.append(chunk_meta)
+            
+        # Store embeddings and chunks
         try:
-            # Validate inputs
-            if not embeddings:
-                raise ValueError("No embeddings provided")
-                
-            if not doc_metadata or not doc_metadata.get("path"):
-                raise ValueError("Invalid document metadata")
-                
-            path = str(Path(doc_metadata["path"]).resolve())
-            
-            # Validate and prepare embeddings
-            vectors = []
-            metadatas = []
-            ids = []
-            texts = []
-            
-            for e in embeddings:
-                # Get the embedding value
-                embedding = e.get("embedding")
-                if embedding is None:
-                    raise ValueError(f"Missing embedding for chunk {e.get('chunk_index')}")
-                
-                # Convert to numpy array if it's a list
-                if isinstance(embedding, list):
-                    embedding = np.array(embedding, dtype=np.float32)
-                elif not isinstance(embedding, np.ndarray):
-                    raise ValueError(f"Invalid embedding type for chunk {e.get('chunk_index')}: {type(embedding)}")
-                
-                # Validate embedding dimensions
-                if embedding.shape[0] != self.embedding_dim:
-                    raise ValueError(
-                        f"Invalid embedding dimension {embedding.shape[0]}, "
-                        f"expected {self.embedding_dim}"
-                    )
-                
-                # Required fields
-                if not all(k in e for k in ["doc_id", "chunk_index", "text"]):
-                    raise ValueError("Missing required fields in embedding metadata")
-                
-                vectors.append(embedding)
-                metadatas.append({
-                    "doc_id": e["doc_id"],
-                    "chunk_index": e["chunk_index"],
-                    "filename": path,
-                    "file_type": doc_metadata["file_type"],
-                    "classification": doc_metadata.get("classification", "internal"),
-                    "created_at": doc_metadata.get("created_at"),
-                    "last_modified": doc_metadata.get("last_modified"),
-                    "processing_status": doc_metadata.get("processing_status", "success"),
-                    "chunk_size": len(e["text"])
-                })
-                ids.append(f"{e['doc_id']}_{e['chunk_index']}")
-                texts.append(e["text"])
-            
-            # Remove any existing embeddings for this document
-            await self.remove_document(embeddings[0]["doc_id"])
-            
-            # Store new embeddings
-            self._store.add(
-                embeddings=vectors,
-                documents=texts,
-                metadatas=metadatas,
-                ids=ids
+            self._collection.add(
+                embeddings=embeddings,
+                documents=chunks,
+                metadatas=chunk_metadata,
+                ids=[f"{doc_id}_{i}" for i in range(len(chunks))]
             )
-            
-            logger.info(
-                f"Stored {len(embeddings)} embeddings for document {path} "
-                f"with status {doc_metadata.get('processing_status', 'success')}"
-            )
+            logger.debug(f"Stored {len(embeddings)} embeddings for document {doc_id}")
             
         except Exception as e:
-            logger.error(f"Failed to store embeddings: {str(e)}")
+            logger.error(f"Failed to store embeddings for document {doc_id}: {e}")
             raise
 
-    async def similarity_search(
-        self, 
-        query_embedding: List[float], 
-        k: Optional[int] = None,
-        filters: Optional[Dict] = None
-    ) -> List[Dict]:
-        """Search for similar documents using embedding.
+    async def similarity_search(self, query_embedding: List[float], k: int = 5) -> List[Dict]:
+        """Search for similar documents using query embedding.
         
         Args:
-            query_embedding: Query embedding vector
-            k: Number of results to return (defaults to config TOP_K)
-            filters: Optional metadata filters for search
+            query_embedding: Query embedding to search with
+            k: Number of results to return (default: 5)
             
         Returns:
-            List of similar documents with metadata and distance scores
+            List of dictionaries containing document chunks and metadata
+            
+        Raises:
+            RuntimeError: If vector store is not initialized
         """
         if not self._initialized:
-            raise RuntimeError("Vector store not initialized")
+            raise RuntimeError("Vector store not initialized. Call initialize() first.")
             
         try:
-            results = self._store.query(
+            results = self._collection.query(
                 query_embeddings=[query_embedding],
-                n_results=k or self.top_k,
-                where=filters,
-                include=["metadatas", "documents", "distances"]
+                n_results=k,
+                include=["documents", "metadatas", "distances"]
             )
             
-            return [{
-                "id": results["ids"][0][i],
-                "content": results["documents"][0][i],
-                "metadata": results["metadatas"][0][i],
-                "score": 1.0 - (results["distances"][0][i] / 2.0)  # Normalize to 0-1 score
-            } for i in range(len(results["ids"][0]))]
+            # Format results
+            formatted_results = []
+            for i in range(len(results["documents"][0])):
+                formatted_results.append({
+                    "text": results["documents"][0][i],
+                    "metadata": results["metadatas"][0][i],
+                    "distance": results["distances"][0][i]
+                })
+                
+            logger.debug(f"Found {len(formatted_results)} similar documents")
+            return formatted_results
             
         except Exception as e:
-            logger.error(f"Error in similarity search: {str(e)}")
-            return []
+            logger.error(f"Failed to perform similarity search: {e}")
+            raise
+
+    async def remove_document(self, doc_id: str) -> bool:
+        """Remove all chunks for a document from the vector store.
+        
+        Args:
+            doc_id: ID of document to remove
+            
+        Returns:
+            True if document was removed, False otherwise
+            
+        Raises:
+            RuntimeError: If vector store is not initialized
+        """
+        if not self._initialized:
+            raise RuntimeError("Vector store not initialized. Call initialize() first.")
+            
+        try:
+            # Find all chunks for this document
+            results = self._collection.get(
+                where={"doc_id": doc_id},
+                include=["metadatas"]
+            )
+            
+            if not results["metadatas"]:
+                logger.warning(f"No chunks found for document {doc_id}")
+                return False
+                
+            # Delete all chunks
+            self._collection.delete(
+                where={"doc_id": doc_id}
+            )
+            
+            logger.info(f"Removed {len(results['metadatas'])} chunks for document {doc_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to remove document {doc_id}: {e}")
+            raise
+
+    async def list_documents(self) -> List[Dict[str, Any]]:
+        """List all documents in the vector store.
+        
+        Returns:
+            List[Dict[str, Any]]: List of document metadata dictionaries containing:
+                - id: Document ID
+                - filename: Document filename
+                - path: Full path to document
+                - file_type: Type of document
+                - chunk_count: Number of chunks for this document
+                
+        Raises:
+            RuntimeError: If vector store is not initialized
+        """
+        if not self._initialized:
+            raise RuntimeError("Vector store not initialized. Call initialize() first.")
+            
+        try:
+            results = self._collection.get(
+                include=["metadatas"]
+            )
+            
+            # Group chunks by document ID to get document-level metadata
+            docs = {}
+            for metadata in results["metadatas"]:
+                if not metadata or "doc_id" not in metadata:
+                    continue
+                    
+                doc_id = metadata["doc_id"]
+                path = metadata.get("path", "")
+                if doc_id not in docs:
+                    docs[doc_id] = {
+                        "id": doc_id,
+                        "filename": Path(path).name if path else "",
+                        "path": path,  # Include the full path
+                        "file_type": metadata.get("file_type", "unknown"),
+                        "chunk_count": 1
+                    }
+                else:
+                    docs[doc_id]["chunk_count"] += 1
+                    
+            logger.debug(f"Found {len(docs)} unique documents")
+            return list(docs.values())
+            
+        except Exception as e:
+            logger.error(f"Failed to list documents: {e}")
+            raise
 
     async def cleanup(self) -> None:
         """Clean up resources and close connections."""
-        if self._initialized and self._store is not None:
-            try:
-                # ChromaDB PersistentClient handles persistence automatically
+        try:
+            if self._initialized and hasattr(self, '_store'):
+                # First reset the collection reference
                 self._store = None
+                
+                # Then close the client if it exists
+                if hasattr(self, '_client') and self._client is not None:
+                    try:
+                        self._client.reset()  # Reset the client state
+                    except Exception as e:
+                        logger.warning(f"Error resetting ChromaDB client: {str(e)}")
+                    self._client = None
+                
                 self._initialized = False
                 logger.info("Vector store cleanup complete")
-            except Exception as e:
-                logger.error(f"Error during cleanup: {str(e)}")
-                raise
+            else:
+                logger.debug("Vector store already cleaned up or not initialized")
+        except Exception as e:
+            logger.error(f"Error during cleanup: {str(e)}")
+            # Don't re-raise the exception to allow other cleanup to continue
+            # Just log it and continue
 
     def get_document_by_path(self, file_path: str) -> Optional[Dict]:
         """Find a document in the store by its file path.
@@ -222,46 +307,25 @@ class VectorStore:
             
         try:
             path = str(Path(file_path).resolve())
-            results = self._store.get(where={"filename": path})
+            results = self._store.get(where={"path": path})
             
             if not results["ids"]:
                 return None
                 
+            # Get the first chunk's metadata since all chunks share document metadata
+            metadata = results["metadatas"][0]
             return {
-                "id": results["ids"][0],
-                "filename": results["metadatas"][0]["filename"],
-                "file_type": results["metadatas"][0]["file_type"],
-                "classification": results["metadatas"][0].get("classification"),
-                "created_at": results["metadatas"][0].get("created_at"),
-                "last_modified": results["metadatas"][0].get("last_modified")
+                "id": metadata.get("doc_id"),  # Use doc_id instead of chunk id
+                "path": metadata.get("path"),
+                "file_type": metadata.get("file_type"),
+                "classification": metadata.get("classification", "internal"),
+                "created_at": metadata.get("created_at", ""),
+                "last_modified": metadata.get("last_modified", "")
             }
             
         except Exception as e:
             logger.error(f"Error getting document by path: {str(e)}")
             return None
-
-    async def remove_document(self, doc_id: str) -> bool:
-        """Remove a document and its chunks from the store.
-        
-        Args:
-            doc_id: Document ID to remove
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self._initialized:
-            raise RuntimeError("Vector store not initialized")
-            
-        try:
-            results = self._store.get(where={"doc_id": doc_id})
-            if results["ids"]:
-                self._store.delete(ids=results["ids"])
-                logger.info(f"Removed document {doc_id} ({len(results['ids'])} chunks)")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error removing document {doc_id}: {str(e)}")
-            return False
 
     def get_index_size(self) -> int:
         """Get the total number of embeddings in the store."""

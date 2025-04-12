@@ -241,10 +241,13 @@ class QAEngine(QAEngineInterface):
         Returns:
             Document metadata including chunks and embeddings
         """
+        if not self._initialized:
+            logger.info("QA Engine not initialized, initializing now...")
+            await self.initialize()
+
         try:
-            # Process document into chunks
-            processor = DocumentProcessor(self.config)
-            doc_metadata = await processor.process_document(file_path)
+            # Process document into chunks using existing processor instance
+            doc_metadata = await self.document_processor.process_document(file_path)
             
             # If document processor returns None (unsupported file type), return early
             if doc_metadata is None:
@@ -258,16 +261,32 @@ class QAEngine(QAEngineInterface):
             # Generate embeddings for chunks
             logger.info(f"Generating embeddings for {len(doc_metadata['chunks'])} chunks from {file_path}")
             chunks_with_embeddings = await self.embedding_generator.generate_document_embeddings(doc_metadata["chunks"])
-            doc_metadata["chunks"] = chunks_with_embeddings
+            
+            # Extract chunks and embeddings for vector store
+            chunks = [chunk["text"] for chunk in chunks_with_embeddings]
+            embeddings = [chunk["embedding"] for chunk in chunks_with_embeddings]
             
             # Store embeddings in vector store
-            logger.info(f"Storing {len(chunks_with_embeddings)} embeddings for {file_path}")
-            await self.vector_store.store_embeddings(chunks_with_embeddings, doc_metadata)
+            logger.info(f"Storing {len(chunks)} embeddings for {file_path}")
+            # Merge all necessary metadata fields
+            metadata = {
+                "document_id": doc_metadata["metadata"]["document_id"],
+                "id": doc_metadata["metadata"]["id"],
+                "path": doc_metadata["metadata"]["path"],  # Ensure path is included
+                "file_type": doc_metadata["metadata"]["file_type"],  # Include file_type as it's required
+                **doc_metadata["metadata"]  # Include any additional metadata
+            }
+            await self.vector_store.store_embeddings(
+                doc_id=doc_metadata["metadata"]["id"],
+                embeddings=embeddings,
+                chunks=chunks,
+                metadata=metadata
+            )
             
             return {
                 "status": "success",
                 "file_path": file_path,
-                "chunks": len(chunks_with_embeddings)
+                "chunks": len(chunks)
             }
             
         except Exception as e:
@@ -489,24 +508,30 @@ class QAEngine(QAEngineInterface):
             return 0
 
     async def cleanup(self) -> None:
-        """Clean up resources used by the QA Engine."""
+        """Clean up QA Engine resources."""
         logger.info("Cleaning up QA Engine resources...")
         try:
-            if self.vector_store:
+            if hasattr(self, 'vector_store') and self.vector_store is not None:
                 await self.vector_store.cleanup()
                 self.vector_store = None
+            else:
+                logger.debug("Vector store already cleaned up or not initialized")
             
-            if self.query_engine:
+            if hasattr(self, 'query_engine') and self.query_engine is not None:
                 await self.query_engine.cleanup()
                 self.query_engine = None
+            else:
+                logger.debug("Query engine already cleaned up or not initialized")
                 
-            if self.document_store:
+            if hasattr(self, 'document_store') and self.document_store is not None:
                 await self.document_store.cleanup()
                 self.document_store = None
+            else:
+                logger.debug("Document store already cleaned up or not initialized")
                 
             self._initialized = False
             logger.info("QA Engine cleanup complete")
             
         except Exception as e:
-            logger.error(f"Error during QA Engine cleanup: {str(e)}", exc_info=True)
-            raise RuntimeError(f"QA Engine cleanup failed: {str(e)}") 
+            # Log error but don't re-raise to allow other cleanup processes to continue
+            logger.error(f"Error during QA Engine cleanup: {str(e)}", exc_info=True) 

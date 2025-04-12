@@ -74,11 +74,51 @@ graph TD
   - File format detection and validation
   - Text extraction from various formats (PDF, DOCX, TXT, etc.)
   - Content chunking for optimal processing
-  - Metadata extraction
+  - Rich metadata extraction:
+    - Directory structure context (relative path, directory hierarchy)
+    - File metadata (creation time, modification time)
+    - Document relationships (links, references)
+    - Semantic tags and classifications
+  - YAML frontmatter parsing
+  - Markdown-specific processing:
+    - Hashtag extraction and normalization
+    - Link relationship mapping
+    - Document cross-reference tracking
 - **Technologies**:
   - Python with specialized libraries (PyPDF2, python-docx)
   - Apache Tika for complex file formats
   - Custom chunking algorithms
+  - YAML parser for frontmatter
+  - Regular expressions for metadata extraction
+
+#### 2.2.1.1 Document Metadata and Relationships
+- **Core Metadata**:
+  - `path`: Absolute file path
+  - `relative_path`: Path relative to workspace root
+  - `directory`: Full directory hierarchy
+  - `parent_directory`: Immediate parent directory
+  - `filename_stem`: Descriptive filename without extension
+  - `file_type`: Document format/extension
+  - `classification`: Document classification level
+  - `created_at`: Creation timestamp
+  - `last_modified`: Last modification timestamp
+  - `chunk_count`: Number of text chunks
+  - `total_tokens`: Total token count
+
+- **Markdown-Specific Metadata**:
+  - `frontmatter`: YAML metadata from document header
+  - `hashtags`: Comma-separated list of extracted tags
+  - `hashtags_list`: Original hashtag list for semantic search
+  - `links`: Comma-separated list of document links
+  - `links_list`: Original link list for relationship mapping
+  - `linked_documents`: Cross-referenced markdown documents
+
+- **Relationship Mapping**:
+  - Parent-child document relationships
+  - Cross-document references
+  - Semantic grouping via hashtags
+  - Directory-based categorization
+  - Version tracking through timestamps
 
 #### 2.2.2 Embedding Generator
 - **Purpose**: Creates vector embeddings for document chunks
@@ -137,10 +177,18 @@ graph TD
 
 #### 2.3.1 Document Ingestion Flow
 1. System monitors designated folders for new files
-2. File Processor validates and processes new files
+2. File Processor validates and processes new files:
+   - Extracts text content and YAML frontmatter
+   - Generates rich metadata including directory context
+   - Maps document relationships and cross-references
+   - Processes hashtags and links for semantic grouping
 3. Content is chunked into optimal segments
 4. Embedding Generator creates vectors for each chunk
-5. Vectors and metadata are stored in Vector Database
+5. Vectors and metadata are stored in Vector Database with:
+   - Complete document context
+   - Relationship mappings
+   - Semantic groupings
+   - Directory structure context
 
 #### 2.3.2 Query Processing Flow
 1. User submits query through interface
