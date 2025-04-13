@@ -38,6 +38,28 @@ VECTOR_STORE:
 
 QUERY_ENGINE:
   MODEL: "models/gemini-2.5-pro-preview-03-25"
+  
+  # Number of most relevant documents to retrieve for answering queries
+  # Higher values provide more comprehensive context but increase processing time
+  # Lower values are faster but might miss relevant information
+  # Should typically match VECTOR_STORE.TOP_K for consistent behavior
+  # Range: 1-100, Default: 40
+  TOP_K_RESULTS: 40
+
+  # Maximum length of query text allowed (in characters)
+  # Queries longer than this will be rejected
+  # Helps prevent resource exhaustion from extremely long queries
+  # Should be reasonable for typical questions while preventing abuse
+  # Range: 100-5000, Default: 1000
+  MAX_QUERY_LENGTH: 1000
+
+  # Maximum number of tokens in the generated response
+  # Controls the length of answers the model can generate
+  # For Gemini Pro: maximum is 8192 tokens
+  # Higher values allow longer, more detailed responses
+  # Lower values produce more concise answers
+  # Range: 100-8192, Default: 2048
+  MAX_OUTPUT_TOKENS: 2048
 
   # Controls the randomness/creativity of the response
   # Lower values (0.0-0.3) are more focused and deterministic
@@ -184,20 +206,19 @@ EMBEDDING_MODEL:
   # - 768: Good balance of quality and resource usage
   DIMENSIONS: 768
   
-  # Gemini API Rate Limiting Configuration
-  # Based on Free Tier limits from https://ai.google.dev/gemini-api/docs/rate-limits#free-tier
+  # Rate limiting configuration for API calls
+  # These limits are enforced by the Gemini API
   RATE_LIMITS:
-    MAX_REQUESTS_PER_MINUTE: 60     # text-embedding-004 Free Tier RPM limit
-    #MAX_REQUESTS_PER_DAY: 1000      # text-embedding-004 Free Tier RPD limit
-    MAX_REQUESTS_PER_DAY: 5000      # I dont think they are limiting?
-    MAX_CONCURRENT_REQUESTS: 10     # Increased for better throughput while staying safe
-    BACKOFF_FACTOR: 1.2            # Gentler backoff for faster recovery
-    MAX_RETRIES: 3                 # Reduced retries to fail faster if persistent issues
-    INITIAL_RETRY_DELAY: 1         # Start with minimal delay
-    MAX_RETRY_DELAY: 10           # Shorter max delay for faster recovery
-    QUOTA_THRESHOLD: 0.95         # Use more of available quota before throttling
-    COOLDOWN_PERIOD: 20          # Shorter cooldown for faster recovery
-    QUOTA_TRACKING_FILE: ".quota_usage.json"  # Track quota usage across runs
+    # Time window in seconds for rate limiting
+    # Default: 60 (one minute window)
+    RATE_LIMIT_WINDOW: 60
+
+    # Maximum number of requests allowed per window
+    # For Gemini Free Tier:
+    # - 60 requests per minute
+    # - 1000 requests per day
+    # Default: 60 (matches RPM limit)
+    MAX_REQUESTS_PER_WINDOW: 60
 
 # Application Settings
 APP:
