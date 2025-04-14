@@ -9,12 +9,15 @@ from datetime import datetime, timedelta
 import magic
 import re
 import os
+from .config import Configuration
 
 
 class DocumentProcessor:
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Configuration):
         """Initialize document processor with configuration."""
-        self.config = config["DOCUMENT_PROCESSING"]
+        self.config = config.get_nested("DOCUMENT_PROCESSING")
+        if self.config is None:
+            raise ValueError("DOCUMENT_PROCESSING configuration section is required")
         self.mime = magic.Magic(mime=True)
 
     def is_valid_file(self, file_path: Path) -> bool:

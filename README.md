@@ -18,10 +18,49 @@ A system that uses Google Gemini to provide intelligent responses to questions a
 
 ## Requirements
 
+### System Requirements
 - Python 3.9+
 - 16GB RAM minimum
-- SSD storage
+- SSD storage recommended
 - Google Cloud account with Gemini API access
+- libmagic (for file type detection)
+
+### System Dependencies Installation
+
+#### libmagic Installation
+- macOS: `brew install libmagic`
+- Ubuntu/Debian: `sudo apt-get install libmagic1`
+- CentOS/RHEL: `sudo yum install file-devel`
+
+### Python Dependencies
+The following Python packages are required:
+- python-dotenv (1.1.0+) - Environment variable management
+- PyYAML (6.0.2+) - YAML configuration parsing
+- numpy (2.2.0+) - Numerical computations
+- chromadb (1.0.4+) - Vector database
+- python-magic (0.4.27+) - File type detection
+- fastapi (0.110.0+) - API endpoints and web interface
+- pydantic (2.6.4+) - Data validation
+- pytest (8.1.1+) - Testing framework
+- langchain (0.1.12+) - LLM integration
+- google-cloud-vision (3.7.1+) - Image processing
+- google-cloud-core (2.4.1+) - Google Cloud integration
+- httpx (0.27.0+) - HTTP client
+- duckdb (0.10.0+) - Database operations
+- typing-extensions (4.10.0+) - Type hinting support
+
+### Installation
+1. Clone the repository
+2. Install system dependencies (see above)
+3. Create and activate a virtual environment:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+4. Install Python dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ## Setup
 

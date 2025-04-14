@@ -312,7 +312,7 @@ EMBEDDING_MODEL:
     LOG_LEVEL: "INFO"
 
 QUERY_ENGINE:
-  SYSTEM_PROMPT: ${PROMPTS}
+  SYSTEM_PROMPT: "./config/prompts.yaml"
 
   MODEL: "models/gemini-2.5-pro-preview-03-25"
   
@@ -378,9 +378,11 @@ QUERY_ENGINE:
 # Logging Configuration
 LOGGING:
   LEVEL: "INFO"
-  FORMAT: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  DATE_FORMAT: "%Y-%m-%d %H:%M:%S"
+  FORMAT: "%(asctime)s - %(name)s - %(levelname)s - [%(process)d:%(threadName)s] - %(filename)s:%(lineno)d - %(message)s"
+  DATE_FORMAT: "%Y-%m-%d %H:%M:%S.%f"
   LOG_FILE: "logs/qa_system.log"
+  ERROR_LOG_FILE: "logs/qa_system.error.log"  # Separate file for errors
+  ACCESS_LOG_FILE: "logs/qa_system.access.log"  # For API access logs
   ENABLE_DEBUG: false
 
 # Application Settings

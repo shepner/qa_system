@@ -109,8 +109,7 @@ class Configuration:
         required_env_vars = [
             'GOOGLE_CLOUD_PROJECT',
             'GOOGLE_APPLICATION_CREDENTIALS',
-            'GOOGLE_VISION_API_KEY',
-            'PROMPTS'  # For system prompts
+            'GOOGLE_VISION_API_KEY'
         ]
         return [var for var in required_env_vars if not os.getenv(var)]
 
