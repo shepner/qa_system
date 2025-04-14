@@ -10,15 +10,25 @@ SECURITY:
 
 # Vector Database Configuration
 VECTOR_STORE:
-  TYPE: "chroma"  # Using ChromaDB as the vector store implementation
+  # Vector store implementation to use
+  # Options:
+  #   "chroma" - ChromaDB for development and small-medium datasets
+  #   "milvus" - For production and large-scale deployments
+  #   "pgvector" - PostgreSQL with vector extension
+  TYPE: "chroma"
+
+  # Directory where vector store data will be persisted
   PERSIST_DIRECTORY: "./data/vector_store"
+
+  # Name of the collection in the vector store
+  # Multiple collections can be used to separate different types of documents
   COLLECTION_NAME: "qa_documents"
-  # Distance metric used to calculate similarity between queries and documents
+
+  # Distance metric used to calculate similarity between vectors
   # Options:
   #   "cosine" - Measures cosine similarity between vectors (most common)
   #   "euclidean" - Measures straight-line distance between vectors
   #   "dot" - Measures dot product between vectors
-  # Cosine similarity is preferred as it's less sensitive to document length
   # Default: "cosine"
   DISTANCE_METRIC: "cosine"
 
@@ -26,15 +36,280 @@ VECTOR_STORE:
   # This is the first-pass retrieval before applying relevance scoring
   # Higher values cast a wider net but increase processing time
   # Lower values are faster but might miss relevant documents
-  # Range: 1-100, Default: 10
+  # Range: 1-100, Default: 40
   TOP_K: 40
 
-  # Maximum number of tokens (words/characters) allowed in the generated response
-  # Higher values allow for longer, more detailed responses but may take longer to generate
-  # Range: 1-4096, Default: 2048
-  MAX_TOKENS: 2048
+  # Embedding-specific configurations
+  EMBEDDINGS:
+    # Dimension of the embedding vectors
+    # Must match the output dimension of the embedding model
+    # For Gemini text-embedding-004: 768 or 1024
+    DIMENSION: 768
 
-  EMBEDDING_DIM: 768  # This is the maximum dimension for Gemini's embedding model
+    # Similarity threshold for deduplication
+    # Vectors with similarity above this threshold are considered duplicates
+    # Range: 0.0-1.0, Default: 0.95
+    DEDUP_THRESHOLD: 0.95
+
+    # Whether to normalize vectors before storage
+    # Recommended true for cosine similarity
+    # Default: true
+    NORMALIZE_VECTORS: true
+
+  # Storage optimization settings
+  STORAGE:
+    # Whether to use memory mapping for faster access
+    # Recommended true for production deployments
+    # Default: true
+    USE_MMAP: true
+
+    # Maximum cache size in MB for vector store
+    # Higher values improve performance but use more memory
+    # Range: 100-10000, Default: 1024 (1GB)
+    MAX_CACHE_SIZE: 1024
+
+    # Number of segments to maintain
+    # More segments = faster updates but slower queries
+    # Range: 1-10, Default: 5
+    MAX_SEGMENTS: 5
+
+  # Performance tuning
+  PERFORMANCE:
+    # Number of threads for similarity search
+    # Set to 0 to use all available CPU cores
+    # Range: 0-32, Default: 0
+    SEARCH_THREADS: 0
+
+    # Batch size for vector operations
+    # Higher values are more efficient but use more memory
+    # Range: 10-1000, Default: 100
+    BATCH_SIZE: 100
+
+  # Monitoring and logging
+  MONITORING:
+    # Whether to track vector store metrics
+    # Includes index size, query latency, etc.
+    # Default: true
+    ENABLE_METRICS: true
+
+    # How often to log vector store statistics (in seconds)
+    # Range: 60-3600, Default: 300 (5 minutes)
+    STATS_INTERVAL: 300
+
+# Document Processing
+DOCUMENT_PROCESSING:
+  # Default path for documents to be processed and indexed
+  DOCUMENT_PATH: "./docs"
+
+  # List of allowed file extensions for document processing
+  # Only files with these extensions will be processed
+  # Extensions should be specified without the dot
+  ALLOWED_EXTENSIONS:
+    - "txt"
+    - "md"
+    - "rst"
+    - "pdf"
+    - "doc"
+    - "docx"
+    - "rtf"
+    - "html"
+    - "htm"
+    - "png"
+    - "jpg"
+    - "jpeg"
+    - "gif"
+    - "webp"
+    - "bmp"
+    - "csv"
+
+  # Patterns to exclude from processing
+  # Uses glob pattern matching
+  # Order matters - first match wins
+  EXCLUDE_PATTERNS:
+    - "**/.*/**"  # Hidden files and directories
+    - "**/Excalidraw/**"
+    - "**/smart-chats/**"
+    - "**/stylesheets/**"
+    - "**/tags/**"
+
+  # Patterns to explicitly include
+  # Takes precedence over EXCLUDE_PATTERNS
+  # Useful for overriding specific exclusions
+  INCLUDE_PATTERNS:
+    - "**/README.md"  # Always include README files
+    - "**/ARCHITECTURE.md"
+    - "**/docs/*.md"
+
+  # Maximum size of each text chunk when splitting documents
+  # Documents are split into smaller chunks for better processing and retrieval
+  # Larger chunks retain more context but may be less precise
+  # Smaller chunks are more precise but may lose context
+  # Range: 100-2000, Default: 1000 characters
+  MAX_CHUNK_SIZE: 1500
+
+  # Number of characters to overlap between consecutive chunks
+  # Helps maintain context across chunk boundaries
+  # Example: With size 1000 and overlap 200:
+  #   Chunk 1: [0-1000], Chunk 2: [800-1800], etc.
+  # Higher values ensure better context but increase storage needs
+  # Recommended: 10-20% of MAX_CHUNK_SIZE
+  # Range: 0-500, Default: 200 characters
+  CHUNK_OVERLAP: 300
+
+  # Number of parallel processing tasks for document indexing
+  # Higher values speed up processing but use more system resources
+  # Should be set based on available CPU cores
+  # For 4-core CPU: 4 is optimal
+  # For 8-core CPU: 6-8 is optimal
+  # Range: 1-16, Default: 4
+  CONCURRENT_TASKS: 6
+
+  # Number of documents to process in each batch
+  # Affects memory usage and processing efficiency
+  # Larger batches are more efficient but use more memory
+  # Smaller batches use less memory but take longer
+  # Range: 1-100, Default: 10
+  BATCH_SIZE: 50
+
+  # Document update handling
+  UPDATE_HANDLING:
+    # How to handle modified documents
+    # Options: "skip", "reprocess", "compare_hash"
+    MODIFIED_DOCS: "compare_hash"
+    # Whether to remove embeddings for deleted documents
+    REMOVE_DELETED: true
+    # Hash algorithm for detecting changes
+    # Options: "md5", "sha256"
+    HASH_ALGORITHM: "sha256"
+
+# Embedding Model Configuration
+EMBEDDING_MODEL:
+  # Type of embedding model to use
+  # Options:
+  #   "openai" - OpenAI's text-embedding-ada-002 model
+  #   "huggingface" - HuggingFace models
+  #   "local" - Local models
+  #   "gemini" - Google's Gemini embedding model
+  TYPE: "gemini"
+  
+  # Model name for Gemini embeddings
+  # Using text-embedding-004 model
+  # Capabilities:
+  #   - High quality embeddings for text similarity
+  #   - Supports multiple languages
+  #   - Optimized for semantic search
+  # Rate limits (Free Tier):
+  #   - 60 requests per minute (RPM)
+  #   - 1000 requests per day (RPD)
+  # Source: https://ai.google.dev/gemini-api/docs/rate-limits#free-tier
+  MODEL_NAME: "models/text-embedding-004"
+  
+  # Batch size for processing multiple texts at once
+  # Higher values are more efficient but use more memory
+  # Can be higher now due to increased rate limits
+  # Recommended: 10-15 for optimal throughput while staying within rate limits
+  # Range: 1-20, Default: 10
+  BATCH_SIZE: 15
+  
+  # Maximum length of text to embed (in tokens)
+  # Texts longer than this will be truncated
+  # For text-embedding-004: max 3072 tokens
+  # Note: Actual character count varies by text content
+  MAX_LENGTH: 3072
+  
+  # Output embedding dimensions
+  # text-embedding-004 supports flexible dimensions:
+  # Options: 768, 1024
+  # Choose based on your needs:
+  # - 1024: Higher quality but more storage/compute intensive
+  # - 768: Good balance of quality and resource usage
+  # Must match VECTOR_STORE.EMBEDDINGS.DIMENSION
+  DIMENSIONS: 768
+
+  # Text preprocessing options
+  PREPROCESSING:
+    # Whether to strip HTML tags from text
+    # Default: true
+    STRIP_HTML: true
+    
+    # Whether to normalize whitespace
+    # Converts multiple spaces/newlines to single space
+    # Default: true
+    NORMALIZE_WHITESPACE: true
+    
+    # Maximum number of consecutive newlines to allow
+    # Default: 2
+    MAX_NEWLINES: 2
+    
+    # Whether to lowercase all text
+    # Can improve consistency but may lose semantic meaning in some cases
+    # Default: false
+    LOWERCASE: false
+
+  # Rate limiting configuration for API calls
+  # These limits are enforced by the Gemini API
+  RATE_LIMITS:
+    # Time window in seconds for rate limiting
+    # Default: 60 (one minute window)
+    RATE_LIMIT_WINDOW: 60
+
+    # Maximum number of requests allowed per window
+    # For Gemini Free Tier:
+    # - 60 requests per minute
+    # - 1000 requests per day
+    # Default: 60 (matches RPM limit)
+    MAX_REQUESTS_PER_WINDOW: 60
+
+    # Daily request limit
+    # For Gemini Free Tier: 1000 requests per day
+    # Default: 1000
+    MAX_REQUESTS_PER_DAY: 1000
+
+    # Whether to enable request throttling
+    # When true, requests are automatically delayed to stay within limits
+    # When false, exceeding limits will raise an error
+    # Default: true
+    ENABLE_THROTTLING: true
+
+  # Error handling and retry configuration
+  ERROR_HANDLING:
+    # Maximum number of retries for failed requests
+    # Range: 0-5, Default: 3
+    MAX_RETRIES: 3
+
+    # Base delay between retries (in seconds)
+    # Will be exponentially increased with each retry
+    # Range: 1-60, Default: 2
+    RETRY_BASE_DELAY: 2
+
+    # Maximum delay between retries (in seconds)
+    # Range: 5-300, Default: 60
+    RETRY_MAX_DELAY: 60
+
+    # Which HTTP status codes should trigger a retry
+    # Default: [429, 500, 502, 503, 504]
+    RETRY_STATUS_CODES:
+      - 429  # Too Many Requests
+      - 500  # Internal Server Error
+      - 502  # Bad Gateway
+      - 503  # Service Unavailable
+      - 504  # Gateway Timeout
+
+  # Monitoring and logging
+  MONITORING:
+    # Whether to track embedding metrics
+    # Includes embedding time, token usage, etc.
+    # Default: true
+    ENABLE_METRICS: true
+
+    # Whether to log embedding operations
+    # Default: true
+    ENABLE_LOGGING: true
+
+    # Log level for embedding operations
+    # Options: "DEBUG", "INFO", "WARNING", "ERROR"
+    # Default: "INFO"
+    LOG_LEVEL: "INFO"
 
 QUERY_ENGINE:
   MODEL: "models/gemini-2.5-pro-preview-03-25"
@@ -98,69 +373,6 @@ QUERY_ENGINE:
   # Default: false
   ENABLE_QUERY_EXPANSION: true  # Enable query expansion for better search results
 
-# Document Processing
-DOCUMENT_PROCESSING:
-  # Default path for documents to be processed and indexed
-  DOCUMENT_PATH: "./docs"
-
-  # List of allowed file extensions for document processing
-  # Only files with these extensions will be processed
-  # Extensions should be specified without the dot
-  ALLOWED_EXTENSIONS:
-    - "txt"
-    - "md"
-    - "rst"
-    - "pdf"
-    - "doc"
-    - "docx"
-    - "rtf"
-    - "html"
-    - "htm"
-    - "png"
-    - "jpg"
-    - "jpeg"
-    - "gif"
-    - "webp"
-    - "bmp"
-    - "csv"
-
-  # Maximum size of each text chunk when splitting documents
-  # Documents are split into smaller chunks for better processing and retrieval
-  # Larger chunks retain more context but may be less precise
-  # Smaller chunks are more precise but may lose context
-  # Range: 100-2000, Default: 1000 characters
-  MAX_CHUNK_SIZE: 1500
-
-  # Number of characters to overlap between consecutive chunks
-  # Helps maintain context across chunk boundaries
-  # Example: With size 1000 and overlap 200:
-  #   Chunk 1: [0-1000], Chunk 2: [800-1800], etc.
-  # Higher values ensure better context but increase storage needs
-  # Recommended: 10-20% of MAX_CHUNK_SIZE
-  # Range: 0-500, Default: 200 characters
-  CHUNK_OVERLAP: 300
-
-  # Number of parallel processing tasks for document indexing
-  # Higher values speed up processing but use more system resources
-  # Should be set based on available CPU cores
-  # For 4-core CPU: 4 is optimal
-  # For 8-core CPU: 6-8 is optimal
-  # Range: 1-16, Default: 4
-  CONCURRENT_TASKS: 6
-
-  # Number of documents to process in each batch
-  # Affects memory usage and processing efficiency
-  # Larger batches are more efficient but use more memory
-  # Smaller batches use less memory but take longer
-  # Range: 1-100, Default: 10
-  BATCH_SIZE: 50
-  EXCLUDE_PATTERNS:
-    - "**/.*/**"  # Hidden files and directories
-    - "**/Excalidraw/**"
-    - "**/smart-chats/**"
-    - "**/stylesheets/**"
-    - "**/tags/**"
-
 # Logging Configuration
 LOGGING:
   LEVEL: "INFO"
@@ -168,57 +380,6 @@ LOGGING:
   DATE_FORMAT: "%Y-%m-%d %H:%M:%S"
   LOG_FILE: "logs/qa_system.log"
   ENABLE_DEBUG: false
-
-# Embedding Model Configuration
-EMBEDDING_MODEL:
-  # Type of embedding model to use
-  # Options:
-  #   "openai" - OpenAI's text-embedding-ada-002 model
-  #   "huggingface" - HuggingFace models
-  #   "local" - Local models
-  #   "gemini" - Google's Gemini embedding model
-  TYPE: "gemini"
-  
-  # Model name for Gemini embeddings
-  # Using text-embedding-004 model
-  # Rate limits (Free Tier):
-  #   - 60 requests per minute (RPM)
-  #   - 1000 requests per day (RPD)
-  # Source: https://ai.google.dev/gemini-api/docs/rate-limits#free-tier
-  MODEL_NAME: "models/text-embedding-004"
-  
-  # Batch size for processing multiple texts at once
-  # Higher values are more efficient but use more memory
-  # Can be higher now due to increased rate limits
-  # Range: 1-20, Default: 10
-  BATCH_SIZE: 15
-  
-  # Maximum length of text to embed (in tokens)
-  # Texts longer than this will be truncated
-  # For text-embedding-004: max 3072 tokens
-  MAX_LENGTH: 3072
-  
-  # Output embedding dimensions
-  # text-embedding-004 supports flexible dimensions:
-  # Options: 768, 1024
-  # Choose based on your needs:
-  # - 1024: Higher quality but more storage/compute intensive
-  # - 768: Good balance of quality and resource usage
-  DIMENSIONS: 768
-  
-  # Rate limiting configuration for API calls
-  # These limits are enforced by the Gemini API
-  RATE_LIMITS:
-    # Time window in seconds for rate limiting
-    # Default: 60 (one minute window)
-    RATE_LIMIT_WINDOW: 60
-
-    # Maximum number of requests allowed per window
-    # For Gemini Free Tier:
-    # - 60 requests per minute
-    # - 1000 requests per day
-    # Default: 60 (matches RPM limit)
-    MAX_REQUESTS_PER_WINDOW: 60
 
 # Application Settings
 APP:
