@@ -53,6 +53,7 @@ The Local File Question-Answering System is designed to function as an advanced 
 ## 2. System Architecture
 
 ### 2.1 High-Level Components
+
 ```mermaid
 graph TD
     A[Local Files] --> B[File Processor]
@@ -69,6 +70,7 @@ graph TD
 ### 2.2 Component Details
 
 #### 2.2.1 File Processor
+
 - **Purpose**: Handles ingestion and preprocessing of local files
 - **Key Functions**:
   - File format detection and validation
@@ -92,6 +94,7 @@ graph TD
   - Regular expressions for metadata extraction
 
 #### 2.2.1.1 Document Metadata and Relationships
+
 - **Core Metadata**:
   - `path`: Absolute file path
   - `relative_path`: Path relative to workspace root
@@ -121,6 +124,7 @@ graph TD
   - Version tracking through timestamps
 
 #### 2.2.2 Embedding Generator
+
 - **Purpose**: Creates vector embeddings for document chunks
 - **Key Functions**:
   - Text normalization
@@ -133,6 +137,7 @@ graph TD
   - Batch processing queue
 
 #### 2.2.3 Vector Database
+
 - **Purpose**: Stores and indexes document embeddings
 - **Key Functions**:
   - Efficient vector storage and retrieval
@@ -145,6 +150,7 @@ graph TD
   - Redis for caching
 
 #### 2.2.4 Query Processor
+
 - **Purpose**: Handles user queries with advanced reasoning capabilities
 - **Key Functions**:
   - Query expansion for semantic understanding
@@ -159,6 +165,7 @@ graph TD
   - Semantic similarity analysis
 
 #### 2.2.5 Gemini LLM Integration
+
 - **Purpose**: Provides intelligent, well-reasoned responses with clear analytical thinking
 - **Key Functions**:
   - Structured thinking process
@@ -176,6 +183,7 @@ graph TD
 ### 2.3 Data Flow
 
 #### 2.3.1 Document Ingestion Flow
+
 1. System monitors designated folders for new files
 2. File Processor validates and processes new files:
    - Extracts text content and YAML frontmatter
@@ -205,6 +213,7 @@ graph TD
 ## 3. Technical Specifications
 
 ### 3.1 System Requirements
+
 - **Hardware**:
   - Minimum 16GB RAM
   - Multi-core processor
@@ -216,6 +225,7 @@ graph TD
   - Google Cloud SDK
 
 ### 3.2 API Specifications
+
 ```python
 # Core API Interfaces
 
@@ -240,6 +250,7 @@ class VectorStore:
 ```
 
 ### 3.3 Security Considerations
+
 - File access permissions
 - API key management
 - Data encryption at rest
@@ -250,6 +261,7 @@ class VectorStore:
 ## 4. Implementation Strategy
 
 ### 4.1 Phase 1: Core Infrastructure
+
 - Set up development environment
 - Implement basic file processing
 - Integrate embedding generation
@@ -257,6 +269,7 @@ class VectorStore:
 - Basic query processing
 
 ### 4.2 Phase 2: Gemini Integration
+
 - Implement Gemini Pro Experimental API integration
 - Develop advanced prompt engineering for structured thinking
 - Add multi-step reasoning capabilities
@@ -265,6 +278,7 @@ class VectorStore:
 - Implement confidence scoring with explanations
 
 ### 4.3 Phase 3: Optimization
+
 - Add batch processing
 - Implement caching
 - Optimize vector search
@@ -272,6 +286,7 @@ class VectorStore:
 - Performance tuning
 
 ### 4.4 Phase 4: UI and Features
+
 - Develop user interface
 - Add advanced features
 - Implement feedback loop
@@ -280,6 +295,7 @@ class VectorStore:
 ## 5. Monitoring and Maintenance
 
 ### 5.1 Key Metrics
+
 - Query response time
 - Embedding generation time
 - Vector search performance
@@ -288,6 +304,7 @@ class VectorStore:
 - Error rates
 
 ### 5.2 Logging Strategy
+
 - Application logs
 - Error tracking
 - Performance metrics
@@ -297,12 +314,14 @@ class VectorStore:
 ## 6. Future Considerations
 
 ### 6.1 Scalability
+
 - Distributed processing
 - Cluster deployment
 - Horizontal scaling
 - Load balancing
 
 ### 6.2 Feature Roadmap
+
 - Enhanced reasoning capabilities
 - Multi-perspective query understanding
 - Structured thinking templates
@@ -316,11 +335,13 @@ class VectorStore:
 ## 7. Dependencies
 
 ### 7.1 External Services
+
 - Google Gemini API
 - Google Cloud Platform
 - Vector database service
 
 ### 7.2 Libraries and Frameworks
+
 - langchain for LLM orchestration
 - chromadb/milvus for vector storage
 - FastAPI for API development
@@ -332,6 +353,7 @@ class VectorStore:
 ### 8.1 Interface Options
 
 #### 8.1.1 Command Line Interface (CLI)
+
 ```bash
 # Show help message
 qa_system
@@ -376,6 +398,7 @@ qa_system config.yaml --remove doc_id
      - `cleanup`: Automatically remove excluded files from the vector DB
 
 #### 8.1.2 Slack Interface
+
 - Interactive Slack bot integration using Slack's Bolt framework
 - Features:
   - Direct file uploads in Slack channels or DMs
@@ -387,6 +410,7 @@ qa_system config.yaml --remove doc_id
   - Channel-specific document collections
 
 #### 8.1.3 Python API
+
 ```python
 from qa_system import QASystem
 
@@ -409,6 +433,7 @@ qa.remove_document(doc_id)
 ### 8.2 Usage Examples
 
 #### 8.2.1 CLI Usage
+
 ```bash
 # receive help menu
 $ qa_system
@@ -446,6 +471,7 @@ $ qa_system ./config/config.yaml --status
 ```
 
 #### 8.2.2 Slack Interface Workflow
+
 1. **Document Management**
    - Upload files directly in Slack channels or DMs
    - Use `/qa_system list` to view indexed documents
@@ -465,6 +491,7 @@ $ qa_system ./config/config.yaml --status
 ### 8.3 Integration Options
 
 #### 8.3.1 Slack Event API
+
 ```http
 # Event Subscriptions
 POST /api/v1/slack/events
@@ -493,6 +520,7 @@ Content-Type: application/json
 ```
 
 #### 8.3.2 Real-time Messaging
+
 - Event-driven updates for document processing
 - Asynchronous response handling for long queries
 - Interactive message components
@@ -501,12 +529,14 @@ Content-Type: application/json
 ### 8.4 Security and Access Control
 
 #### 8.4.1 Authentication
+
 - Slack OAuth 2.0 authentication
 - Channel-based access control
 - Workspace member verification
 - Admin-only commands
 
 #### 8.4.2 Usage Limits
+
 - Rate limiting per channel/user
 - File size restrictions aligned with Slack limits
 - Concurrent request management

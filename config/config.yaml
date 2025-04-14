@@ -3,7 +3,7 @@
 # Security & API Configuration
 # Note: These values are loaded from environment variables
 SECURITY:
-  API_KEY: ${API_KEY}  # Loaded from .env
+  GOOGLE_VISION_API_KEY: ${GOOGLE_VISION_API_KEY}  # Loaded from .env
   GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}  # Loaded from .env
   GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}  # Loaded from .env
   AUTH_REQUIRED: true
@@ -312,6 +312,8 @@ EMBEDDING_MODEL:
     LOG_LEVEL: "INFO"
 
 QUERY_ENGINE:
+  SYSTEM_PROMPT: ${PROMPTS}
+
   MODEL: "models/gemini-2.5-pro-preview-03-25"
   
   # Number of most relevant documents to retrieve for answering queries
