@@ -217,42 +217,22 @@ vector_store_config = config.get_nested('VECTOR_STORE')
 
 ### 4.1 Phase 1: Core Infrastructure
 - Set up development environment
-- Implement basic file processing
-- Integrate embedding generation
+- Implement shell script that will setup and run the application
+- Implement main
+  - Integrate logging
+- Implement basic file scanner
+  - Integrate logging
+- Implement basic document processors for each filetype
+  - Integrate logging
+- Implement basic embedding generation
+  - Integrate logging
 - Set up vector database
 
-### 4.2 Phase 2: Optimization
+### 4.2 Phase 2: Feature expansion
+- Implement more advanced features not implemented in Phase 1
+
+### 4.3 Phase 3: Optimization
 - Add batch processing
 - Implement caching
 - Optimize storage
-- Add monitoring and logging
 - Performance tuning
-
-## 5. Dependencies
-
-### 5.1 External Services
-- Google Gemini API
-
-### 5.2 Libraries and Frameworks
-- chromadb for vector storage
-- pydantic for data validation
-- pytest for testing
-
-## 6. Command Line Interface
-
-```bash
-# Show help message
-embed_files --help
-
-# Process files and generate embeddings
-embed_files /path/to/files/* --batch-size 10
-
-# List processed files
-embed_files --list
-
-# Remove files from vector DB
-embed_files --remove /path/to/file
-
-# Show processing status
-embed_files --status
-``` 
