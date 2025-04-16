@@ -1,102 +1,19 @@
-# QA System Configuration
+# embed_files System Configuration
+
+# Logging Configuration
+LOGGING:
+  LEVEL: INFO
+  LOG_FILE: "logs/embed_files.log"
 
 # Security & API Configuration
 # Note: These values are loaded from environment variables
 SECURITY:
-  GOOGLE_VISION_API_KEY: ${GOOGLE_VISION_API_KEY}  # Loaded from .env
-  GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}  # Loaded from .env
   GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}  # Loaded from .env
-
-# Vector Database Configuration
-VECTOR_STORE:
-  # Vector store implementation to use
-  # Options:
-  #   "chroma" - ChromaDB for development and small-medium datasets
-  #   "milvus" - For production and large-scale deployments
-  #   "pgvector" - PostgreSQL with vector extension
-  TYPE: "chroma"
-
-  # Directory where vector store data will be persisted
-  PERSIST_DIRECTORY: "./data/vector_store"
-
-  # Name of the collection in the vector store
-  # Multiple collections can be used to separate different types of documents
-  COLLECTION_NAME: "qa_documents"
-
-  # Distance metric used to calculate similarity between vectors
-  # Options:
-  #   "cosine" - Measures cosine similarity between vectors (most common)
-  #   "euclidean" - Measures straight-line distance between vectors
-  #   "dot" - Measures dot product between vectors
-  # Default: "cosine"
-  DISTANCE_METRIC: "cosine"
-
-  # Number of most similar documents to retrieve initially
-  # This is the first-pass retrieval before applying relevance scoring
-  # Higher values cast a wider net but increase processing time
-  # Lower values are faster but might miss relevant documents
-  # Range: 1-100, Default: 40
-  TOP_K: 40
-
-  # Embedding-specific configurations
-  EMBEDDINGS:
-    # Dimension of the embedding vectors
-    # Must match the output dimension of the embedding model
-    # For Gemini text-embedding-004: 768 or 1024
-    DIMENSION: 768
-
-    # Similarity threshold for deduplication
-    # Vectors with similarity above this threshold are considered duplicates
-    # Range: 0.0-1.0, Default: 0.95
-    DEDUP_THRESHOLD: 0.95
-
-    # Whether to normalize vectors before storage
-    # Recommended true for cosine similarity
-    # Default: true
-    NORMALIZE_VECTORS: true
-
-  # Storage optimization settings
-  STORAGE:
-    # Whether to use memory mapping for faster access
-    # Recommended true for production deployments
-    # Default: true
-    USE_MMAP: true
-
-    # Maximum cache size in MB for vector store
-    # Higher values improve performance but use more memory
-    # Range: 100-10000, Default: 1024 (1GB)
-    MAX_CACHE_SIZE: 1024
-
-    # Number of segments to maintain
-    # More segments = faster updates but slower queries
-    # Range: 1-10, Default: 5
-    MAX_SEGMENTS: 5
-
-  # Performance tuning
-  PERFORMANCE:
-    # Number of threads for similarity search
-    # Set to 0 to use all available CPU cores
-    # Range: 0-32, Default: 0
-    SEARCH_THREADS: 0
-
-    # Batch size for vector operations
-    # Higher values are more efficient but use more memory
-    # Range: 10-1000, Default: 100
-    BATCH_SIZE: 100
-
-  # Monitoring and logging
-  MONITORING:
-    # Whether to track vector store metrics
-    # Includes index size, query latency, etc.
-    # Default: true
-    ENABLE_METRICS: true
-
-    # How often to log vector store statistics (in seconds)
-    # Range: 60-3600, Default: 300 (5 minutes)
-    STATS_INTERVAL: 300
+  GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}  # Loaded from .env
+  GOOGLE_VISION_API_KEY: ${GOOGLE_VISION_API_KEY}  # Loaded from .env
 
 # Document Processing
-DOCUMENT_PROCESSING:
+FILE_SCANNER:
   # Default path for documents to be processed and indexed
   DOCUMENT_PATH: "./docs"
 
@@ -122,23 +39,20 @@ DOCUMENT_PROCESSING:
     - "csv"
 
   # Patterns to exclude from processing
-  # Uses glob pattern matching
-  # Order matters - first match wins
   EXCLUDE_PATTERNS:
-    - "**/.*/**"  # Hidden files and directories
-    - "**/Excalidraw/**"
-    - "**/smart-chats/**"
-    - "**/stylesheets/**"
-    - "**/tags/**"
+    - "!README.md"
+    - "!ARCHITECTURE.md"
+    - "!docs/*.md"
+    - ".*"  # Hidden files and directories
+    - "Excalidraw/"
+    - "smart-chats/"
+    - "stylesheets/"
+    - "tags/"
 
-  # Patterns to explicitly include
-  # Takes precedence over EXCLUDE_PATTERNS
-  # Useful for overriding specific exclusions
-  INCLUDE_PATTERNS:
-    - "**/README.md"  # Always include README files
-    - "**/ARCHITECTURE.md"
-    - "**/docs/*.md"
+  HASH_ALGORITHM: "sha256"
 
+# Document Processing
+DOCUMENT_PROCESSING:
   # Maximum size of each text chunk when splitting documents
   # Documents are split into smaller chunks for better processing and retrieval
   # Larger chunks retain more context but may be less precise
@@ -170,27 +84,8 @@ DOCUMENT_PROCESSING:
   # Range: 1-100, Default: 10
   BATCH_SIZE: 50
 
-  # Document update handling
-  UPDATE_HANDLING:
-    # How to handle modified documents
-    # Options: "skip", "reprocess", "compare_hash"
-    MODIFIED_DOCS: "compare_hash"
-    # Whether to remove embeddings for deleted documents
-    REMOVE_DELETED: true
-    # Hash algorithm for detecting changes
-    # Options: "md5", "sha256"
-    HASH_ALGORITHM: "sha256"
-
 # Embedding Model Configuration
 EMBEDDING_MODEL:
-  # Type of embedding model to use
-  # Options:
-  #   "openai" - OpenAI's text-embedding-ada-002 model
-  #   "huggingface" - HuggingFace models
-  #   "local" - Local models
-  #   "gemini" - Google's Gemini embedding model
-  TYPE: "gemini"
-  
   # Model name for Gemini embeddings
   # Using text-embedding-004 model
   # Capabilities:
@@ -225,92 +120,33 @@ EMBEDDING_MODEL:
   # Must match VECTOR_STORE.EMBEDDINGS.DIMENSION
   DIMENSIONS: 768
 
-  # Text preprocessing options
-  PREPROCESSING:
-    # Whether to strip HTML tags from text
-    # Default: true
-    STRIP_HTML: true
-    
-    # Whether to normalize whitespace
-    # Converts multiple spaces/newlines to single space
-    # Default: true
-    NORMALIZE_WHITESPACE: true
-    
-    # Maximum number of consecutive newlines to allow
-    # Default: 2
-    MAX_NEWLINES: 2
-    
-    # Whether to lowercase all text
-    # Can improve consistency but may lose semantic meaning in some cases
-    # Default: false
-    LOWERCASE: false
+# Vector Database Configuration
+VECTOR_STORE:
+  # Vector store implementation to use
+  # Options:
+  #   "chroma" - ChromaDB for development and small-medium datasets
+  #   "milvus" - For production and large-scale deployments
+  #   "pgvector" - PostgreSQL with vector extension
+  TYPE: "chroma"
 
-  # Rate limiting configuration for API calls
-  # These limits are enforced by the Gemini API
-  RATE_LIMITS:
-    # Time window in seconds for rate limiting
-    # Default: 60 (one minute window)
-    RATE_LIMIT_WINDOW: 60
+  # Directory where vector store data will be persisted
+  PERSIST_DIRECTORY: "./data/vector_store"
 
-    # Maximum number of requests allowed per window
-    # For Gemini Free Tier:
-    # - 60 requests per minute
-    # - 1000 requests per day
-    # Default: 60 (matches RPM limit)
-    MAX_REQUESTS_PER_WINDOW: 60
+  # Name of the collection in the vector store
+  # Multiple collections can be used to separate different types of documents
+  COLLECTION_NAME: "qa_documents"
 
-    # Daily request limit
-    # For Gemini Free Tier: 1000 requests per day
-    # Default: 1000
-    MAX_REQUESTS_PER_DAY: 1000
+  # Distance metric used to calculate similarity between vectors
+  # Options:
+  #   "cosine" - Measures cosine similarity between vectors (most common)
+  #   "euclidean" - Measures straight-line distance between vectors
+  #   "dot" - Measures dot product between vectors
+  # Default: "cosine"
+  DISTANCE_METRIC: "cosine"
 
-    # Whether to enable request throttling
-    # When true, requests are automatically delayed to stay within limits
-    # When false, exceeding limits will raise an error
-    # Default: true
-    ENABLE_THROTTLING: true
-
-  # Error handling and retry configuration
-  ERROR_HANDLING:
-    # Maximum number of retries for failed requests
-    # Range: 0-5, Default: 3
-    MAX_RETRIES: 3
-
-    # Base delay between retries (in seconds)
-    # Will be exponentially increased with each retry
-    # Range: 1-60, Default: 2
-    RETRY_BASE_DELAY: 2
-
-    # Maximum delay between retries (in seconds)
-    # Range: 5-300, Default: 60
-    RETRY_MAX_DELAY: 60
-
-    # Which HTTP status codes should trigger a retry
-    # Default: [429, 500, 502, 503, 504]
-    RETRY_STATUS_CODES:
-      - 429  # Too Many Requests
-      - 500  # Internal Server Error
-      - 502  # Bad Gateway
-      - 503  # Service Unavailable
-      - 504  # Gateway Timeout
-
-  # Monitoring and logging
-  MONITORING:
-    # Whether to track embedding metrics
-    # Includes embedding time, token usage, etc.
-    # Default: true
-    ENABLE_METRICS: true
-
-    # Whether to log embedding operations
-    # Default: true
-    ENABLE_LOGGING: true
-
-    # Log level for embedding operations
-    # Options: "DEBUG", "INFO", "WARNING", "ERROR"
-    # Default: "INFO"
-    LOG_LEVEL: "INFO"
-
-# Logging Configuration
-LOGGING:
-  LEVEL: INFO
-  LOG_FILE: "logs/embed_files.log"
+  # Number of most similar documents to retrieve initially
+  # This is the first-pass retrieval before applying relevance scoring
+  # Higher values cast a wider net but increase processing time
+  # Lower values are faster but might miss relevant documents
+  # Range: 1-100, Default: 40
+  TOP_K: 40

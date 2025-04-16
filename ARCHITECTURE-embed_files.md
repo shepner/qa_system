@@ -29,7 +29,8 @@ last_updated: 2024-03-20
    - [Data Flow](#23-data-flow)
 3. [Technical Specifications](#3-technical-specifications)
    - [System Requirements](#31-system-requirements)
-   - [API Specifications](#32-api-specifications)
+   - [Configuration and Main Modules](#32-configuration-and-main-modules)
+   - [API Specifications](#33-api-specifications)
 4. [Implementation Strategy](#4-implementation-strategy)
 5. [Dependencies](#5-dependencies)
 6. [Command Line Interface](#6-command-line-interface)
@@ -52,32 +53,49 @@ The File Embedding System is designed to process local files and generate vector
 
 ```mermaid
 graph TD
-    A[Local Files] --> B[File Processor]
-    B --> C[Embedding Generator]
-    C --> D[Vector Database]
+    A[Local Files] --> B[File Scanner]
+    B --> C[Document processors]
+    C --> D[Embedding Generator]
+    D --> E[Vector Database]
 ```
 
 ### 2.2 Component Details
 
-#### 2.2.1 File Processor
+#### 2.2.1 File Scanner
 
-- **Purpose**: Handles ingestion and preprocessing of local files
+- **Purpose**: Handles discovery of local files and selection of appropriate Document Processor
 - **Key Functions**:
-  - File format detection and validation (ie ascii based file types vs PDFs vs images, etc)
-  - Text extraction from various formats (PDF, DOCX, TXT, MD, CSV, YAML, etc.)
+  - Exclusion and inclusion of identified files anddirectories using gitignore notation
+  - Generation of SHA256 hash of file for comparison and for the Document Processors
+  - Exclusion of existing files that have already been processed
+  - File format detection, for example
+    - ASCII based file types
+      - TXT
+      - MD
+      - CSV
+    - Binary based file types vs PDFs vs images, etc)
+      - PDF
+      - Image files
+  - Selection of appropriate Document Processor (ie use the Markdown Document Processor for MD files)
+- **Technologies**:
+  - Python
+
+#### 2.2.2 Document Processors
+
+- **Purpose**: Handles ingestion and preprocessing of local files of specific filetypes
+- **Key Functions**:
+  - Text extraction and normalization from the designated filetype
   - Content chunking for optimal processing
   - Metadata extraction:
-    - Directory structure context
-    - File metadata (creation time, modification time, filename)
-    - Document relationships (ie hashtags, internal links, topics, etc)
+    - File metadata (creation time, modification time, filename, path, etc)
+    - Document filetype specific information and relationships (ie hashtags, internal links, topics, etc)
 - **Technologies**:
-  - Python with specialized libraries (PyPDF2, python-docx)
+  - Python
   - Custom chunking algorithms
-  - YAML parser for frontmatter
 
 #### 2.2.1.1 Document Metadata
 
-- **Core Metadata**:
+- **File Metadata**:
   - `path`: Absolute file path
   - `relative_path`: Path relative to workspace root
   - `directory`: Full directory hierarchy
@@ -94,12 +112,12 @@ graph TD
 
 - **Purpose**: Creates vector embeddings for document chunks
 - **Key Functions**:
-  - Text normalization
-  - Embedding generation using Google's embedding models
+  - Embedding generation using Google's embedding models and Vision API
   - Batch processing for efficiency
   - Embedding validation and error handling
 - **Technologies**:
-  - Google's Embedding API
+  - Google Vision API for images
+  - Google's Embedding API for all other files
   - NumPy for vector operations
   - Batch processing queue
 
@@ -117,45 +135,83 @@ graph TD
 
 #### 2.3.1 Document Processing Flow
 
-1. System receives file paths to process
+1. System receives configuration path and the file paths to process
+2. File Scanner
   - includes files that are explicitly identified
   - skips files identified as to be excluded
   - skips files that have already been processed
-2. File Processor validates and processes files:
-   - Extracts text content
-   - Generates metadata
-   - Chunks content for optimal processing
-3. Embedding Generator creates vectors for each chunk
-4. Vectors and metadata are stored in Vector Database
+3. Document Processors
+  - validates and processes files
+  - Extracts text content
+  - Generates metadata
+  - Chunks content for optimal processing
+4. Embedding Generator creates vectors for each chunk
+5. Vectors and metadata are stored in Vector Database
 
 ## 3. Technical Specifications
 
 ### 3.1 System Requirements
 
 - **Hardware**:
-  - Minimum 16GB RAM
+  - Minimum 32GB RAM
   - Multi-core processor
   - SSD storage for vector database
 - **Software**:
-  - Python 3.12+
+  - Python 3.13+
   - Vector database system
   - Google Cloud SDK
+  - Google Vision API
 
-### 3.2 API Specifications
+### 3.2 Configuration and Main Modules
 
-```python
-# Core API Interfaces
+#### 3.2.1 Main Module (__main__.py)
 
-class DocumentProcessor:
-    async def process_document(self, file_path: str) -> DocumentMetadata:
-        """Process a document and generate embeddings."""
-        pass
+- **Purpose**: Command-line interface and entry point
+- **Input Arguments**:
+  - `--add`: Directory path to process documents from
+  - `--config`: Path to configuration file (default: './config/config.yaml')
+  - `--debug`: Flag to enable debug logging
+- **Output**:
+  - Exit code 0: Successful execution
+  - Exit code 1: Error occurred
+  - Console output for progress and errors
+  - Log file entries
+- **Usage**:
+```bash
+# Process documents with default config
+python -m embed_files --add /path/to/docs
 
-class VectorStore:
-    async def store_embeddings(self, embeddings: List[Vector], metadata: DocumentMetadata):
-        """Store document embeddings and metadata."""
-        pass
+# Use custom config and enable debug
+python -m embed_files --add /path/to/docs --config custom_config.yaml --debug
 ```
+
+#### 3.2.2 Configuration Module (config.py)
+
+- **Purpose**: Manages system configuration loading and access
+- **Input**:
+  - Configuration file path (optional, defaults to './config/config.yaml')
+  - Environment variables with 'QA_' prefix
+- **Output**: Config object with sections:
+  - `LOGGING`: Logging settings
+  - `SECURITY`: Security-related settings
+  - `DOCUMENT_PROCESSING`: Document processing settings
+  - `EMBEDDING_MODEL`: Model configuration
+  
+  - `VECTOR_STORE`: Vector database configuration
+- **Usage**:
+```python
+from embed_files.config import get_config
+
+# Load with default config path
+config = get_config()
+
+# Load with specific config path
+config = get_config("./my_config.yaml")
+
+# Access configuration sections
+vector_store_config = config.get_nested('VECTOR_STORE')
+```
+
 
 ## 4. Implementation Strategy
 
