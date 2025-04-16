@@ -11,12 +11,12 @@ import re
 import os
 import logging
 import asyncio
-from .config import Configuration
+from .config import Config
 from .embeddings import EmbeddingModel
 
 
 class DocumentProcessor:
-    def __init__(self, config: Configuration):
+    def __init__(self, config: Config):
         """Initialize document processor with configuration."""
         self.config = config.get_nested("DOCUMENT_PROCESSING")
         if self.config is None:

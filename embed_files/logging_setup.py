@@ -1,79 +1,61 @@
 """
 Logging setup module for the QA System.
 
-This module provides centralized logging configuration based on the settings
-defined in config.yaml. It sets up file handlers for general logging,
-error logging, and access logging with thread safety and proper error handling.
+This module provides centralized logging configuration with support for
+file and console output, log rotation, and debug level control.
 """
 
 import logging
 from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional
-from embed_files.config import Configuration
+from typing import Optional
 
-def validate_logging_config(config: Dict[str, Any]) -> None:
-    """Validate logging configuration."""
-    required_fields = ['LEVEL', 'LOG_FILE']
-    for field in required_fields:
-        if field not in config:
-            raise ValueError(f"Missing required logging configuration field: {field}")
-
-def create_log_directory(path: str) -> None:
-    """
-    Safely create log directory if it doesn't exist.
+def setup_logging(
+    log_file: str,
+    log_level: str = "INFO",
+    enable_debug: bool = False,
+    max_bytes: int = 10485760,  # 10MB
+    backup_count: int = 5
+) -> None:
+    """Set up logging configuration with both file and console output.
     
     Args:
-        path: Path to the log file
-        
-    Raises:
-        OSError: If directory creation fails
-    """
-    try:
-        log_dir = Path(path).parent
-        log_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        raise OSError(f"Failed to create log directory {log_dir}: {e}")
-
-def create_handler(filename: str, max_bytes: int = 10485760, backup_count: int = 5) -> RotatingFileHandler:
-    """Create a rotating file handler with the specified parameters.
-    
-    Args:
-        filename: Path to the log file
+        log_file: Path to the log file
+        log_level: Logging level (default: INFO)
+        enable_debug: Whether to enable debug logging (default: False)
         max_bytes: Maximum size of each log file in bytes (default: 10MB)
         backup_count: Number of backup files to keep (default: 5)
     """
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
-    handler = RotatingFileHandler(
-        filename,
+    # Create logs directory if it doesn't exist
+    log_path = Path(log_file)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Create handlers
+    file_handler = RotatingFileHandler(
+        log_file,
         maxBytes=max_bytes,
         backupCount=backup_count
     )
-    return handler
-
-def setup_logging(config: Dict[str, Any]) -> None:
-    """Set up logging configuration."""
-    validate_logging_config(config)
+    console_handler = logging.StreamHandler()
     
-    log_level = config['LEVEL']
-    log_file = config['LOG_FILE']
-    enable_debug = config.get('ENABLE_DEBUG', False)
-    
-    # Create logs directory if it doesn't exist
-    os.makedirs(os.path.dirname(log_file), exist_ok=True)
-    
-    # Configure logging
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler()
-        ]
+    # Set format for both handlers
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
     
-    # Set debug level if enabled
-    if enable_debug:
-        logging.getLogger().setLevel(logging.DEBUG)
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.handlers = []  # Remove any existing handlers
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    
+    # Set log level
+    level = logging.DEBUG if enable_debug else getattr(logging, log_level.upper())
+    root_logger.setLevel(level)
+    
+    # Log initial setup
+    logging.info(f"Logging initialized: level={level}, file={log_file}")
