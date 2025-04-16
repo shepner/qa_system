@@ -69,3 +69,4 @@ Thumbs.db
 
 # ignore all files in the docs directory
 docs/*
+backups/*

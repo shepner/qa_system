@@ -11,6 +11,9 @@ print_step() {
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+# Where to find the config file
+CONFIG_FILE="$SCRIPT_DIR/config/embed_files_config.yaml"
+
 # Check if python3 is installed
 if ! command -v python3 &> /dev/null; then
     echo "Error: python3 is not installed"
@@ -35,10 +38,14 @@ python3 -m pip install -q --upgrade pip
 print_step "Installing/upgrading dependencies..."
 pip install -q -r requirements.txt
 
+# Create logs directory if it doesn't exist
+print_step "Ensuring logs directory exists..."
+mkdir -p logs
+
 # Run the program
 print_step "Starting the program..."
 cd "$SCRIPT_DIR"
-PYTHONPATH="$SCRIPT_DIR" python3 -m qa_system "$@"
+PYTHONPATH="$SCRIPT_DIR" python3 -m embed_files --config "$CONFIG_FILE" "$@"
 
 # Deactivate virtual environment
 deactivate 
