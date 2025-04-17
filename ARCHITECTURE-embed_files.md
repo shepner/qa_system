@@ -108,18 +108,201 @@ graph TD
   - `total_tokens`: Total token count
   - `checksum`: SHA256 hash of the file
 
+#### 2.2.1.2 Vision Document Processor (vision_processor.py)
+- **Purpose**: Processes image files using Google Cloud Vision API to extract visual information and prepare it for embedding generation
+
+- **Input**:
+  - Image files in supported formats (PNG, JPEG, GIF, BMP, WEBP)
+  - Configuration settings from config.DOCUMENT_PROCESSING.VISION_PROCESSOR:
+    - API version and credentials
+    - Enabled feature types
+    - Batch processing parameters
+    - Performance settings
+
+- **Output**:
+  - Structured image analysis results including:
+    - OCR text extraction
+    - Object detection and localization
+    - Label detection and classification
+    - Face detection results
+    - Safe search annotations
+    - Image properties (color, quality, etc.)
+  - Processed metadata:
+    - Image dimensions and format
+    - Processing timestamp
+    - Feature detection confidence scores
+    - Error states and warnings
+
+- **Key Functions**:
+  - `process_image`: Main entry point for image processing
+    - Validates image format and size
+    - Prepares API requests
+    - Handles response parsing
+  - `extract_text`: OCR processing for text in images
+    - Full text extraction
+    - Text block localization
+    - Language detection
+  - `detect_objects`: Object detection and analysis
+    - Object classification
+    - Bounding box coordinates
+    - Confidence scores
+  - `analyze_faces`: Face detection and analysis
+    - Facial feature detection
+    - Emotion classification
+    - Pose estimation
+  - `get_labels`: Image classification and labeling
+    - General image labels
+    - Topical categorization
+    - Web entity matching
+  - `check_safe_search`: Content safety analysis
+    - Adult content detection
+    - Violence detection
+    - Medical content detection
+  - `extract_properties`: Image property analysis
+    - Dominant colors
+    - Image quality metrics
+    - Metadata extraction
+
+- **Integration Points**:
+  - Input: Receives image files from Document Loader
+  - Output: Sends processed results to Embedding Generator
+  - External: Interfaces with Google Cloud Vision API
+  - Logging: Uses logging_setup.py for operation tracking
+
+- **Configuration Example**:
+```yaml
+DOCUMENT_PROCESSING:
+  VISION_PROCESSOR:
+    ENABLED: true
+    API_VERSION: "v1"
+    FEATURES:
+      - LABEL_DETECTION
+      - TEXT_DETECTION
+      - OBJECT_LOCALIZATION
+      - FACE_DETECTION
+      - SAFE_SEARCH_DETECTION
+    MAX_RESULTS: 50
+    BATCH_SIZE: 16
+    CONCURRENT_REQUESTS: 4
+    RETRY_ATTEMPTS: 3
+    RETRY_DELAY: 1.0
+```
+
+- **Usage Example**:
+```python
+from embed_files.vision_processor import VisionDocumentProcessor
+from embed_files.config import get_config
+
+# Initialize processor
+config = get_config()
+processor = VisionDocumentProcessor(config)
+
+# Process single image
+image_path = "path/to/image.jpg"
+results = processor.process_image(image_path)
+
+# Batch process multiple images
+image_paths = ["image1.jpg", "image2.png", "image3.webp"]
+batch_results = processor.process_batch(image_paths)
+
+# Extract specific features
+text_content = processor.extract_text(image_path)
+objects = processor.detect_objects(image_path)
+labels = processor.get_labels(image_path)
+```
+
 #### 2.2.2 Embedding Generator
 
-- **Purpose**: Creates vector embeddings for document chunks
+- **Purpose**: Generates vector embeddings for document chunks and processed image data using Google's models
+- **Input**:
+  - Document chunks and metadata from Document Processors
+  - Processed image data and analysis results from Vision Document Processor
+  - Configuration settings (from config.EMBEDDING_MODEL):
+    - `MODEL_NAME`: Name of Gemini model to use
+    - `BATCH_SIZE`: Number of chunks to process in each batch
+    - `MAX_LENGTH`: Maximum text length per chunk
+    - `DIMENSIONS`: Output embedding dimensions
+- **Output**:
+  - Vector embeddings for each chunk
+  - Image embeddings incorporating both visual and textual features
+  - Updated metadata including:
+    - `embedding_model`: Model used for generation
+    - `embedding_timestamp`: When embeddings were generated
+    - `embedding_dimensions`: Size of generated vectors
+    - `chunk_embeddings`: List of generated embeddings
+    - `embedding_status`: Success/failure status per chunk
+
 - **Key Functions**:
-  - Embedding generation using Google's embedding models and Vision API
-  - Batch processing for efficiency
-  - Embedding validation and error handling
-- **Technologies**:
-  - Google Vision API for images
-  - Google's Embedding API for all other files
-  - NumPy for vector operations
-  - Batch processing queue
+  - `generate_embeddings`: Main entry point for embedding generation
+    - Handles batching of chunks
+    - Manages concurrent processing
+    - Implements retry logic
+  - `generate_image_embeddings`: Specialized handling for processed image data
+    - Takes pre-processed image data and Vision API analysis results
+    - Generates multimodal embeddings combining visual and textual features
+  - `validate_embeddings`: Ensures generated embeddings meet requirements
+    - Checks dimensions
+    - Validates vector values
+    - Verifies completeness
+  - `prepare_for_vector_store`: Formats embeddings and metadata for storage
+    - Structures data for vector store requirements
+    - Adds necessary indexing information
+    - Prepares batch operations
+
+- **Integration Points**:
+  - Receives processed chunks from Document Processors
+  - Receives processed image data from Vision Document Processor
+  - Uses logging_setup.py for operation tracking:
+    - INFO: Batch processing progress
+    - DEBUG: Individual chunk processing details
+    - ERROR: Generation or validation failures
+  - Outputs directly to Vector Store component
+
+- **Usage**:
+```python
+from embed_files.embedding_system import EmbeddingGenerator
+from embed_files.config import get_config
+from embed_files.logging_setup import setup_logging
+
+# Initialize with configuration
+config = get_config()
+setup_logging(
+    log_file=config.get_nested('LOGGING.LOG_FILE'),
+    log_level=config.get_nested('LOGGING.LEVEL', "INFO"),
+    enable_debug=config.get_nested('LOGGING.DEBUG', False)
+)
+
+# Create generator instance
+generator = EmbeddingGenerator(config)
+
+# Process chunks from a document
+document_chunks = processor.get_chunks()
+embeddings = generator.generate_embeddings(
+    chunks=document_chunks,
+    metadata=document_metadata
+)
+
+# Process image data
+image_embeddings = generator.generate_image_embeddings(
+    processed_image_data=vision_processor_output,
+    metadata=image_metadata
+)
+
+# Store in vector database
+vector_store.add_embeddings(embeddings)
+```
+
+Configuration Example (config.yaml):
+```yaml
+EMBEDDING_MODEL:
+  MODEL_NAME: "models/text-embedding-004"
+  BATCH_SIZE: 50
+  MAX_LENGTH: 2048
+  DIMENSIONS: 768
+  RETRY_ATTEMPTS: 3
+  RETRY_DELAY: 1.0
+  CONCURRENT_TASKS: 4
+```
 
 #### 2.2.3 Vector Database
 
@@ -384,9 +567,23 @@ FILE_SCANNER:
    - Row-based chunking with header preservation
    - Basic metadata extraction
    
-5. **Image Processor** (`image_processor.py`):
-   - Support for multiple formats (jpg, jpeg, png, gif, bmp, webp)
-   - Basic metadata extraction
+5. **Vision Document Processor** (`vision_processor.py`):
+   - Support for multiple image formats (jpg, jpeg, png, gif, bmp, webp)
+   - Integration with Google Vision API for image analysis
+   - Extracts and processes:
+     - Labels and objects detected in the image
+     - Text content through OCR
+     - Face detection (if enabled)
+     - Safe search annotations
+   - Generates image metadata including:
+     - Image dimensions and format
+     - Color profile information
+     - Vision API analysis results
+   - Passes both the processed image data and Vision API results to the Embedding Generator
+   - Technologies:
+     - Google Cloud Vision API
+     - Pillow/PIL for image handling
+     - Python async for concurrent API calls
 
 ##### 3.2.5.3 Interface Specification
 
@@ -472,10 +669,90 @@ processed_metadata = processor.process("/path/to/document.pdf", metadata)
 - Language detection and handling
 
 #### 3.2.6 Embedding Generator (embedding_system.py)
-- **Purpose**:
+- **Purpose**: Generates vector embeddings for document chunks and images using Google's models
 - **Input**:
+  - Document chunks and metadata from Document Processors
+  - Raw image data and Vision API analysis from Vision Document Processor
+  - Configuration settings (from config.EMBEDDING_MODEL):
+    - `MODEL_NAME`: Name of Gemini model to use
+    - `BATCH_SIZE`: Number of chunks to process in each batch
+    - `MAX_LENGTH`: Maximum text length per chunk
+    - `DIMENSIONS`: Output embedding dimensions
 - **Output**:
+  - Vector embeddings for each chunk
+  - Image embeddings incorporating both visual and textual features
+  - Updated metadata including:
+    - `embedding_model`: Model used for generation
+    - `embedding_timestamp`: When embeddings were generated
+    - `embedding_dimensions`: Size of generated vectors
+    - `chunk_embeddings`: List of generated embeddings
+    - `embedding_status`: Success/failure status per chunk
+
+- **Key Functions**:
+  - `generate_embeddings`: Main entry point for embedding generation
+    - Handles batching of chunks
+    - Manages concurrent processing
+    - Implements retry logic
+  - `generate_image_embeddings`: Specialized handling for image data
+    - Processes raw image data
+    - Incorporates Vision API analysis results
+    - Generates multimodal embeddings
+  - `validate_embeddings`: Ensures generated embeddings meet requirements
+    - Checks dimensions
+    - Validates vector values
+    - Verifies completeness
+  - `prepare_for_vector_store`: Formats embeddings and metadata for storage
+    - Structures data for vector store requirements
+    - Adds necessary indexing information
+    - Prepares batch operations
+
+- **Integration Points**:
+  - Receives processed chunks from Document Processors
+  - Uses logging_setup.py for operation tracking:
+    - INFO: Batch processing progress
+    - DEBUG: Individual chunk processing details
+    - ERROR: Generation or validation failures
+  - Outputs directly to Vector Store component
+
 - **Usage**:
+```python
+from embed_files.embedding_system import EmbeddingGenerator
+from embed_files.config import get_config
+from embed_files.logging_setup import setup_logging
+
+# Initialize with configuration
+config = get_config()
+setup_logging(
+    log_file=config.get_nested('LOGGING.LOG_FILE'),
+    log_level=config.get_nested('LOGGING.LEVEL', "INFO"),
+    enable_debug=config.get_nested('LOGGING.DEBUG', False)
+)
+
+# Create generator instance
+generator = EmbeddingGenerator(config)
+
+# Process chunks from a document
+document_chunks = processor.get_chunks()
+embeddings = generator.generate_embeddings(
+    chunks=document_chunks,
+    metadata=document_metadata
+)
+
+# Store in vector database
+vector_store.add_embeddings(embeddings)
+```
+
+Configuration Example (config.yaml):
+```yaml
+EMBEDDING_MODEL:
+  MODEL_NAME: "models/embedding-001"
+  BATCH_SIZE: 50
+  MAX_LENGTH: 2048
+  DIMENSIONS: 768
+  RETRY_ATTEMPTS: 3
+  RETRY_DELAY: 1.0
+  CONCURRENT_TASKS: 4
+```
 
 #### 3.2.6 Vector DB (vector_system.py)
 - **Purpose**:
