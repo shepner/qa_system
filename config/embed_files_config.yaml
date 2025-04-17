@@ -62,6 +62,7 @@ DOCUMENT_PROCESSING:
   # Must be greater than MIN_CHUNK_SIZE (100) to ensure valid chunking
   # Range: 150-3072, Default: 3072 characters
   MAX_CHUNK_SIZE: 3072
+  MIN_CHUNK_SIZE: 100      # Minimum chunk size to prevent tiny chunks
 
   # Number of characters to overlap between consecutive chunks
   # Helps maintain context across chunk boundaries
@@ -90,7 +91,6 @@ DOCUMENT_PROCESSING:
   # Sentence preservation settings
   # Controls how text is chunked to maintain sentence integrity
   PRESERVE_SENTENCES: true  # Ensure chunks don't break sentences
-  MIN_CHUNK_SIZE: 100      # Minimum chunk size to prevent tiny chunks
 
   # Header pattern recognition settings for PDF processing
   # Controls how headers are identified and processed in PDFs
