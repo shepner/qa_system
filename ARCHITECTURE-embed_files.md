@@ -218,10 +218,10 @@ labels = processor.get_labels(image_path)
   - Document chunks and metadata from Document Processors
   - Processed image data and analysis results from Vision Document Processor
   - Configuration settings (from config.EMBEDDING_MODEL):
-    - `MODEL_NAME`: Name of Gemini model to use
+    - `MODEL_NAME`: Name of Gemini model to use (text-embedding-004)
     - `BATCH_SIZE`: Number of chunks to process in each batch
-    - `MAX_LENGTH`: Maximum text length per chunk
-    - `DIMENSIONS`: Output embedding dimensions
+    - `MAX_LENGTH`: Maximum text length per chunk (3072 tokens)
+    - `DIMENSIONS`: Output embedding dimensions (768 or 1024)
 - **Output**:
   - Vector embeddings for each chunk
   - Image embeddings incorporating both visual and textual features
@@ -296,12 +296,9 @@ Configuration Example (config.yaml):
 ```yaml
 EMBEDDING_MODEL:
   MODEL_NAME: "models/text-embedding-004"
-  BATCH_SIZE: 50
-  MAX_LENGTH: 2048
+  BATCH_SIZE: 15
+  MAX_LENGTH: 3072
   DIMENSIONS: 768
-  RETRY_ATTEMPTS: 3
-  RETRY_DELAY: 1.0
-  CONCURRENT_TASKS: 4
 ```
 
 #### 2.2.3 Vector Database
@@ -674,10 +671,10 @@ processed_metadata = processor.process("/path/to/document.pdf", metadata)
   - Document chunks and metadata from Document Processors
   - Raw image data and Vision API analysis from Vision Document Processor
   - Configuration settings (from config.EMBEDDING_MODEL):
-    - `MODEL_NAME`: Name of Gemini model to use
+    - `MODEL_NAME`: Name of Gemini model to use (text-embedding-004)
     - `BATCH_SIZE`: Number of chunks to process in each batch
-    - `MAX_LENGTH`: Maximum text length per chunk
-    - `DIMENSIONS`: Output embedding dimensions
+    - `MAX_LENGTH`: Maximum text length per chunk (3072 tokens)
+    - `DIMENSIONS`: Output embedding dimensions (768 or 1024)
 - **Output**:
   - Vector embeddings for each chunk
   - Image embeddings incorporating both visual and textual features
@@ -745,13 +742,10 @@ vector_store.add_embeddings(embeddings)
 Configuration Example (config.yaml):
 ```yaml
 EMBEDDING_MODEL:
-  MODEL_NAME: "models/embedding-001"
-  BATCH_SIZE: 50
-  MAX_LENGTH: 2048
+  MODEL_NAME: "models/text-embedding-004"
+  BATCH_SIZE: 15
+  MAX_LENGTH: 3072
   DIMENSIONS: 768
-  RETRY_ATTEMPTS: 3
-  RETRY_DELAY: 1.0
-  CONCURRENT_TASKS: 4
 ```
 
 #### 3.2.6 Vector DB (vector_system.py)
