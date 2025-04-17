@@ -55,10 +55,13 @@ FILE_SCANNER:
 DOCUMENT_PROCESSING:
   # Maximum size of each text chunk when splitting documents
   # Documents are split into smaller chunks for better processing and retrieval
-  # Larger chunks retain more context but may be less precise
-  # Smaller chunks are more precise but may lose context
-  # Range: 100-2000, Default: 1000 characters
-  MAX_CHUNK_SIZE: 1500
+  # This value is set to match EMBEDDING_MODEL.MAX_LENGTH (3072 tokens)
+  # because chunks larger than MAX_LENGTH would get truncated during embedding
+  # Note: Since this is in characters and MAX_LENGTH is in tokens,
+  # we use the same value as a conservative estimate (1 token ≈ 1 character)
+  # Must be greater than MIN_CHUNK_SIZE (100) to ensure valid chunking
+  # Range: 150-3072, Default: 3072 characters
+  MAX_CHUNK_SIZE: 3072
 
   # Number of characters to overlap between consecutive chunks
   # Helps maintain context across chunk boundaries
@@ -99,6 +102,29 @@ DOCUMENT_PROCESSING:
       - '^[\\d\\.]+\\s.*$'  # Numbered sections (e.g., "1.2 Section Title")
       - '^Chapter\\s+\\d+'  # Chapter headings
     MAX_HEADER_LENGTH: 100  # Maximum length for a header line
+
+  # Vision API Configuration
+  # Settings for processing images using Google Cloud Vision API
+  # For more information, see: https://cloud.google.com/vision/docs
+  VISION_API:
+    # Enable/disable Vision API processing for images
+    ENABLED: true
+    # List of Vision API features to enable
+    # Available features:
+    #   - LABEL_DETECTION: Detect and extract labels
+    #   - TEXT_DETECTION: Extract text (OCR)
+    #   - OBJECT_LOCALIZATION: Detect and locate objects
+    #   - FACE_DETECTION: Detect and analyze faces
+    FEATURES:
+      - LABEL_DETECTION
+      - TEXT_DETECTION
+      - OBJECT_LOCALIZATION
+      - FACE_DETECTION
+    # Maximum number of results to return per feature
+    # Higher values provide more comprehensive analysis
+    # but increase API usage and cost
+    # Range: 1-100, Default: 50
+    MAX_RESULTS: 50
 
 # Embedding Model Configuration
 EMBEDDING_MODEL:
