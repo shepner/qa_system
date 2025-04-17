@@ -1,16 +1,39 @@
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Any, Tuple
+from typing import Dict, List, Optional, Set, Any, Tuple, Type
 import hashlib
 import logging
 import fnmatch
 from embed_files.config import get_config
+from embed_files.document_processors import (
+    BaseDocumentProcessor,
+    TextDocumentProcessor,
+    MarkdownDocumentProcessor,
+    CSVDocumentProcessor,
+    PDFDocumentProcessor,
+    ImageDocumentProcessor
+)
 
 logger = logging.getLogger(__name__)
 
 class FileScanner:
     """Scanner for discovering and processing files."""
+
+    # Default mapping of file extensions to processor classes
+    DEFAULT_PROCESSOR_MAP = {
+        'txt': TextDocumentProcessor,
+        'md': MarkdownDocumentProcessor,
+        'csv': CSVDocumentProcessor,
+        'pdf': PDFDocumentProcessor,
+        # Image formats
+        'jpg': ImageDocumentProcessor,
+        'jpeg': ImageDocumentProcessor,
+        'png': ImageDocumentProcessor,
+        'gif': ImageDocumentProcessor,
+        'bmp': ImageDocumentProcessor,
+        'webp': ImageDocumentProcessor,
+    }
 
     def __init__(self, config):
         """Initialize FileScanner with configuration."""
@@ -25,7 +48,11 @@ class FileScanner:
         
         # Get configuration settings with defaults
         self.chunk_size = scanner_config.get('chunk_size', 1024 * 1024)  # Default 1MB
-        self.processor_map = scanner_config.get('processor_map', {})
+        
+        # Initialize processor map with defaults and any custom mappings from config
+        self.processor_map = dict(self.DEFAULT_PROCESSOR_MAP)
+        custom_processor_map = scanner_config.get('processor_map', {})
+        self.processor_map.update(custom_processor_map)
         
         logger.debug(f"FileScanner initialized with config: allowed_extensions={self.allowed_extensions}, "
                     f"exclude_patterns={self.exclude_patterns}, hash_algorithm={self.hash_algorithm}, "
@@ -155,10 +182,47 @@ class FileScanner:
             raise
 
     def _get_processor_metadata(self, file_path: Path) -> Optional[Dict[str, Any]]:
-        """Get additional metadata from type-specific processors."""
-        logger.debug(f"Getting processor metadata for: {file_path}")
-        # TODO: Implement type-specific processors
-        return None
+        """Get additional metadata from type-specific processors.
+        
+        Args:
+            file_path: Path object representing the file to process
+            
+        Returns:
+            Optional[Dict[str, Any]]: Additional metadata from the processor, or None if no processor is found
+        """
+        try:
+            # Get file extension without the dot and convert to lowercase
+            file_ext = file_path.suffix.lstrip('.').lower()
+            logger.debug(f"Getting processor for file extension: {file_ext}")
+            
+            # Get the appropriate processor class
+            processor_class = self.processor_map.get(file_ext)
+            if not processor_class:
+                logger.debug(f"No processor found for extension: {file_ext}")
+                return None
+                
+            logger.debug(f"Using processor class {processor_class.__name__} for {file_path}")
+            
+            # Initialize the processor
+            processor = processor_class()
+            
+            # Get basic metadata to pass to the processor
+            basic_metadata = {
+                "path": str(file_path),
+                "file_type": file_ext,
+                "filename": file_path.name,
+            }
+            
+            # Process the document
+            logger.debug(f"Processing document with {processor_class.__name__}: {file_path}")
+            processed_metadata = processor.process(str(file_path), basic_metadata)
+            
+            logger.debug(f"Successfully processed {file_path} with {processor_class.__name__}")
+            return processed_metadata
+            
+        except Exception as e:
+            logger.error(f"Error processing file {file_path} with document processor: {str(e)}")
+            return None
 
     def get_document_processor_type(self, file_type: str) -> str:
         """Determine the appropriate document processor type based on file type."""
