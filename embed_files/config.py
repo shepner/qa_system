@@ -92,7 +92,7 @@ class Config:
         """Get a nested configuration section by name.
         
         Args:
-            section: The name of the configuration section to retrieve.
+            section: The name of the configuration section to retrieve (e.g. 'LOGGING.level').
             default: The default value to return if the section doesn't exist.
             
         Returns:
@@ -101,11 +101,20 @@ class Config:
         try:
             # Split the section path by dots
             parts = section.split('.')
-            value = self
-            for part in parts:
-                value = getattr(value, part, None) if hasattr(value, part) else value.get(part, None)
+            
+            # Start with the first section which should be a class attribute
+            value = getattr(self, parts[0], None)
+            if value is None:
+                return default
+                
+            # Navigate through remaining parts as dictionary keys
+            for part in parts[1:]:
+                if not isinstance(value, dict):
+                    return default
+                value = value.get(part, None)
                 if value is None:
                     return default
+                    
             return value
         except Exception:
             return default
