@@ -59,19 +59,24 @@ DOCUMENT_PROCESSING:
   # because chunks larger than MAX_LENGTH would get truncated during embedding
   # Note: Since this is in characters and MAX_LENGTH is in tokens,
   # we use the same value as a conservative estimate (1 token ≈ 1 character)
-  # Must be greater than MIN_CHUNK_SIZE (100) to ensure valid chunking
   # Range: 150-3072, Default: 3072 characters
   MAX_CHUNK_SIZE: 3072
-  MIN_CHUNK_SIZE: 100      # Minimum chunk size to prevent tiny chunks
+
+  # Minimum chunk size to prevent tiny chunks
+  # Should be 10-20% of MAX_CHUNK_SIZE to ensure meaningful chunks
+  # Current MAX_CHUNK_SIZE is 3072, so this should be 307-614 characters
+  # Must be larger than CHUNK_OVERLAP to ensure valid chunking
+  # Range: 307-614, Default: 400 characters
+  MIN_CHUNK_SIZE: 1024      
 
   # Number of characters to overlap between consecutive chunks
   # Helps maintain context across chunk boundaries
   # Example: With size 1000 and overlap 200:
   #   Chunk 1: [0-1000], Chunk 2: [800-1800], etc.
-  # Higher values ensure better context but increase storage needs
-  # Recommended: 10-20% of MAX_CHUNK_SIZE
-  # Range: 0-500, Default: 200 characters
-  CHUNK_OVERLAP: 300
+  # Must be smaller than MIN_CHUNK_SIZE to ensure valid chunking
+  # Recommended: 10-20% of MAX_CHUNK_SIZE and 50-75% of MIN_CHUNK_SIZE
+  # Range: 0-MIN_CHUNK_SIZE, Default: 300 characters
+  CHUNK_OVERLAP: 768
 
   # Number of parallel processing tasks for document indexing
   # Higher values speed up processing but use more system resources
