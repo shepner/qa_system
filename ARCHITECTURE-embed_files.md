@@ -168,7 +168,7 @@ graph TD
 
 - **Purpose**: Command-line interface and entry point
 - **Input Arguments**:
-  - `--add`: Directory path to process documents from
+  - `--add`: Path to process (can be a directory or individual file)
   - `--config`: Path to configuration file (default: './config/config.yaml')
   - `--debug`: Flag to enable debug logging
 - **Output**:
@@ -178,11 +178,14 @@ graph TD
   - Log file entries
 - **Usage**:
 ```bash
-# Process documents with default config
+# Process a directory with default config
 python -m embed_files --add /path/to/docs
 
-# Use custom config and enable debug
-python -m embed_files --add /path/to/docs --config custom_config.yaml --debug
+# Process a single file with custom config
+python -m embed_files --add /path/to/docs/specific_file.md --config custom_config.yaml
+
+# Process multiple inputs with debug enabled
+python -m embed_files --add /path/to/docs/file1.md --add /path/to/docs/file2.pdf --debug
 ```
 
 #### 3.2.2 Configuration Module (config.py)
@@ -193,11 +196,30 @@ python -m embed_files --add /path/to/docs --config custom_config.yaml --debug
   - Environment variables with 'QA_' prefix
 - **Output**: Config object with sections:
   - `LOGGING`: Logging settings
+    - `LEVEL`: Log level setting
+    - `LOG_FILE`: Path to log file
   - `SECURITY`: Security-related settings
+  - `FILE_SCANNER`: File scanning settings
+    - `ALLOWED_EXTENSIONS`: List of file extensions to process
+    - `EXCLUDE_PATTERNS`: List of patterns to exclude
+    - `HASH_ALGORITHM`: Hash algorithm for checksums (default: 'sha256')
+    - `DOCUMENT_PATH`: Default path for documents to be processed
   - `DOCUMENT_PROCESSING`: Document processing settings
+    - `MAX_CHUNK_SIZE`: Maximum size of text chunks
+    - `CHUNK_OVERLAP`: Overlap between chunks
+    - `CONCURRENT_TASKS`: Number of parallel tasks
+    - `BATCH_SIZE`: Documents per batch
   - `EMBEDDING_MODEL`: Model configuration
-  
+    - `MODEL_NAME`: Name of Gemini model
+    - `BATCH_SIZE`: Embedding batch size
+    - `MAX_LENGTH`: Maximum text length
+    - `DIMENSIONS`: Output dimensions
   - `VECTOR_STORE`: Vector database configuration
+    - `TYPE`: Vector store implementation
+    - `PERSIST_DIRECTORY`: Data storage location
+    - `COLLECTION_NAME`: Name of collection
+    - `DISTANCE_METRIC`: Similarity metric
+    - `TOP_K`: Number of results to retrieve
 - **Usage**:
 ```python
 from embed_files.config import get_config
@@ -212,6 +234,134 @@ config = get_config("./my_config.yaml")
 vector_store_config = config.get_nested('VECTOR_STORE')
 ```
 
+#### 3.2.3 Logging Setup (logging_setup.py)
+- **Purpose**: Provides centralized logging configuration with support for file and console output, log rotation, and debug level control
+- **Input**:
+  - `LOG_FILE`: Path to the log file (from config.LOGGING.LOG_FILE)
+  - `LOG_LEVEL`: Logging level (from config.LOGGING.LEVEL, default: "INFO")
+  - `DEBUG`: Flag to enable debug logging (default: False)
+- **Output**:
+  - Configured root logger with both file and console handlers
+  - Rotating log files with specified size limits and backup counts
+  - Formatted log messages with timestamp, logger name, level, and message
+- **Usage**:
+```python
+from embed_files.config import get_config
+from embed_files.logging_setup import setup_logging
+
+# Load configuration
+config = get_config()
+
+# Setup logging using configuration values
+setup_logging(
+    LOG_FILE=config.get_nested('LOGGING.LOG_FILE'),
+    LOG_LEVEL=config.get_nested('LOGGING.LEVEL', default="INFO"),
+    DEBUG=config.get_nested('LOGGING.DEBUG', default=False)
+)
+```
+
+Key Features:
+- Configuration-driven setup
+- Automatic log directory creation
+- Log rotation to manage file sizes
+- Consistent log formatting across handlers
+- Debug mode support
+- Console output for immediate feedback
+- Thread-safe logging implementation
+
+Log Format:
+```
+YYYY-MM-DD HH:MM:SS - logger_name - LEVEL - Message
+```
+
+Example Log Entry:
+```
+2024-03-20 14:30:45 - embed_files.document_processor - INFO - Processing document: example.pdf
+```
+
+#### 3.2.4 File Scanner (file_scanner.py)
+- **Purpose**: Discovers and validates files for processing, manages file selection based on configuration, and generates file checksums
+- **Integration with Main**:
+  - Receives paths from main's --add argument (supports both directories and individual files)
+  - Receives configuration either from default or main's --config argument
+- **Input**:
+  - `path`: Path to scan (can be a directory or individual file, provided by main's --add argument)
+  - Configuration settings (from config.FILE_SCANNER, loaded by main):
+    - `EXCLUDE_PATTERNS`: List of gitignore-style patterns for file exclusion/inclusion
+      - Permits all files by default
+      - Supports standard gitignore pattern syntax
+      - Use `!` prefix to explicitly include files that would otherwise be excluded
+      - Example: `!README.md` ensures README.md is processed even if `.md` files are excluded
+    - `HASH_ALGORITHM`: Hash algorithm for checksums (default: 'sha256')
+    - `ALLOWED_EXTENSIONS`: List of file extensions to process
+    - `DOCUMENT_PATH`: Default path for documents to be processed
+- **Output**:
+  - List of dictionaries containing:
+    - `path`: Relative path of each file
+    - `checksum`: File's cryptographic hash
+- **Key Functions**:
+  - `should_process_file`: Validates files against configured patterns
+  - `calculate_checksum`: Generates cryptographic hashes using configured algorithm
+  - `scan_files`: Processes individual files or recursively discovers files in directories
+- **Logging Integration**:
+  - Uses module-level logger for operation tracking
+  - Log levels:
+    - INFO: File processing progress
+    - DEBUG: Detailed file validation decisions
+    - ERROR: File access or processing failures
+- **Usage**:
+```python
+from embed_files.file_scanner import FileScanner
+
+# Initialize with config loaded by main
+scanner = FileScanner(config)
+
+# Scan a directory
+files = scanner.scan_files("/path/to/directory")
+
+# Process a single file
+files = scanner.scan_files("/path/to/specific_file.md")
+
+# Process multiple inputs
+files = scanner.scan_files(["/path/to/file1.md", "/path/to/directory", "/path/to/file2.pdf"])
+```
+
+Configuration Example (config.yaml):
+```yaml
+FILE_SCANNER:
+  ALLOWED_EXTENSIONS:
+    - "txt"
+    - "md"
+    - "pdf"
+    - "jpg"
+  EXCLUDE_PATTERNS:
+    - "!README.md"
+    - "!ARCHITECTURE.md"
+    - "!docs/*.md"
+    - ".*"  # Hidden files and directories
+    - "Excalidraw/"
+    - "smart-chats/"
+  HASH_ALGORITHM: "sha256"
+  DOCUMENT_PATH: "./docs"
+```
+
+#### 3.2.5 Document Processors (document_processor_{filetype}.py)
+- **Purpose**:
+- **Input**:
+- **Output**:
+- **Usage**:
+
+#### 3.2.6 Embedding Generator (embedding_system.py)
+- **Purpose**:
+- **Input**:
+- **Output**:
+- **Usage**:
+
+#### 3.2.6 Vector DB (vector_system.py)
+- **Purpose**:
+- **Input**:
+- **Output**:
+- **Usage**:
 
 ## 4. Implementation Strategy
 

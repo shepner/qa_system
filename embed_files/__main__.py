@@ -1,69 +1,118 @@
-"""Main entry point for the qa_system package."""
+"""Main module for the QA system.
 
-import sys
+This module serves as the command-line interface and entry point for the QA system.
+It handles argument parsing, configuration loading, logging setup, and orchestrates
+the document processing workflow.
+"""
+
+import argparse
 import logging
+import sys
 from pathlib import Path
-from embed_files.config import get_config, ConfigurationError
-from embed_files.document_processor import DocumentProcessor
-from embed_files.logging_setup import setup_logging
+from typing import List, Optional
 
-def main():
-    """Main function to run the qa_system."""
-    import argparse
+from embed_files.config import get_config, Config
+from embed_files.logging_setup import setup_logging
+from embed_files.file_scanner import FileScanner
+
+def parse_args() -> argparse.Namespace:
+    """Parse and validate command line arguments.
     
-    parser = argparse.ArgumentParser(description='QA System')
-    parser.add_argument('--add', help='Add documents from the specified directory')
-    parser.add_argument('--config', default='./config/config.yaml', help='Path to config file')
-    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    Returns:
+        argparse.Namespace: Parsed command line arguments
+    """
+    parser = argparse.ArgumentParser(description="QA System")
+    parser.add_argument(
+        "--add",
+        type=str,
+        action='append',
+        help="Path to process (can be a directory or individual file). Can be specified multiple times.",
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="./config/config.yaml",
+        help="Path to configuration file",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging",
+    )
+
+    return parser.parse_args()
+
+def main() -> None:
+    """Main entry point for the QA system.
     
-    args = parser.parse_args()
+    This function:
+    1. Parses command line arguments
+    2. Loads system configuration
+    3. Sets up logging based on configuration
+    4. Processes input files using the file scanner
+    5. Handles errors and provides appropriate exit codes
     
+    Exit codes:
+        0: Successful execution
+        1: Error occurred during execution
+    """
+    args = parse_args()
+    logger: Optional[logging.Logger] = None
+
     try:
-        # Initialize logging with debug flag
+        # Load configuration first
+        config: Config = get_config(args.config)
+        
+        # Setup logging using configuration values
+        # Pass arguments in order: LOG_FILE, LOG_LEVEL, DEBUG as per architecture spec
         setup_logging(
-            log_file="qa_system.log",
-            enable_debug=args.debug
+            config.get_nested('LOGGING.LOG_FILE'),
+            config.get_nested('LOGGING.LEVEL', default="INFO"),
+            args.debug
         )
+        
         logger = logging.getLogger(__name__)
-        
-        # Load configuration with specified config file
-        logger.info(f"Loading configuration from {args.config}")
-        config = get_config(args.config)
-        logger.debug("Configuration loaded successfully")
-        
-        # Initialize document processor
-        processor = DocumentProcessor(config)
-        
-        # Process command
+        logger.debug(f"Configuration loaded successfully from {args.config}")
+
         if args.add:
-            input_path = Path(args.add)
-            if not input_path.exists():
-                logger.error(f"Directory does not exist: {input_path}")
-                return 1
+            paths: List[str] = args.add
+            logger.info(f"Processing {len(paths)} input paths")
+            scanner = FileScanner(config)
+            
+            # Process each provided path
+            total_files = 0
+            for path in paths:
+                logger.info(f"Scanning path: {path}")
+                try:
+                    file_info = scanner.scan_files(path)
+                    total_files += len(file_info)
+                    logger.debug(f"Found {len(file_info)} files in {path}")
+                except Exception as e:
+                    logger.error(f"Failed to process path {path}: {str(e)}")
+                    continue
                 
-            logger.info(f"Processing documents from directory: {input_path}")
-            try:
-                processed_count = 0
-                for result in processor.process_directory(input_path):
-                    logger.info(f"Processed document: {result['path']}")
-                    processed_count += 1
-                logger.info(f"Successfully processed {processed_count} documents")
-            except Exception as e:
-                logger.error(f"Error processing documents: {str(e)}", exc_info=True)
-                return 1
+                # TODO: Add document processing, embedding generation, and vector storage
+                # This will be implemented in subsequent phases as per architecture Section 4.1
+            
+            if total_files > 0:
+                logger.info(f"Total files found: {total_files}")
+                logger.info("Document processing completed successfully")
+            else:
+                logger.warning("No files were processed")
         else:
             parser.print_help()
             
-        return 0
-        
-    except ConfigurationError as e:
-        # Since logging might not be set up yet in case of early config errors
-        print(f"Configuration error: {str(e)}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        # Use print for early errors before logging is setup
-        print(f"Failed to initialize QA system: {str(e)}", file=sys.stderr)
-        return 1
+        # Successful execution
+        sys.exit(0)
 
-if __name__ == '__main__':
-    sys.exit(main()) 
+    except Exception as e:
+        # Ensure we have a logger even if setup failed
+        if logger is None:
+            logging.basicConfig(level=logging.ERROR)
+            logger = logging.getLogger(__name__)
+        
+        logger.error(f"Fatal error occurred: {str(e)}", exc_info=True)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main() 

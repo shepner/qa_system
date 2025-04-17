@@ -18,15 +18,16 @@ from .embeddings import EmbeddingModel
 class DocumentProcessor:
     def __init__(self, config: Config):
         """Initialize document processor with configuration."""
-        self.config = config.get_nested("DOCUMENT_PROCESSING")
-        if self.config is None:
+        self.config = config
+        self.processor_config = self.config.get_nested("DOCUMENT_PROCESSING", {})
+        if self.processor_config is None:
             raise ValueError("DOCUMENT_PROCESSING configuration section is required")
         self.mime = magic.Magic(mime=True)
         self.logger = logging.getLogger(__name__)
         # Initialize embedding model
         self.embedding_model = EmbeddingModel(config)
         # Store workspace root for relative path calculation
-        self.workspace_root = Path(self.config.get("WORKSPACE_ROOT", os.getcwd()))
+        self.workspace_root = Path(self.config.get_nested("WORKSPACE_ROOT", os.getcwd()))
 
     def is_valid_file(self, file_path: Path) -> bool:
         """
@@ -39,7 +40,7 @@ class DocumentProcessor:
         extension = file_path.suffix.lower().strip()
         allowed_extensions = [
             (ext.lower().strip() if ext.startswith('.') else f'.{ext.lower().strip()}')
-            for ext in self.config["ALLOWED_EXTENSIONS"]
+            for ext in self.processor_config["ALLOWED_EXTENSIONS"]
         ]
         
         if extension not in allowed_extensions:
@@ -48,14 +49,14 @@ class DocumentProcessor:
 
         # Check include patterns (these override exclude patterns)
         included = False
-        for pattern in self.config["INCLUDE_PATTERNS"]:
+        for pattern in self.processor_config["INCLUDE_PATTERNS"]:
             if Path(file_path).match(pattern):
                 included = True
                 break
 
         if not included:
             # Check exclude patterns
-            for pattern in self.config["EXCLUDE_PATTERNS"]:
+            for pattern in self.processor_config["EXCLUDE_PATTERNS"]:
                 if Path(file_path).match(pattern):
                     self.logger.debug(f"Skipping {file_path}: Matches exclude pattern")
                     return False
@@ -64,7 +65,7 @@ class DocumentProcessor:
 
     def get_document_hash(self, content: str) -> str:
         """Generate document hash using configured algorithm."""
-        algo = self.config["UPDATE_HANDLING"]["HASH_ALGORITHM"].lower()
+        algo = self.processor_config["UPDATE_HANDLING"]["HASH_ALGORITHM"].lower()
         hasher = hashlib.new(algo)
         hasher.update(content.encode())
         return hasher.hexdigest()
