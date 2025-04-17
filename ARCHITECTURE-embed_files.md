@@ -345,11 +345,131 @@ FILE_SCANNER:
   DOCUMENT_PATH: "./docs"
 ```
 
-#### 3.2.5 Document Processors (document_processor_{filetype}.py)
-- **Purpose**:
-- **Input**:
-- **Output**:
-- **Usage**:
+#### 3.2.5 Document Processors
+
+##### 3.2.5.1 Overview
+- **Purpose**: Handles the processing and extraction of content from specific file types, providing a consistent interface for text extraction, metadata generation, and content chunking across different document formats.
+
+##### 3.2.5.2 Core Components
+
+###### Base Document Processor
+- **Module**: `base_processor.py`
+- **Responsibilities**:
+  - Defines common interface for all document processors
+  - Provides logging setup
+  - Implements shared utility functions
+  - Requires implementation of `process()` method by subclasses
+  - Implements sentence-aware text chunking to preserve sentence boundaries
+
+###### Supported Processors
+1. **PDF Processor** (`pdf_processor.py`):
+   - Text extraction with page preservation
+   - Header pattern recognition
+   - Intelligent chunking based on section boundaries and sentence preservation
+   - PDF-specific metadata extraction
+   - Token counting using tiktoken
+
+2. **Text Processor** (`text_processor.py`):
+   - Plain text file processing
+   - Sentence-aware chunking
+   - Basic metadata extraction
+   
+3. **Markdown Processor** (`markdown_processor.py`):
+   - Markdown document processing
+   - Sentence-aware chunking with markdown structure preservation
+   - Basic metadata extraction
+   
+4. **CSV Processor** (`csv_processor.py`):
+   - CSV file processing
+   - Row-based chunking with header preservation
+   - Basic metadata extraction
+   
+5. **Image Processor** (`image_processor.py`):
+   - Support for multiple formats (jpg, jpeg, png, gif, bmp, webp)
+   - Basic metadata extraction
+
+##### 3.2.5.3 Interface Specification
+
+###### Input Parameters
+- `file_path`: Path to the document to process
+- `metadata`: Initial metadata dictionary containing:
+  - `path`: Absolute file path
+  - `file_type`: Document format/extension
+  - `filename`: Name of the file
+  - `checksum`: SHA256 hash of the file (provided by File Scanner)
+
+###### Output Format
+- **Metadata Dictionary**:
+  - All input metadata fields
+  - Processing timestamp
+  - Processor type used
+  - Chunk information (if applicable)
+  - Document-specific metadata (varies by processor)
+
+##### 3.2.5.4 Configuration
+```yaml
+DOCUMENT_PROCESSING:
+  MAX_CHUNK_SIZE: 1500     # Maximum size of text chunks
+  CHUNK_OVERLAP: 300       # Overlap between chunks
+  CONCURRENT_TASKS: 6      # Number of parallel tasks
+  BATCH_SIZE: 50          # Documents per batch
+  PRESERVE_SENTENCES: true # Ensure chunks don't break sentences
+  MIN_CHUNK_SIZE: 100     # Minimum chunk size to prevent tiny chunks
+  
+  # Header pattern recognition settings for PDF processing
+  PDF_HEADER_RECOGNITION:
+    ENABLED: true         # Enable header pattern recognition
+    MIN_FONT_SIZE: 12     # Minimum font size to consider as header
+    PATTERNS:             # Regular expressions for header detection
+      - "^[A-Z][^.]*$"   # Uppercase starting lines without periods
+      - "^[\d\.]+\s.*$"  # Numbered sections (e.g., "1.2 Section Title")
+      - "^Chapter\s+\d+"  # Chapter headings
+    MAX_HEADER_LENGTH: 100  # Maximum length for a header line
+```
+
+##### 3.2.5.5 Integration
+
+###### File Scanner Integration
+- Scanner maintains extension-to-processor mapping
+- Automatically selects processor based on file extension
+- Provides initial metadata to processor
+- Handles processor initialization and error handling
+
+###### Usage Example
+```python
+from embed_files.document_processors import PDFDocumentProcessor
+
+# Initialize processor
+processor = PDFDocumentProcessor()
+
+# Process document
+metadata = {
+    "path": "/path/to/document.pdf",
+    "file_type": "pdf",
+    "filename": "document.pdf"
+}
+processed_metadata = processor.process("/path/to/document.pdf", metadata)
+```
+
+##### 3.2.5.6 Error Handling
+- Each processor implements specific error handling
+- Errors are logged with appropriate context
+- Processing continues despite individual failures
+- Failed documents are tracked in metadata
+
+##### 3.2.5.7 Extensibility
+- New processors can be added by:
+  1. Creating new class inheriting from `BaseDocumentProcessor`
+  2. Implementing required `process()` method
+  3. Adding mapping in `FileScanner.DEFAULT_PROCESSOR_MAP`
+  4. Updating configuration if needed
+
+##### 3.2.5.8 Future Enhancements
+- Support for additional file formats (docx, rtf, html, ppt)
+- Enhanced metadata extraction
+- Improved chunking strategies
+- OCR integration for images
+- Language detection and handling
 
 #### 3.2.6 Embedding Generator (embedding_system.py)
 - **Purpose**:

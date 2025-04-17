@@ -84,6 +84,22 @@ DOCUMENT_PROCESSING:
   # Range: 1-100, Default: 10
   BATCH_SIZE: 50
 
+  # Sentence preservation settings
+  # Controls how text is chunked to maintain sentence integrity
+  PRESERVE_SENTENCES: true  # Ensure chunks don't break sentences
+  MIN_CHUNK_SIZE: 100      # Minimum chunk size to prevent tiny chunks
+
+  # Header pattern recognition settings for PDF processing
+  # Controls how headers are identified and processed in PDFs
+  PDF_HEADER_RECOGNITION:
+    ENABLED: true         # Enable header pattern recognition
+    MIN_FONT_SIZE: 12     # Minimum font size to consider as header
+    PATTERNS:             # Regular expressions for header detection
+      - "^[A-Z][^.]*$"   # Uppercase starting lines without periods
+      - "^[\d\.]+\s.*$"  # Numbered sections (e.g., "1.2 Section Title")
+      - "^Chapter\s+\d+"  # Chapter headings
+    MAX_HEADER_LENGTH: 100  # Maximum length for a header line
+
 # Embedding Model Configuration
 EMBEDDING_MODEL:
   # Model name for Gemini embeddings
