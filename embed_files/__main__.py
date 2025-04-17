@@ -15,31 +15,32 @@ from embed_files.config import get_config, Config
 from embed_files.logging_setup import setup_logging
 from embed_files.file_scanner import FileScanner
 
+# Create parser at module level
+parser = argparse.ArgumentParser(description="QA System")
+parser.add_argument(
+    "--add",
+    type=str,
+    action='append',
+    help="Path to process (can be a directory or individual file). Can be specified multiple times.",
+)
+parser.add_argument(
+    "--config",
+    type=str,
+    default="./config/config.yaml",
+    help="Path to configuration file",
+)
+parser.add_argument(
+    "--debug",
+    action="store_true",
+    help="Enable debug logging",
+)
+
 def parse_args() -> argparse.Namespace:
     """Parse and validate command line arguments.
     
     Returns:
         argparse.Namespace: Parsed command line arguments
     """
-    parser = argparse.ArgumentParser(description="QA System")
-    parser.add_argument(
-        "--add",
-        type=str,
-        action='append',
-        help="Path to process (can be a directory or individual file). Can be specified multiple times.",
-    )
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="./config/config.yaml",
-        help="Path to configuration file",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging",
-    )
-
     return parser.parse_args()
 
 def main() -> None:
@@ -56,10 +57,10 @@ def main() -> None:
         0: Successful execution
         1: Error occurred during execution
     """
-    args = parse_args()
-    logger: Optional[logging.Logger] = None
-
     try:
+        args = parse_args()
+        logger: Optional[logging.Logger] = None
+
         # Load configuration first
         config: Config = get_config(args.config)
         
@@ -100,7 +101,9 @@ def main() -> None:
             else:
                 logger.warning("No files were processed")
         else:
+            # Print help if no paths provided
             parser.print_help()
+            sys.exit(0)
             
         # Successful execution
         sys.exit(0)
