@@ -95,9 +95,9 @@ DOCUMENT_PROCESSING:
     ENABLED: true         # Enable header pattern recognition
     MIN_FONT_SIZE: 12     # Minimum font size to consider as header
     PATTERNS:             # Regular expressions for header detection
-      - "^[A-Z][^.]*$"   # Uppercase starting lines without periods
-      - "^[\d\.]+\s.*$"  # Numbered sections (e.g., "1.2 Section Title")
-      - "^Chapter\s+\d+"  # Chapter headings
+      - '^[A-Z][^.]*$'   # Uppercase starting lines without periods
+      - '^[\\d\\.]+\\s.*$'  # Numbered sections (e.g., "1.2 Section Title")
+      - '^Chapter\\s+\\d+'  # Chapter headings
     MAX_HEADER_LENGTH: 100  # Maximum length for a header line
 
 # Embedding Model Configuration
@@ -111,7 +111,7 @@ EMBEDDING_MODEL:
   # Rate limits (Free Tier):
   #   - 60 requests per minute (RPM)
   #   - 1000 requests per day (RPD)
-  # Source: https://ai.google.dev/gemini-api/docs/rate-limits#free-tier
+  # Source: 'https://ai.google.dev/gemini-api/docs/rate-limits#free-tier'
   MODEL_NAME: "models/text-embedding-004"
   
   # Batch size for processing multiple texts at once

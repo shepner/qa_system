@@ -1,242 +1,187 @@
-from typing import Dict, Any, List, Tuple
-import PyPDF2
-import tiktoken
+from typing import Dict, Any, Optional, List
+import logging
+import fitz  # PyMuPDF
 import re
+import tiktoken
+from datetime import datetime
+import os
+from pathlib import Path
 from .base_processor import BaseDocumentProcessor
-from embed_files.config import get_config
-import datetime
 
 class PDFDocumentProcessor(BaseDocumentProcessor):
-    """Document processor for PDF files."""
+    """PDF document processor implementation.
     
-    def __init__(self):
-        """Initialize the PDF processor with configuration."""
+    Handles extraction and processing of PDF documents using PyMuPDF (fitz).
+    Implements the BaseDocumentProcessor interface with PDF-specific functionality.
+    Features:
+    - Text extraction with page preservation
+    - Header pattern recognition
+    - Intelligent chunking based on section boundaries
+    - PDF-specific metadata extraction
+    - Token counting using tiktoken
+    """
+    
+    def __init__(self, config):
+        """Initialize the PDF document processor.
+        
+        Args:
+            config: Either a dictionary or Config object containing configuration settings.
+                   Must contain DOCUMENT_PROCESSING section with required parameters.
+        
+        Raises:
+            ValueError: If config is invalid or required parameters are not met
+        """
         super().__init__()
-        config = get_config()
-        processing_config = config.get_nested('DOCUMENT_PROCESSING', {})
-        self.max_chunk_size = processing_config.get('MAX_CHUNK_SIZE', 1500)
-        self.chunk_overlap = processing_config.get('CHUNK_OVERLAP', 300)
-        # Initialize tokenizer for accurate token counting
+        
+        if config is None:
+            raise ValueError("Config cannot be None")
+            
+        # First determine the type of config we received
+        if hasattr(config, 'get_nested'):
+            # Config object - extract document processing settings
+            doc_processing = config.get_nested('DOCUMENT_PROCESSING', {})
+            if not isinstance(doc_processing, dict):
+                raise ValueError("DOCUMENT_PROCESSING section from Config object must be a dictionary")
+        elif isinstance(config, dict):
+            # Dictionary config - either direct settings or nested under DOCUMENT_PROCESSING
+            if 'DOCUMENT_PROCESSING' in config:
+                doc_processing = config['DOCUMENT_PROCESSING']
+                if not isinstance(doc_processing, dict):
+                    raise ValueError("DOCUMENT_PROCESSING section must be a dictionary")
+            else:
+                # Assume direct settings
+                doc_processing = config
+        else:
+            raise ValueError(f"Config must be either a dictionary or a Config object with get_nested method, got {type(config)}")
+
+        # Extract and validate settings with defaults
+        self.max_chunk_size = doc_processing.get('MAX_CHUNK_SIZE', 1500)
+        self.chunk_overlap = doc_processing.get('CHUNK_OVERLAP', 300)
+        self.header_patterns = []
+        
+        # Extract header patterns if available
+        pdf_header_config = doc_processing.get('PDF_HEADER_RECOGNITION', {})
+        if isinstance(pdf_header_config, dict) and pdf_header_config.get('ENABLED', True):
+            self.header_patterns = pdf_header_config.get('PATTERNS', [])
+
+        # Validate configuration parameters
+        if not isinstance(self.max_chunk_size, int) or self.max_chunk_size <= 0:
+            raise ValueError(f"max_chunk_size must be a positive integer, got {self.max_chunk_size}")
+        if not isinstance(self.chunk_overlap, int) or self.chunk_overlap < 0:
+            raise ValueError(f"chunk_overlap must be a non-negative integer, got {self.chunk_overlap}")
+        if self.chunk_overlap >= self.max_chunk_size:
+            raise ValueError(f"chunk_overlap ({self.chunk_overlap}) must be less than max_chunk_size ({self.max_chunk_size})")
+        if not isinstance(self.header_patterns, list):
+            raise ValueError(f"header_patterns must be a list, got {type(self.header_patterns)}")
+        
+        # Initialize tiktoken encoder for token counting
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
         
-        # Common header patterns
-        self.header_patterns = [
-            r'^(?:Chapter|Section)\s+\d+',  # Chapter 1, Section 2
-            r'^\d+\.\d+(?:\.\d+)*\s+[A-Z]', # 1.1, 1.2.1
-            r'^[A-Z][A-Z\s]{4,}(?:\n|$)',   # ALL CAPS HEADER
-            r'^\s*(?:I|II|III|IV|V|VI|VII|VIII|IX|X)\.\s+[A-Z]'  # Roman numerals
-        ]
-        self.header_regex = re.compile('|'.join(self.header_patterns), re.MULTILINE)
-    
-    def _extract_text(self, pdf_reader: PyPDF2.PdfReader) -> str:
-        """Extract and normalize text from PDF.
+        # Store workspace root for relative path calculation
+        self.workspace_root = doc_processing.get('DOCUMENT_PATH', os.getcwd())
         
-        Args:
-            pdf_reader: PyPDF2 reader object
-            
-        Returns:
-            str: Normalized text content
-        """
-        text_content = []
-        for page_num, page in enumerate(pdf_reader.pages, 1):
-            text = page.extract_text()
-            if text:
-                # Enhanced text normalization
-                text = ' '.join(text.split())  # Normalize whitespace
-                text = text.replace('\x00', '')  # Remove null characters
-                text = text.strip()  # Remove leading/trailing whitespace
-                if text:  # Only add non-empty pages
-                    text_content.append({
-                        'page_number': page_num,
-                        'content': text
-                    })
-        
-        # Join with page markers for better context
-        return '\n\n'.join(f"--- Page {page['page_number']} ---\n\n{page['content']}" for page in text_content)
-    
-    def _find_section_boundaries(self, text: str) -> List[Tuple[int, int, str]]:
-        """Find section boundaries in text based on header patterns.
-        
-        Args:
-            text: Text content to analyze
-            
-        Returns:
-            List of tuples containing (start_pos, end_pos, header_text)
-        """
-        sections = []
-        last_pos = 0
-        
-        # Find all potential headers
-        for match in self.header_regex.finditer(text):
-            start = match.start()
-            header = match.group(0)
-            
-            # If we have a previous section, add it
-            if last_pos > 0:
-                sections.append((last_pos, start, text[last_pos:last_pos + 50] + "..."))
-            
-            last_pos = start
-        
-        # Add the final section
-        if last_pos < len(text):
-            sections.append((last_pos, len(text), text[last_pos:last_pos + 50] + "..."))
-        
-        return sections
-    
-    def _chunk_text(self, text: str) -> List[Dict[str, Any]]:
-        """Split text into overlapping chunks with metadata, preferring section boundaries.
-        
-        Args:
-            text: Text content to chunk
-            
-        Returns:
-            List[Dict[str, Any]]: List of chunks with metadata
-        """
-        chunks = []
-        chunk_number = 1
-        
-        # Find section boundaries
-        sections = self._find_section_boundaries(text)
-        
-        for section_start, section_end, section_header in sections:
-            section_text = text[section_start:section_end]
-            current_pos = 0
-            
-            # If section is smaller than max chunk size, keep it as one chunk
-            if len(section_text) <= self.max_chunk_size:
-                chunk_tokens = self.tokenizer.encode(section_text)
-                chunks.append({
-                    'chunk_number': chunk_number,
-                    'start_pos': section_start,
-                    'end_pos': section_end,
-                    'content': section_text,
-                    'token_count': len(chunk_tokens),
-                    'section_header': section_header
-                })
-                chunk_number += 1
-                continue
-            
-            # Split large sections into chunks with overlap
-            while current_pos < len(section_text):
-                end_pos = min(current_pos + self.max_chunk_size, len(section_text))
-                
-                # If not at the end, try to break at a sentence boundary
-                if end_pos < len(section_text):
-                    for i in range(end_pos - 1, current_pos, -1):
-                        if section_text[i] in '.!?' and (i + 1 == len(section_text) or section_text[i + 1].isspace()):
-                            end_pos = i + 1
-                            break
-                
-                chunk_text = section_text[current_pos:end_pos].strip()
-                chunk_tokens = self.tokenizer.encode(chunk_text)
-                
-                chunks.append({
-                    'chunk_number': chunk_number,
-                    'start_pos': section_start + current_pos,
-                    'end_pos': section_start + end_pos,
-                    'content': chunk_text,
-                    'token_count': len(chunk_tokens),
-                    'section_header': section_header
-                })
-                
-                chunk_number += 1
-                current_pos = end_pos - self.chunk_overlap
-        
-        return chunks
-    
-    def _extract_pdf_metadata(self, pdf_reader: PyPDF2.PdfReader) -> Dict[str, Any]:
-        """Extract PDF-specific metadata.
-        
-        Args:
-            pdf_reader: PyPDF2 reader object
-            
-        Returns:
-            Dict[str, Any]: PDF metadata
-        """
-        metadata = {
-            'document_info': {},
-            'structure_info': {},
-            'processing_info': {}
-        }
-        
-        # Extract document info if available
-        if pdf_reader.metadata:
-            info = pdf_reader.metadata
-            metadata['document_info'].update({
-                'title': info.get('/Title', ''),
-                'author': info.get('/Author', ''),
-                'subject': info.get('/Subject', ''),
-                'keywords': info.get('/Keywords', ''),
-                'creator': info.get('/Creator', ''),
-                'producer': info.get('/Producer', ''),
-                'creation_date': info.get('/CreationDate', ''),
-                'modification_date': info.get('/ModDate', '')
-            })
-        
-        # Add PDF structure information
-        metadata['structure_info'].update({
-            'page_count': len(pdf_reader.pages),
-            'is_encrypted': pdf_reader.is_encrypted,
-            'file_size_bytes': pdf_reader.stream.getbuffer().nbytes if hasattr(pdf_reader, 'stream') else None
-        })
-        
-        return metadata
+        self.logger = logging.getLogger(__name__)
     
     def process(self, file_path: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """Process a PDF document.
+        """Process a PDF document and extract its content and metadata.
         
         Args:
-            file_path: Path to the PDF file to process
-            metadata: Initial metadata dictionary with basic file info
+            file_path: Path to the PDF file
+            metadata: Initial metadata dictionary
             
         Returns:
-            Dict containing the processed document metadata
+            Dict containing:
+            - Document metadata (type, timestamps, etc.)
+            - Extracted text chunks
+            - PDF-specific metadata (title, author, etc.)
+            - Token counts
+            - Headers and structure information
+            
+        Raises:
+            ValueError: If file is not a valid PDF or metadata is invalid
+            IOError: If file cannot be read
         """
-        self.logger.debug(f"Processing PDF file: {file_path}")
-        
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata must be a dictionary")
+            
         try:
-            with open(file_path, 'rb') as pdf_file:
-                # Create PDF reader
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
+            # Enhance metadata with required fields
+            path_obj = Path(file_path)
+            relative_path = str(path_obj.relative_to(self.workspace_root))
+            
+            metadata.update({
+                "path": str(path_obj.absolute()),
+                "relative_path": relative_path,
+                "directory": str(path_obj.parent),
+                "filename_full": path_obj.name,
+                "filename_stem": path_obj.stem,
+                "file_type": "pdf",
+                "created_at": datetime.fromtimestamp(path_obj.stat().st_ctime).isoformat(),
+                "last_modified": datetime.fromtimestamp(path_obj.stat().st_mtime).isoformat()
+            })
+            
+            # Open and process the PDF
+            with fitz.open(file_path) as pdf_doc:
+                if len(pdf_doc) == 0:
+                    raise ValueError("PDF file contains no pages")
+                    
+                # Extract text from all pages with proper separation
+                text_parts = []
+                for page in pdf_doc:
+                    page_text = page.get_text().strip()
+                    if page_text:  # Only add non-empty pages
+                        text_parts.append(page_text)
                 
-                # Extract text content
-                text_content = self._extract_text(pdf_reader)
+                # Join pages with newlines to preserve separation
+                text = '\n\n'.join(text_parts)
+                if not text.strip():
+                    self.logger.warning(f"No text content found in PDF: {file_path}")
                 
-                # Chunk the text
-                chunks = self._chunk_text(text_content)
-                
-                # Get total tokens for the entire document
-                total_tokens = sum(chunk['token_count'] for chunk in chunks)
-                
-                # Extract PDF metadata
-                pdf_metadata = self._extract_pdf_metadata(pdf_reader)
-                
-                # Update metadata with processing results
-                metadata.update({
-                    'file_metadata': metadata,  # Original file metadata
-                    'pdf_metadata': pdf_metadata,  # PDF-specific metadata
-                    'processing_metadata': {
-                        'chunks': chunks,
-                        'chunk_count': len(chunks),
-                        'total_tokens': total_tokens,
-                        'processing_status': 'success',
-                        'processor_version': '1.1.0',
-                        'processing_timestamp': datetime.datetime.now().isoformat()
+                # Get PDF metadata
+                pdf_info = pdf_doc.metadata
+                if pdf_info:
+                    # Clean and validate metadata values
+                    cleaned_info = {
+                        key: str(value).strip() if value else ''
+                        for key, value in pdf_info.items()
                     }
+                    metadata.update({
+                        'title': cleaned_info.get('title', ''),
+                        'author': cleaned_info.get('author', ''),
+                        'subject': cleaned_info.get('subject', ''),
+                        'keywords': cleaned_info.get('keywords', ''),
+                        'creator': cleaned_info.get('creator', ''),
+                        'producer': cleaned_info.get('producer', ''),
+                        'page_count': len(pdf_doc)
+                    })
+                
+                # Add processing metadata
+                metadata.update({
+                    'processor': 'PDFDocumentProcessor',
+                    'processed_at': datetime.utcnow().isoformat(),
+                    'content_type': 'application/pdf',
+                    'file_path': file_path,
+                    'has_text_content': bool(text.strip())
                 })
                 
-                self.logger.info(f"Successfully processed PDF file: {file_path}")
+                # Chunk the extracted text if any exists
+                if text.strip():
+                    chunks = self._chunk_text_with_sentences(
+                        text,
+                        max_chunk_size=self.max_chunk_size,
+                        overlap=self.chunk_overlap
+                    )
+                    metadata['chunks'] = chunks
+                else:
+                    metadata['chunks'] = []
                 
+                return metadata
+                
+        except fitz.FileDataError as e:
+            raise ValueError(f"Invalid PDF file: {e}")
+        except IOError as e:
+            raise IOError(f"Failed to read PDF file: {e}")
         except Exception as e:
-            error_msg = f"Error processing PDF file {file_path}: {str(e)}"
-            self.logger.error(error_msg)
-            metadata.update({
-                'processing_metadata': {
-                    'processing_status': 'error',
-                    'error_message': error_msg,
-                    'processor_version': '1.1.0',
-                    'processing_timestamp': datetime.datetime.now().isoformat()
-                }
-            })
-        
-        return metadata 
+            # Log the specific error type for debugging
+            self.logger.error(f"Error processing PDF {file_path}: {type(e).__name__}: {e}")
+            raise 

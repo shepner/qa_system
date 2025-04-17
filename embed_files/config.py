@@ -23,6 +23,51 @@ class Config:
         'hash_algorithm': 'sha256'  # Default hash algorithm
     })
 
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a configuration value by key.
+        
+        Args:
+            key: The configuration key to look up
+            default: Default value if key is not found
+            
+        Returns:
+            The configuration value or default if not found
+        """
+        # First try to get from class attributes
+        if hasattr(self, key):
+            return getattr(self, key)
+        # Then try to get from nested dictionaries
+        for section in [self.SECURITY, self.VECTOR_STORE, self.DOCUMENT_PROCESSING,
+                       self.EMBEDDING_MODEL, self.LOGGING, self.FILE_SCANNER]:
+            if key in section:
+                return section[key]
+        return default
+
+    def get_nested(self, path: str, default: Any = None) -> Any:
+        """Get a nested configuration value using dot notation.
+        
+        Args:
+            path: The configuration path (e.g., 'FILE_SCANNER.allowed_extensions')
+            default: Default value if path is not found
+            
+        Returns:
+            The configuration value or default if not found
+        """
+        parts = path.split('.')
+        current = self
+        
+        try:
+            for part in parts:
+                if hasattr(current, part):
+                    current = getattr(current, part)
+                elif isinstance(current, dict) and part in current:
+                    current = current[part]
+                else:
+                    return default
+            return current
+        except (AttributeError, KeyError):
+            return default
+
     @classmethod
     def get_instance(cls, config_path: Optional[str] = None) -> 'Config':
         """Get or create the singleton instance of Config."""
@@ -88,40 +133,9 @@ class Config:
             if k.startswith('QA_')
         }
 
-    def get_nested(self, section: str, default: Any = None) -> Optional[Dict[str, Any]]:
-        """Get a nested configuration section by name.
-        
-        Args:
-            section: The name of the configuration section to retrieve (e.g. 'LOGGING.level').
-            default: The default value to return if the section doesn't exist.
-            
-        Returns:
-            The configuration section if it exists, otherwise the default value.
-        """
-        try:
-            # Split the section path by dots
-            parts = section.split('.')
-            
-            # Start with the first section which should be a class attribute
-            value = getattr(self, parts[0], None)
-            if value is None:
-                return default
-                
-            # Navigate through remaining parts as dictionary keys
-            for part in parts[1:]:
-                if not isinstance(value, dict):
-                    return default
-                value = value.get(part, None)
-                if value is None:
-                    return default
-                    
-            return value
-        except Exception:
-            return default
-
-# Global configuration instance
-_config_instance: Optional[Config] = None
-
 def get_config(config_path: Optional[str] = None) -> Config:
     """Get the global configuration instance."""
     return Config.get_instance(config_path)
+
+# Global configuration instance
+_config_instance: Optional[Config] = None

@@ -203,8 +203,16 @@ class FileScanner:
                 
             logger.debug(f"Using processor class {processor_class.__name__} for {file_path}")
             
-            # Initialize the processor
-            processor = processor_class()
+            # Initialize the processor with configuration
+            if processor_class == PDFDocumentProcessor:
+                # Structure the configuration properly for PDFDocumentProcessor
+                pdf_config = {
+                    'DOCUMENT_PROCESSING': self.config.DOCUMENT_PROCESSING,  # Access the dictionary attribute directly
+                    'DOCUMENT_PATH': str(Path(self.document_path).resolve())
+                }
+                processor = processor_class(pdf_config)
+            else:
+                processor = processor_class()
             
             # Get basic metadata to pass to the processor
             basic_metadata = {
@@ -230,52 +238,83 @@ class FileScanner:
         logger.debug(f"Determined processor type for {file_type}: {processor_type}")
         return processor_type
 
-    def scan_files(self, directory: str) -> List[Dict[str, Any]]:
-        """Scan directory for files and collect metadata."""
-        logger.debug(f"Starting file scan in directory: {directory}")
+    def scan_files(self, path: str) -> List[Dict[str, Any]]:
+        """Scan directory or individual file and collect metadata.
         
-        if not os.path.exists(directory):
-            logger.error(f"Directory does not exist: {directory}")
+        Args:
+            path: Path to scan (can be a directory or individual file)
+            
+        Returns:
+            List of dictionaries containing file metadata
+        """
+        logger.debug(f"Starting file scan for path: {path}")
+        
+        if not os.path.exists(path):
+            logger.error(f"Path does not exist: {path}")
             return []
 
-        base_path = Path(directory).resolve()
-        logger.debug(f"Resolved base path: {base_path}")
         file_info_list = []
-        skipped_files = []  # Track skipped files and reasons
+        skipped_files = []
+        base_path = Path(os.path.dirname(path) if os.path.isfile(path) else path).resolve()
 
         try:
-            logger.debug(f"Beginning directory walk: {directory}")
-            for root, dirs, files in os.walk(directory):
-                logger.debug(f"Scanning directory: {root} (contains {len(files)} files, {len(dirs)} subdirectories)")
-                for filename in files:
-                    file_path = os.path.join(root, filename)
-                    logger.debug(f"Processing file: {file_path}")
-                    
-                    try:
-                        should_process, reason = self.should_process_file(file_path)
-                        if not should_process:
-                            skipped_files.append({"path": file_path, "reason": reason})
-                            continue
-                            
-                        logger.debug(f"Getting metadata for file: {file_path}")
-                        file_info = self.get_file_metadata(file_path, str(base_path))
-                        
-                        if file_info['checksum'] in self.processed_files:
+            # Handle individual file
+            if os.path.isfile(path):
+                logger.debug(f"Processing individual file: {path}")
+                try:
+                    should_process, reason = self.should_process_file(path)
+                    if not should_process:
+                        skipped_files.append({"path": path, "reason": reason})
+                        logger.debug(f"Skipping file {path}: {reason}")
+                    else:
+                        file_info = self.get_file_metadata(path, str(base_path))
+                        if file_info['checksum'] not in self.processed_files:
+                            self.processed_files.add(file_info['checksum'])
+                            file_info_list.append(file_info)
+                            logger.debug(f"Successfully processed file: {path}")
+                        else:
                             reason = "duplicate file (checksum already processed)"
-                            logger.debug(f"Skipping file: {file_path} (Reason: {reason})")
-                            skipped_files.append({"path": file_path, "reason": reason})
-                            continue
-                            
-                        logger.debug(f"Adding file to processed list: {file_path}")
-                        self.processed_files.add(file_info['checksum'])
-                        file_info_list.append(file_info)
-                        logger.debug(f"Successfully processed file: {file_path}")
+                            skipped_files.append({"path": path, "reason": reason})
+                            logger.debug(f"Skipping file {path}: {reason}")
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.error(f"Error processing file {path}: {error_msg}")
+                    skipped_files.append({"path": path, "reason": f"error during processing: {error_msg}"})
+            
+            # Handle directory
+            else:
+                logger.debug(f"Beginning directory walk: {path}")
+                for root, dirs, files in os.walk(path):
+                    logger.debug(f"Scanning directory: {root} (contains {len(files)} files, {len(dirs)} subdirectories)")
+                    for filename in files:
+                        file_path = os.path.join(root, filename)
+                        logger.debug(f"Processing file: {file_path}")
                         
-                    except Exception as e:
-                        error_msg = str(e)
-                        logger.error(f"Error processing file {file_path}: {error_msg}")
-                        skipped_files.append({"path": file_path, "reason": f"error during processing: {error_msg}"})
-                        continue
+                        try:
+                            should_process, reason = self.should_process_file(file_path)
+                            if not should_process:
+                                skipped_files.append({"path": file_path, "reason": reason})
+                                continue
+                                
+                            logger.debug(f"Getting metadata for file: {file_path}")
+                            file_info = self.get_file_metadata(file_path, str(base_path))
+                            
+                            if file_info['checksum'] in self.processed_files:
+                                reason = "duplicate file (checksum already processed)"
+                                logger.debug(f"Skipping file: {file_path} (Reason: {reason})")
+                                skipped_files.append({"path": file_path, "reason": reason})
+                                continue
+                                
+                            logger.debug(f"Adding file to processed list: {file_path}")
+                            self.processed_files.add(file_info['checksum'])
+                            file_info_list.append(file_info)
+                            logger.debug(f"Successfully processed file: {file_path}")
+                            
+                        except Exception as e:
+                            error_msg = str(e)
+                            logger.error(f"Error processing file {file_path}: {error_msg}")
+                            skipped_files.append({"path": file_path, "reason": f"error during processing: {error_msg}"})
+                            continue
 
             # Log summary of skipped files
             if skipped_files:
@@ -284,9 +323,9 @@ class FileScanner:
                     logger.debug(f"Skipped {skip_info['path']}: {skip_info['reason']}")
 
             logger.debug(f"File scan completed. Processed {len(file_info_list)} files, "
-                        f"skipped {len(skipped_files)} files in {directory}")
+                        f"skipped {len(skipped_files)} files")
             
         except Exception as e:
-            logger.error(f"Error scanning directory {directory}: {str(e)}")
+            logger.error(f"Error scanning path {path}: {str(e)}")
             
         return file_info_list 
