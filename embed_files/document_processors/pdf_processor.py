@@ -6,7 +6,9 @@ import tiktoken
 from datetime import datetime
 import os
 from pathlib import Path
+import asyncio
 from .base_processor import BaseDocumentProcessor
+from ..embedding_system import EmbeddingGenerator
 
 class PDFDocumentProcessor(BaseDocumentProcessor):
     """PDF document processor implementation.
@@ -80,7 +82,29 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
         # Store workspace root for relative path calculation
         self.workspace_root = doc_processing.get('DOCUMENT_PATH', os.getcwd())
         
+        # Initialize embedding generator
+        self.embedding_generator = EmbeddingGenerator(config)
+        
         self.logger = logging.getLogger(__name__)
+    
+    async def _generate_embeddings(self, chunks: List[str], metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate embeddings for the document chunks.
+        
+        Args:
+            chunks: List of text chunks to generate embeddings for
+            metadata: Document metadata to include with embeddings
+            
+        Returns:
+            List of dictionaries containing embeddings and metadata
+            
+        Raises:
+            RuntimeError: If embedding generation fails
+        """
+        try:
+            return await self.embedding_generator.generate_embeddings(chunks, metadata)
+        except Exception as e:
+            self.logger.error(f"Failed to generate embeddings: {e}")
+            raise RuntimeError(f"Embedding generation failed: {e}")
     
     def process(self, file_path: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Process a PDF document and extract its content and metadata.
@@ -96,6 +120,7 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
             - PDF-specific metadata (title, author, etc.)
             - Token counts
             - Headers and structure information
+            - Embeddings
             
         Raises:
             ValueError: If file is not a valid PDF or metadata is invalid
@@ -172,8 +197,13 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
                         overlap=self.chunk_overlap
                     )
                     metadata['chunks'] = chunks
+                    
+                    # Generate embeddings
+                    embeddings = asyncio.run(self._generate_embeddings(chunks, metadata))
+                    metadata['embeddings'] = embeddings
                 else:
                     metadata['chunks'] = []
+                    metadata['embeddings'] = []
                 
                 return metadata
                 

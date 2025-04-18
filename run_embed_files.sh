@@ -42,6 +42,17 @@ pip install -q -r requirements.txt
 print_step "Ensuring logs directory exists..."
 mkdir -p logs
 
+# Load environment variables from .env file if it exists
+print_step "Loading environment variables..."
+if [ -f "$SCRIPT_DIR/secrets/.env" ]; then
+    set -a  # automatically export all variables
+    source "$SCRIPT_DIR/secrets/.env"
+    set +a
+else
+    echo "Warning: .env file not found at $SCRIPT_DIR/secrets/.env"
+    echo "Make sure GOOGLE_CLOUD_PROJECT and GOOGLE_API_KEY are set in your environment"
+fi
+
 # Run the program
 print_step "Starting the program..."
 cd "$SCRIPT_DIR"

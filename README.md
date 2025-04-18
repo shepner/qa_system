@@ -208,4 +208,40 @@ pytest
 
 ## License
 
-MIT License 
+MIT License
+
+# Environment Setup
+
+## Environment Variables
+
+The system requires certain environment variables to be set for Google Cloud services. You can set these up in two ways:
+
+1. Create a `.env` file:
+   ```bash
+   cp .env.template .env
+   ```
+   Then edit the `.env` file with your actual values.
+
+2. Set environment variables manually:
+   ```bash
+   export GOOGLE_CLOUD_PROJECT="your-project-id"
+   export GOOGLE_API_KEY="your-api-key"
+   ```
+
+### Required Variables
+- `GOOGLE_CLOUD_PROJECT`: Your Google Cloud Project ID
+- `GOOGLE_API_KEY`: Your Google API Key for accessing Google Generative AI services
+
+### Optional Variables
+- `GOOGLE_EMBEDDING_MODEL`: Model name for text embeddings (defaults to 'embedding-001')
+- `GOOGLE_CLOUD_REGION`: Region for Google Cloud services (defaults to 'us-central1')
+
+## Before Running
+
+1. Make sure you have enabled the Google Generative AI API in your Google Cloud Project
+2. Create an API key in the Google Cloud Console
+3. Set up your environment variables using one of the methods above
+4. Run the embedding system:
+   ```bash
+   ./run_embed_files.sh
+   ``` 
