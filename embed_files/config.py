@@ -1,17 +1,30 @@
 """
 Configuration loader for the QA system.
+
+This module handles loading and managing configuration settings from:
+1. YAML configuration files
+2. Environment variables (with QA_ prefix and direct Google Cloud vars)
+3. Default values
 """
 
-import logging
 import os
 from pathlib import Path
 import yaml
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, List
 
 @dataclass
 class Config:
-    """Configuration class for the QA system."""
+    """Configuration class for the QA system.
+    
+    Attributes:
+        SECURITY: Security-related settings including API credentials
+        VECTOR_STORE: Vector database configuration
+        DOCUMENT_PROCESSING: Document processing settings
+        EMBEDDING_MODEL: Model configuration for embeddings
+        LOGGING: Logging configuration
+        FILE_SCANNER: File scanning and processing settings
+    """
     SECURITY: Dict[str, Any] = field(default_factory=dict)
     VECTOR_STORE: Dict[str, Any] = field(default_factory=dict)
     DOCUMENT_PROCESSING: Dict[str, Any] = field(default_factory=dict)
@@ -23,36 +36,38 @@ class Config:
         'hash_algorithm': 'sha256'  # Default hash algorithm
     })
 
-    def get(self, key: str, default: Any = None) -> Any:
-        """Get a configuration value by key.
+    def __post_init__(self):
+        """Initialize default values after instance creation."""
+        # Initialize SECURITY settings from environment variables
+        self.SECURITY = {
+            'GOOGLE_API_KEY': os.getenv('QA_SECURITY_GOOGLE_API_KEY') or os.getenv('GOOGLE_API_KEY', ''),
+            'GOOGLE_CLOUD_PROJECT': os.getenv('QA_SECURITY_GOOGLE_CLOUD_PROJECT') or os.getenv('GOOGLE_CLOUD_PROJECT', ''),
+            'GOOGLE_CLOUD_REGION': os.getenv('QA_SECURITY_GOOGLE_CLOUD_REGION') or os.getenv('GOOGLE_CLOUD_REGION', 'us-central1')
+        }
         
-        Args:
-            key: The configuration key to look up
-            default: Default value if key is not found
-            
-        Returns:
-            The configuration value or default if not found
-        """
+        # Initialize EMBEDDING_MODEL settings
+        self.EMBEDDING_MODEL = {
+            'MODEL_NAME': os.getenv('QA_EMBEDDING_MODEL_NAME') or os.getenv('GOOGLE_EMBEDDING_MODEL', 'embedding-001'),
+            'BATCH_SIZE': int(os.getenv('QA_EMBEDDING_MODEL_BATCH_SIZE', '15')),
+            'MAX_LENGTH': int(os.getenv('QA_EMBEDDING_MODEL_MAX_LENGTH', '3072'))
+        }
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a configuration value by key."""
         # First try to get from class attributes
         if hasattr(self, key):
             return getattr(self, key)
+            
         # Then try to get from nested dictionaries
         for section in [self.SECURITY, self.VECTOR_STORE, self.DOCUMENT_PROCESSING,
                        self.EMBEDDING_MODEL, self.LOGGING, self.FILE_SCANNER]:
             if key in section:
                 return section[key]
+                
         return default
 
     def get_nested(self, path: str, default: Any = None) -> Any:
-        """Get a nested configuration value using dot notation.
-        
-        Args:
-            path: The configuration path (e.g., 'FILE_SCANNER.allowed_extensions')
-            default: Default value if path is not found
-            
-        Returns:
-            The configuration value or default if not found
-        """
+        """Get a nested configuration value using dot notation."""
         parts = path.split('.')
         current = self
         
@@ -72,18 +87,16 @@ class Config:
     def get_instance(cls, config_path: Optional[str] = None) -> 'Config':
         """Get or create the singleton instance of Config."""
         global _config_instance
+        
         if _config_instance is None:
             _config_instance = cls.load(config_path)
         elif config_path is not None:
-            # Only reload if a specific path is provided
             _config_instance = cls.load(config_path)
         return _config_instance
 
     @classmethod
     def load(cls, config_path: Optional[str] = None) -> 'Config':
         """Load configuration from file and environment variables."""
-        logger = logging.getLogger(__name__)
-        
         # Use default config path if none provided
         if config_path is None:
             config_path = os.getenv('CONFIG_PATH', './config/config.yaml')
@@ -91,9 +104,9 @@ class Config:
         try:
             config_file = Path(config_path)
             if not config_file.exists():
-                logger.warning(f"Config file {config_path} not found, using default values")
-                return cls()
+                return cls()  # Return default config if file doesn't exist
 
+            # Read YAML configuration
             with open(config_file, 'r') as f:
                 yaml_config = yaml.safe_load(f) or {}
                 
@@ -106,32 +119,33 @@ class Config:
             return instance
             
         except Exception as e:
-            logger.error(f"Error loading configuration: {str(e)}")
-            raise
+            raise RuntimeError(f"Error loading configuration: {str(e)}") from e
 
     def _load_env_vars(self) -> None:
-        """Load configuration overrides from environment variables."""
-        env_overrides = self._get_env_overrides()
+        """Load environment variables and update configuration."""
+        # Get all environment variables starting with QA_
+        qa_env_vars = {k: v for k, v in os.environ.items() if k.startswith('QA_')}
         
-        # Update instance attributes
-        for section in ['SECURITY', 'VECTOR_STORE', 'DOCUMENT_PROCESSING', 'EMBEDDING_MODEL', 'LOGGING', 'FILE_SCANNER']:
-            if hasattr(self, section):
-                section_overrides = {
-                    k.split('_', 1)[1]: v 
-                    for k, v in env_overrides.items() 
-                    if k.startswith(f"{section}_")
-                }
-                if section_overrides:
-                    current = getattr(self, section)
-                    current.update(section_overrides)
-
-    def _get_env_overrides(self) -> Dict[str, Any]:
-        """Get configuration overrides from environment variables."""
-        return {
-            k.replace('QA_', ''): v
-            for k, v in os.environ.items()
-            if k.startswith('QA_')
-        }
+        for env_var, value in qa_env_vars.items():
+            # Remove QA_ prefix and split into parts
+            parts = env_var[3:].split('_', 1)  # QA_SECTION_KEY -> [SECTION, KEY]
+            
+            if len(parts) < 2:
+                continue  # Skip malformed variables silently
+                
+            section, key = parts
+            
+            # Check if this section exists in our config
+            if not hasattr(self, section):
+                continue  # Skip unknown sections silently
+            
+            # Initialize section dict if needed
+            if getattr(self, section) is None:
+                setattr(self, section, {})
+            
+            # Update the configuration
+            section_dict = getattr(self, section)
+            section_dict[key] = value
 
 def get_config(config_path: Optional[str] = None) -> Config:
     """Get the global configuration instance."""
