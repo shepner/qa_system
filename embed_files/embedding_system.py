@@ -15,6 +15,8 @@ import numpy as np
 import google.generativeai as genai
 from tenacity import retry, stop_after_attempt, wait_exponential
 import os
+from .config import get_config, Config
+import tenacity
 
 # Initialize logger with module name for better traceability
 logger = logging.getLogger(__name__)
@@ -22,66 +24,66 @@ logger = logging.getLogger(__name__)
 class EmbeddingGenerator:
     """Generates vector embeddings for document chunks and processed image data using Google's models."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config_path: Optional[str] = None):
         """Initialize the embedding generator with configuration settings.
         
         Args:
-            config: Configuration dictionary containing model settings and security credentials
+            config_path: Optional path to config file. If not provided, uses default config path.
         """
-        self.config = config
         self.logger = logger
-
-        # DEBUG: Log the entire config dictionary and its type
-        self.logger.info("Received configuration:")
-        self.logger.info(f"Config type: {type(config)}")
-        self.logger.info(f"Config keys: {list(config.keys())}")
-        self.logger.info(f"Full config: {config}")
-
+        
+        # Get configuration from config.py
+        self.config = get_config(config_path)
+        
         # Get embedding model configuration
-        embedding_config = config.get('EMBEDDING_MODEL', {})
-        self.logger.info(f"Embedding config: {embedding_config}")  # DEBUG
+        embedding_config = self.config.get_nested('EMBEDDING_MODEL', {})
         self.model_name = embedding_config.get('MODEL_NAME', 'embedding-001')
         self.batch_size = embedding_config.get('BATCH_SIZE', 15)
         self.max_length = embedding_config.get('MAX_LENGTH', 3072)
         self.dimensions = embedding_config.get('DIMENSIONS', 768)
 
-        # Extract security configuration
-        security_config = config.get('SECURITY', {})
-        self.logger.info(f"Security config: {security_config}")  # DEBUG
-        
-        # Try to get credentials directly from config if not in security section
-        api_key = security_config.get('GOOGLE_API_KEY') or config.get('GOOGLE_API_KEY')
-        project_id = security_config.get('GOOGLE_CLOUD_PROJECT') or config.get('GOOGLE_CLOUD_PROJECT')
-        region = security_config.get('GOOGLE_CLOUD_REGION', 'us-central1')
-
-        # DEBUG: Log credential information (without exposing actual API key)
-        self.logger.info(f"API Key present: {bool(api_key)}")
-        self.logger.info(f"Project ID: {project_id}")
-        self.logger.info(f"Region: {region}")
-        self.logger.info(f"Direct environment check - API Key present: {bool(os.getenv('GOOGLE_API_KEY'))}, Project ID present: {bool(os.getenv('GOOGLE_CLOUD_PROJECT'))}")  # DEBUG
-
-        if not api_key or not project_id:
-            self.logger.error("Missing required Google Cloud credentials")
-            raise ValueError("Missing required Google Cloud credentials. Please set GOOGLE_API_KEY and GOOGLE_CLOUD_PROJECT.")
+        # Get security configuration
+        security_config = self.config.get_nested('SECURITY', {})
+        api_key = security_config.get('GOOGLE_API_KEY')
 
         # Configure Google AI client
         try:
             genai.configure(
                 api_key=api_key,
-                transport="rest",
-                project_id=project_id,
-                location=region
+                transport="rest"
             )
-            self.logger.info(f"Initialized EmbeddingGenerator with model {self.model_name} in project {project_id} (region: {region})")
+            self.logger.info(f"Initialized EmbeddingGenerator with model {self.model_name}")
         except Exception as e:
             self.logger.error(f"Failed to configure Google AI client: {str(e)}", exc_info=True)
             raise RuntimeError(f"Google AI client configuration failed: {str(e)}")
 
-        # Initialize the model
-        self.model = genai.GenerativeModel(self.model_name)
+        # Initialize the embedding model
+        try:
+            self.model = genai.GenerativeModel(self.model_name)
+            self.logger.debug("Successfully initialized embedding model")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize embedding model: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Model initialization failed: {str(e)}")
         
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def _generate_embedding_batch(
+        # Configure retry settings
+        self.max_retries = embedding_config.get('MAX_RETRIES', 5)
+        self.min_wait = embedding_config.get('MIN_WAIT', 4)
+        self.max_wait = embedding_config.get('MAX_WAIT', 60)
+        
+    @tenacity.retry(
+        wait=tenacity.wait_exponential(multiplier=1, min=4, max=60),
+        stop=tenacity.stop_after_attempt(5),
+        retry=tenacity.retry_if_exception_type((
+            ValueError,
+            ConnectionError,
+            TimeoutError,
+            Exception
+        )),
+        before=tenacity.before_log(logging.getLogger(__name__), logging.DEBUG),
+        after=tenacity.after_log(logging.getLogger(__name__), logging.DEBUG),
+        reraise=True
+    )
+    def _generate_embedding_batch(
         self,
         chunks: List[str],
         metadata: Optional[Dict[str, Any]] = None
@@ -111,28 +113,82 @@ class EmbeddingGenerator:
                 else:
                     text_chunks.append(chunk)
 
-            # Generate embeddings for the batch using the correct API method
-            embeddings = await genai.embed_content(
-                model=self.model_name,
-                content=text_chunks,
-                task_type="retrieval_document"
-            )
+            # Sanitize text chunks
+            sanitized_chunks = []
+            for chunk in text_chunks:
+                # Remove or replace problematic characters
+                sanitized = (
+                    chunk.replace('\x00', '')  # Remove null bytes
+                    .replace('®', '(R)')       # Replace registered trademark
+                    .replace('™', '(TM)')      # Replace trademark
+                    .replace('©', '(C)')       # Replace copyright
+                    .encode('ascii', 'ignore').decode('ascii')  # Remove non-ASCII chars
+                )
+                # Normalize whitespace
+                sanitized = ' '.join(sanitized.split())
+                sanitized_chunks.append(sanitized)
+
+            # Generate embeddings for the batch using the latest Gemini API
+            embeddings = []
+            for chunk in sanitized_chunks:
+                if not chunk.strip():
+                    self.logger.warning("Empty chunk detected after sanitization, skipping")
+                    continue
+
+                try:
+                    # Use the latest embedding API with validation
+                    response = genai.embed_content(
+                        model=self.model_name,
+                        content=chunk,
+                        task_type="retrieval_document",  # Specify task type for optimal embeddings
+                        title="document_chunk"  # Optional title for better context
+                    )
+                    
+                    # Validate response format
+                    if not response:
+                        raise ValueError("Empty response from embedding API")
+                    
+                    # Handle both dictionary and object response formats
+                    if isinstance(response, dict):
+                        embedding = response.get('embedding')
+                    else:
+                        embedding = response.embedding if hasattr(response, 'embedding') else None
+                        
+                    if embedding is None:
+                        self.logger.error(f"Unexpected response format: {response}")
+                        raise ValueError("Response missing embedding data")
+                    
+                    # Validate embedding format and dimensions
+                    if not isinstance(embedding, (list, np.ndarray)):
+                        raise ValueError(f"Invalid embedding type: {type(embedding)}")
+                        
+                    if len(embedding) != self.dimensions:
+                        raise ValueError(f"Invalid embedding dimensions: got {len(embedding)}, expected {self.dimensions}")
+                    
+                    embeddings.append(embedding)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error generating embedding for chunk: {str(e)}")
+                    self.logger.debug(f"Problematic chunk (first 100 chars): {chunk[:100]}...")
+                    raise RuntimeError(f"Embedding generation failed for chunk: {str(e)}")
             
             # Validate and process results
             results = []
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-                if not isinstance(embedding, (list, np.ndarray)) or len(embedding) != self.dimensions:
-                    self.logger.error(f"Invalid embedding generated for chunk {i}: wrong format or dimensions")
-                    raise ValueError(f"Invalid embedding generated for chunk {i}")
-                    
-                # Create result dictionary
+                # Create result dictionary with comprehensive metadata
                 result = {
                     'chunk_number': i if not isinstance(chunk, dict) else chunk.get('chunk_number', i),
                     'chunk_text': chunk if not isinstance(chunk, dict) else chunk.get('content', ''),
-                    'embedding': embedding.tolist() if isinstance(embedding, np.ndarray) else embedding,
+                    'embedding': embedding,
                     'embedding_model': self.model_name,
                     'embedding_timestamp': datetime.utcnow().isoformat(),
-                    'embedding_dimensions': self.dimensions
+                    'embedding_dimensions': len(embedding),
+                    'processing_info': {
+                        'sanitized': True,
+                        'original_length': len(chunk if isinstance(chunk, str) else chunk.get('content', '')),
+                        'sanitized_length': len(sanitized_chunks[i]),
+                        'processing_time': (datetime.utcnow() - start_time).total_seconds()
+                    }
                 }
                 
                 # Add metadata if provided
@@ -196,7 +252,10 @@ class EmbeddingGenerator:
             batch = chunks[i:i + self.batch_size]
             self.logger.debug(f"Processing batch {i//self.batch_size + 1} of {(len(chunks)-1)//self.batch_size + 1}")
             
-            batch_results = await self._generate_embedding_batch(batch, metadata)
+            # Since _generate_embedding_batch is no longer async, we need to run it in a thread pool
+            batch_results = await asyncio.get_event_loop().run_in_executor(
+                None, self._generate_embedding_batch, batch, metadata
+            )
             results.extend(batch_results)
             
         return results
@@ -235,24 +294,57 @@ class EmbeddingGenerator:
             if 'text_annotations' in processed_image_data:
                 text_content.append(processed_image_data['text_annotations'])
                 
-            # Add detected labels
+            # Add detected labels with confidence scores
             if 'labels' in processed_image_data:
-                text_content.extend(label['description'] for label in processed_image_data['labels'])
+                text_content.extend(
+                    f"{label['description']} ({label.get('confidence', 0):.2f})"
+                    for label in processed_image_data['labels']
+                )
                 
-            # Add detected objects
+            # Add detected objects with locations
             if 'objects' in processed_image_data:
-                text_content.extend(obj['name'] for obj in processed_image_data['objects'])
+                text_content.extend(
+                    f"{obj['name']} at {obj.get('location', 'unknown position')}"
+                    for obj in processed_image_data['objects']
+                )
                 
-            # Combine all text content
-            combined_text = ' '.join(text_content)
+            # Combine all text content with structured formatting
+            combined_text = (
+                "Image Analysis Results:\n"
+                f"OCR Text: {text_content[0] if text_content else 'None'}\n"
+                f"Labels: {', '.join(text_content[1:])}"
+            )
             
-            # Generate embedding for the combined text
-            embedding_results = await self.generate_embeddings([combined_text], metadata)
+            # Generate embedding for the combined text using task-specific parameters
+            response = genai.embed_content(
+                model=self.model_name,
+                content=combined_text,
+                task_type="retrieval_document",
+                title="image_analysis",  # Specify content type
+            )
             
-            if not embedding_results:
+            if not response or not hasattr(response, 'embedding'):
                 raise RuntimeError("Failed to generate embedding for image")
                 
-            return embedding_results[0]
+            # Create result with comprehensive metadata
+            result = {
+                'embedding': response.embedding,
+                'embedding_model': self.model_name,
+                'embedding_timestamp': datetime.utcnow().isoformat(),
+                'embedding_dimensions': len(response.embedding),
+                'content_type': 'image_analysis',
+                'analysis_summary': {
+                    'has_text': bool(processed_image_data.get('text_annotations')),
+                    'label_count': len(processed_image_data.get('labels', [])),
+                    'object_count': len(processed_image_data.get('objects', [])),
+                }
+            }
+            
+            # Add provided metadata
+            if metadata:
+                result['metadata'] = metadata
+                
+            return result
             
         except Exception as e:
             self.logger.error(f"Error generating image embedding: {str(e)}")
@@ -286,19 +378,37 @@ class EmbeddingGenerator:
             ids = []
             
             for i, result in enumerate(embeddings):
-                # Extract the embedding vector
+                # Extract and validate the embedding vector
                 if 'embedding' not in result:
                     raise ValueError(f"Missing embedding in result {i}")
-                vectors.append(result['embedding'])
+                    
+                embedding = result['embedding']
+                if not isinstance(embedding, (list, np.ndarray)):
+                    raise ValueError(f"Invalid embedding type in result {i}")
+                    
+                if len(embedding) != self.dimensions:
+                    raise ValueError(f"Invalid embedding dimensions in result {i}: got {len(embedding)}, expected {self.dimensions}")
+                    
+                vectors.append(embedding)
                 
-                # Prepare metadata
+                # Prepare comprehensive metadata
                 metadata_entry = {
                     'chunk_number': result.get('chunk_number', i),
                     'chunk_text': result.get('chunk_text', ''),
                     'embedding_model': result.get('embedding_model', self.model_name),
                     'embedding_timestamp': result.get('embedding_timestamp', datetime.utcnow().isoformat()),
-                    'embedding_dimensions': result.get('embedding_dimensions', self.dimensions)
+                    'embedding_dimensions': len(embedding),
+                    'content_type': result.get('content_type', 'text'),  # Distinguish between text and image content
+                    'processing_info': {
+                        'batch_processed': True,
+                        'processing_timestamp': datetime.utcnow().isoformat(),
+                        'model_version': self.model_name.split('/')[-1],
+                    }
                 }
+                
+                # Add analysis summary for image content
+                if result.get('content_type') == 'image_analysis':
+                    metadata_entry['analysis_summary'] = result.get('analysis_summary', {})
                 
                 # Add any additional metadata
                 if 'metadata' in result:
@@ -306,9 +416,13 @@ class EmbeddingGenerator:
                     
                 metadata_list.append(metadata_entry)
                 
-                # Generate unique ID
-                unique_id = f"{metadata_entry.get('path', '')}_{metadata_entry['chunk_number']}"
+                # Generate unique ID with timestamp for better tracking
+                timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                unique_id = f"{metadata_entry.get('path', '')}_{metadata_entry['chunk_number']}_{timestamp}"
                 ids.append(unique_id)
+                
+            self.logger.info(f"Prepared {len(vectors)} embeddings for vector store storage")
+            self.logger.debug(f"Vector dimensions: {self.dimensions}, Metadata fields: {list(metadata_list[0].keys() if metadata_list else [])}")
                 
             return {
                 'embeddings': vectors,
@@ -317,5 +431,5 @@ class EmbeddingGenerator:
             }
             
         except Exception as e:
-            self.logger.error(f"Error preparing embeddings for storage: {str(e)}")
+            self.logger.error(f"Error preparing embeddings for storage: {str(e)}", exc_info=True)
             raise ValueError(f"Failed to prepare embeddings for storage: {str(e)}") 

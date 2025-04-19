@@ -83,7 +83,9 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
         self.workspace_root = doc_processing.get('DOCUMENT_PATH', os.getcwd())
         
         # Initialize embedding generator
-        self.embedding_generator = EmbeddingGenerator(config)
+        # If config is a Config object, it will have a config_path attribute
+        config_path = getattr(config, 'config_path', None) if hasattr(config, 'config_path') else None
+        self.embedding_generator = EmbeddingGenerator(config_path)
         
         self.logger = logging.getLogger(__name__)
     

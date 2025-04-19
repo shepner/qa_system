@@ -208,7 +208,8 @@ class FileScanner:
                 # Structure the configuration properly for PDFDocumentProcessor
                 pdf_config = {
                     'DOCUMENT_PROCESSING': self.config.DOCUMENT_PROCESSING,  # Access the dictionary attribute directly
-                    'DOCUMENT_PATH': str(Path(self.document_path).resolve())
+                    'DOCUMENT_PATH': str(Path(self.document_path).resolve()),
+                    'SECURITY': self.config.SECURITY  # Add the security configuration
                 }
                 processor = processor_class(pdf_config)
             else:
@@ -329,3 +330,59 @@ class FileScanner:
             logger.error(f"Error scanning path {path}: {str(e)}")
             
         return file_info_list 
+
+class FileProcessingError(Exception):
+    """Base exception for file processing errors."""
+    pass
+
+class FileAccessError(FileProcessingError):
+    """Raised when file cannot be accessed."""
+    pass
+
+class FileValidationError(FileProcessingError):
+    """Raised when file fails validation."""
+    pass
+
+class ProcessingError(FileProcessingError):
+    """Raised when file processing fails."""
+    pass
+
+def process_file(self, file_path: str) -> Tuple[bool, Optional[str]]:
+    """Process a single file with appropriate error handling."""
+    try:
+        # Validate file access
+        if not os.path.exists(file_path):
+            raise FileAccessError(f"File does not exist: {file_path}")
+        if not os.access(file_path, os.R_OK):
+            raise FileAccessError(f"File not readable: {file_path}")
+            
+        # Get file stats for context
+        file_stats = os.stat(file_path)
+        file_size = file_stats.st_size
+        
+        logger.info(f"Processing file: {file_path} (size: {file_size} bytes)")
+        
+        # Validate file
+        is_valid, validation_error = self._validate_file(file_path)
+        if not is_valid:
+            raise FileValidationError(f"File validation failed: {validation_error}")
+            
+        # Process file
+        success, result = self._process_file_content(file_path)
+        if not success:
+            raise ProcessingError(f"File processing failed: {result}")
+            
+        return True, None
+        
+    except FileAccessError as e:
+        logger.error(f"File access error for {file_path}: {str(e)}")
+        return False, f"access error: {str(e)}"
+    except FileValidationError as e:
+        logger.error(f"File validation error for {file_path}: {str(e)}")
+        return False, f"validation error: {str(e)}"
+    except ProcessingError as e:
+        logger.error(f"Processing error for {file_path}: {str(e)}")
+        return False, f"processing error: {str(e)}"
+    except Exception as e:
+        logger.error(f"Unexpected error processing {file_path}: {str(e)}", exc_info=True)
+        return False, f"unexpected error: {str(e)}" 
