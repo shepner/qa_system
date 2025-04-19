@@ -1,0 +1,23 @@
+# embed_files System Configuration
+
+# Logging Configuration
+LOGGING:
+  LEVEL: INFO
+  LOG_FILE: "logs/remove_files.log"
+
+
+# Vector Database Configuration
+VECTOR_STORE:
+  # Vector store implementation to use
+  # Options:
+  #   "chroma" - ChromaDB for development and small-medium datasets
+  #   "milvus" - For production and large-scale deployments
+  #   "pgvector" - PostgreSQL with vector extension
+  TYPE: "chroma"
+
+  # Directory where vector store data will be persisted
+  PERSIST_DIRECTORY: "./data/vector_store"
+
+  # Name of the collection in the vector store
+  # Multiple collections can be used to separate different types of documents
+  COLLECTION_NAME: "qa_documents"
