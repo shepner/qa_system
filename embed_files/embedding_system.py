@@ -17,6 +17,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 import os
 from .config import get_config, Config
 import tenacity
+from .vector_system import VectorStore  # Add VectorStore import
 
 # Initialize logger with module name for better traceability
 logger = logging.getLogger(__name__)
@@ -34,6 +35,10 @@ class EmbeddingGenerator:
         
         # Get configuration from config.py
         self.config = get_config(config_path)
+        
+        # Initialize VectorStore
+        self.vector_store = VectorStore(config_path)
+        self.logger.info("Initialized VectorStore for embedding storage")
         
         # Get embedding model configuration
         embedding_config = self.config.get_nested('EMBEDDING_MODEL', {})
@@ -423,6 +428,14 @@ class EmbeddingGenerator:
                 
             self.logger.info(f"Prepared {len(vectors)} embeddings for vector store storage")
             self.logger.debug(f"Vector dimensions: {self.dimensions}, Metadata fields: {list(metadata_list[0].keys() if metadata_list else [])}")
+            
+            # Store embeddings in vector store
+            self.vector_store.add_embeddings(
+                embeddings=vectors,
+                metadata=metadata_list,
+                ids=ids
+            )
+            self.logger.info("Successfully stored embeddings in vector store")
                 
             return {
                 'embeddings': vectors,
