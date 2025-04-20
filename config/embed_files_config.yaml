@@ -50,6 +50,7 @@ FILE_SCANNER:
     - "tags/"
 
   HASH_ALGORITHM: "sha256"
+  SKIP_EXISTING: true  # Whether to skip files already in vector db
 
 # Document Processing
 DOCUMENT_PROCESSING:

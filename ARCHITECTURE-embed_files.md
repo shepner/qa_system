@@ -460,13 +460,16 @@ Example Log Entry:
 ```
 
 #### 3.2.4 File Scanner (file_scanner.py)
-- **Purpose**: Discovers and validates files for processing, manages file selection based on configuration, and generates file checksums
+- **Purpose**: Discovers and validates files for processing, manages file selection based on configuration, generates file checksums, and checks against Vector DB to avoid reprocessing
 - **Integration with Main**:
   - Receives paths from main's --add argument (supports both directories and individual files)
   - Receives configuration either from default or main's --config argument
+  - Loads VECTOR_STORE configuration from config.py for Vector DB integration
+  - Interacts with Vector DB to check for existing files
 - **Input**:
   - `path`: Path to scan (can be a directory or individual file, provided by main's --add argument)
-  - Configuration settings (from config.FILE_SCANNER, loaded by main):
+  - `vector_db`: Instance of Vector DB for checking existing files
+  - Configuration settings (from config.FILE_SCANNER and config.VECTOR_STORE, loaded by main):
     - `EXCLUDE_PATTERNS`: List of gitignore-style patterns for file exclusion/inclusion
       - Permits all files by default
       - Supports standard gitignore pattern syntax
@@ -475,29 +478,42 @@ Example Log Entry:
     - `HASH_ALGORITHM`: Hash algorithm for checksums (default: 'sha256')
     - `ALLOWED_EXTENSIONS`: List of file extensions to process
     - `DOCUMENT_PATH`: Default path for documents to be processed
+    - `VECTOR_STORE`: Vector database configuration including:
+      - `TYPE`: Vector store implementation
+      - `PERSIST_DIRECTORY`: Data storage location
+      - `COLLECTION_NAME`: Name of collection
+      - `DISTANCE_METRIC`: Similarity metric
 - **Output**:
   - List of dictionaries containing:
     - `path`: Relative path of each file
     - `checksum`: File's cryptographic hash
+    - `needs_processing`: Boolean indicating if file needs to be processed (True if checksum not found in Vector DB)
 - **Key Functions**:
   - `should_process_file`: Validates files against configured patterns
   - `calculate_checksum`: Generates cryptographic hashes using configured algorithm
   - `scan_files`: Processes individual files or recursively discovers files in directories
+  - `check_existing_files`: Queries Vector DB to identify which files need processing based on checksums
 - **Logging Integration**:
   - Uses module-level logger for operation tracking
   - Log levels:
-    - INFO: File processing progress
-    - DEBUG: Detailed file validation decisions
+    - INFO: File processing progress and skipped files
+    - DEBUG: Detailed file validation decisions and checksum comparisons
     - ERROR: File access or processing failures
 - **Usage**:
 ```python
 from embed_files.file_scanner import FileScanner
+from embed_files.vector_system import VectorDB
 
-# Initialize with config loaded by main
-scanner = FileScanner(config)
+# Initialize vector db with configuration
+config = get_config()
+vector_db = VectorDB(config)
+
+# Initialize scanner with config and vector db
+scanner = FileScanner(config, vector_db)
 
 # Scan a directory
 files = scanner.scan_files("/path/to/directory")
+# Returns only files that need processing (not in vector db)
 
 # Process a single file
 files = scanner.scan_files("/path/to/specific_file.md")
@@ -523,6 +539,14 @@ FILE_SCANNER:
     - "smart-chats/"
   HASH_ALGORITHM: "sha256"
   DOCUMENT_PATH: "./docs"
+  SKIP_EXISTING: true  # Whether to skip files already in vector db
+
+VECTOR_STORE:
+  TYPE: "chroma"
+  PERSIST_DIRECTORY: "./vector_store"
+  COLLECTION_NAME: "documents"
+  DISTANCE_METRIC: "cosine"
+  TOP_K: 5  # Number of results to retrieve
 ```
 
 #### 3.2.5 Document Processors
