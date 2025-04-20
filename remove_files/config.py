@@ -90,34 +90,33 @@ class Config:
         return value if value is not None else default
 
     def get_nested(self, path: str, default: Any = None) -> Any:
-        """Get a nested configuration value using dot notation."""
-        parts = path.split('.')
-        current = self
+        """Get a nested configuration value using dot notation.
         
+        Args:
+            path: Path to configuration value using dot notation (e.g. 'VECTOR_STORE.COLLECTION_NAME')
+            default: Default value to return if path not found
+            
+        Returns:
+            Configuration value at path or default if not found
+        """
         try:
-            for part in parts:
-                if hasattr(current, part):
-                    current = getattr(current, part)
-                elif isinstance(current, dict) and part in current:
-                    current = current[part]
+            # Split path into parts
+            parts = path.split('.')
+            
+            # Start with the top level
+            value = getattr(self, parts[0]) if hasattr(self, parts[0]) else None
+            
+            # Traverse the nested structure
+            for part in parts[1:]:
+                if isinstance(value, dict) and part in value:
+                    value = value[part]
                 else:
-                    if debug_config:
-                        print(f"\n=== Config Get Nested (Not Found) ===")
-                        print(f"Path: {path}")
-                        print(f"Default Value: {default}")
                     return default
                     
+            return value
+        except Exception as e:
             if debug_config:
-                print(f"\n=== Config Get Nested ===")
-                print(f"Path: {path}")
-                print(f"Value: {current}")
-                
-            return current
-        except (AttributeError, KeyError):
-            if debug_config:
-                print(f"\n=== Config Get Nested (Error) ===")
-                print(f"Path: {path}")
-                print(f"Default Value: {default}")
+                print(f"Error getting nested config: {str(e)}")
             return default
 
     @classmethod

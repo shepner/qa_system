@@ -10,7 +10,6 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 
 from remove_files.config import get_config
-from remove_files.file_matcher import FileMatcher
 from remove_files.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -34,11 +33,8 @@ class DocumentRemover:
         # Load configuration
         self.config = get_config(config_path)
         
-        # Initialize vector store
-        self.vector_store = VectorStore(config_path)
-        
-        # Initialize file matcher with vector store for validation
-        self.file_matcher = FileMatcher(self.vector_store)
+        # Initialize vector store with Config object instead of path
+        self.vector_store = VectorStore(self.config)
         
         # Get removal validation settings
         self.require_confirmation = self.config.get_nested(
@@ -47,6 +43,24 @@ class DocumentRemover:
         )
         
         logger.info("Initialized DocumentRemover")
+        
+    def validate_file(self, file_path: str) -> bool:
+        """Validate that a file exists in the vector store.
+        
+        Args:
+            file_path: Path to file to validate
+            
+        Returns:
+            True if file exists in vector store, False otherwise
+        """
+        try:
+            results = self.vector_store.collection.get(
+                where={"path": str(file_path)}
+            )
+            return bool(results and results['ids'])
+        except Exception as e:
+            logger.error(f"Error validating file {file_path}: {str(e)}")
+            return False
         
     def remove_documents(self, file_paths: List[str], force: bool = False) -> Dict[str, Any]:
         """Remove documents from the vector store.
@@ -82,7 +96,7 @@ class DocumentRemover:
             # Validate files exist and are in vector store
             valid_files = []
             for file_path in file_paths:
-                if self.file_matcher._validate_file(file_path):
+                if self.validate_file(file_path):
                     valid_files.append(file_path)
                 else:
                     results['failed'].append(file_path)

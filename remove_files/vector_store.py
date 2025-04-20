@@ -12,7 +12,7 @@ import chromadb
 from chromadb.config import Settings
 from chromadb.api import Collection
 
-from remove_files.config import get_config
+from remove_files.config import get_config, Config
 from remove_files.logging_setup import setup_logging
 
 class VectorStore:
@@ -30,91 +30,52 @@ class VectorStore:
         config: System configuration
     """
     
-    def __init__(self, config_path: Optional[str] = None):
-        """Initialize the vector store with configuration.
+    def __init__(self, config: Config):
+        """Initialize vector store with configuration.
         
         Args:
-            config_path: Optional path to configuration file
+            config: Configuration object
         """
-        # Load configuration
-        self.config = get_config(config_path)
-        
-        # Setup logging
-        setup_logging(
-            LOG_FILE=self.config.get_nested('LOGGING.LOG_FILE'),
-            LOG_LEVEL=self.config.get_nested('LOGGING.LEVEL', "INFO"),
-            DEBUG=self.config.get_nested('LOGGING.DEBUG', False)
-        )
-        
+        self.config = config
         self.logger = logging.getLogger(__name__)
-        self.logger.info("Initializing VectorStore for document removal")
         
-        # Get vector store configuration
-        self.persist_directory = self.config.get_nested(
-            'VECTOR_STORE.PERSIST_DIRECTORY',
-            './data/vector_store'
-        )
-        self.collection_name = self.config.get_nested(
-            'VECTOR_STORE.COLLECTION_NAME',
-            'embeddings'
-        )
-        
-        # Ensure persist directory exists
-        Path(self.persist_directory).mkdir(parents=True, exist_ok=True)
+        # Get vector store settings from config
+        self.persist_directory = self.config.get_nested('VECTOR_STORE.PERSIST_DIRECTORY', 'data/vector_store')
+        self.collection_name = self.config.get_nested('VECTOR_STORE.COLLECTION_NAME', 'documents')
+        self.distance_metric = self.config.get_nested('VECTOR_STORE.DISTANCE_METRIC', 'cosine')
         
         # Initialize ChromaDB client
-        self.client = chromadb.PersistentClient(
-            path=self.persist_directory,
-            settings=Settings(
-                anonymized_telemetry=False,
-                allow_reset=True
-            )
-        )
-        
-        # Get or create collection
+        self.client = chromadb.PersistentClient(path=self.persist_directory)
         self.collection = self._get_or_create_collection()
         
         self.logger.info(f"VectorStore initialized with collection: {self.collection_name}")
     
     def _get_or_create_collection(self) -> Collection:
-        """Get existing collection or create new one if it doesn't exist."""
-        try:
-            return self.client.get_or_create_collection(
-                name=self.collection_name
-            )
-        except Exception as e:
-            self.logger.error(f"Error getting/creating collection: {str(e)}")
-            raise
-
-    def remove_documents(self, doc_ids: List[str]) -> bool:
-        """Remove documents and their vectors from the store.
+        """Get or create ChromaDB collection.
         
-        Args:
-            doc_ids: List of document IDs to remove
-            
         Returns:
-            bool: True if removal was successful
-            
-        Raises:
-            Exception: If removal fails
+            ChromaDB collection
         """
         try:
-            self.logger.info(f"Removing {len(doc_ids)} documents from vector store")
-            
-            # Remove documents in batches to avoid memory issues
-            batch_size = 100
-            for i in range(0, len(doc_ids), batch_size):
-                batch = doc_ids[i:i + batch_size]
-                self.collection.delete(
-                    ids=batch
-                )
-                self.logger.debug(f"Removed batch of {len(batch)} documents")
-            
-            self.logger.info(f"Successfully removed {len(doc_ids)} documents")
-            return True
-            
+            return self.client.get_or_create_collection(
+                name=self.collection_name,
+                metadata={"hnsw:space": self.distance_metric}
+            )
         except Exception as e:
-            self.logger.error(f"Error removing documents: {str(e)}")
+            self.logger.error(f"Failed to get/create collection: {str(e)}")
+            raise
+
+    def remove_documents(self, document_ids: List[str]) -> None:
+        """Remove documents from vector store by ID.
+        
+        Args:
+            document_ids: List of document IDs to remove
+        """
+        try:
+            self.collection.delete(ids=document_ids)
+            self.logger.info(f"Removed {len(document_ids)} documents from vector store")
+        except Exception as e:
+            self.logger.error(f"Failed to remove documents: {str(e)}")
             raise
 
     def verify_removal(self, doc_ids: List[str]) -> bool:
