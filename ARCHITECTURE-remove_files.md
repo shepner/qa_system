@@ -70,15 +70,42 @@ The diagram above shows the key components of the file removal system and their 
 
 #### 2.2.1 File Matcher
 
-- **Purpose**: Identifies files to be removed based on input paths or patterns
-- **Key Functions**:
-  - Pattern matching using gitignore notation
-  - Validation of file existence in vector database
-  - Generation of removal candidate list
-  - Support for both exact matches and pattern-based matching
-- **Technologies**:
-  - Python
-  - Pattern matching libraries
+- **Purpose**: Identifies and validates files for removal based on input paths or patterns by checking against the vector database
+- **Integration with Configuration Module**:
+  - Uses config.py to load configuration settings
+  - Retrieves FILE_MATCHER settings through config object
+
+- **Vector Store Integration**:
+  ```python
+  from remove_files.vector_store import VectorStore
+  from remove_files.document_remover import DocumentRemover
+
+  class FileMatcher:
+      def __init__(self, vector_store: VectorStore, document_remover: DocumentRemover):
+          self.vector_store = vector_store
+          self.document_remover = document_remover
+          self.logger = logging.getLogger(__name__)
+
+      def find_matching_files(self, pattern: str) -> list[str]:
+          """Find files in vector store matching the given pattern."""
+          logger.info(f"Finding files matching pattern: {pattern}")
+          
+          # Query vector store for all document IDs
+          all_docs = self.vector_store.get_all_documents()
+          
+          # Match pattern against documents
+          matches = [doc for doc in all_docs if self._matches_pattern(doc, pattern)]
+          logger.debug(f"Found {len(matches)} matching files")
+          
+          return matches
+          
+      def remove_matching_files(self, pattern: str) -> bool:
+          """Remove files matching pattern from vector store."""
+          matches = self.find_matching_files(pattern)
+          if matches:
+              logger.info(f"Removing {len(matches)} matched files")
+              return self.document_remover.remove_documents(matches)
+          return True
 
 #### 2.2.2 Removal Validator
 
@@ -274,18 +301,159 @@ Example Log Entry:
 ```
 
 #### 3.2.4 File Matcher (file_matcher.py)
-- **Purpose**: Identifies and validates files for removal based on input paths or patterns
+- **Purpose**: Identifies and validates files for removal based on input paths or patterns by checking against the vector database
 - **Integration with Configuration Module**:
   - Uses config.py to load configuration settings
   - Retrieves FILE_MATCHER settings through config object
-  - Inherits logging configuration from main config
-- **Input**:
-  - `path`: Path to process (can be a directory or individual file, provided by main's --remove argument)
-  - Configuration settings (loaded via config.py):
-    ```python
-    from remove_files.config import get_config
-    
-    config = get_config()
-    recursive = config.get_nested('FILE_MATCHER.RECURSIVE', default=True)
-    case_sensitive = config.get_nested('FILE_MATCHER.CASE_SENSITIVE', default=False)
-    ```
+
+- **Vector Store Integration**:
+  ```python
+  from remove_files.vector_store import VectorStore
+  from remove_files.document_remover import DocumentRemover
+
+  class FileMatcher:
+      def __init__(self, vector_store: VectorStore, document_remover: DocumentRemover):
+          self.vector_store = vector_store
+          self.document_remover = document_remover
+          self.logger = logging.getLogger(__name__)
+
+      def find_matching_files(self, pattern: str) -> list[str]:
+          """Find files in vector store matching the given pattern."""
+          logger.info(f"Finding files matching pattern: {pattern}")
+          
+          # Query vector store for all document IDs
+          all_docs = self.vector_store.get_all_documents()
+          
+          # Match pattern against documents
+          matches = [doc for doc in all_docs if self._matches_pattern(doc, pattern)]
+          logger.debug(f"Found {len(matches)} matching files")
+          
+          return matches
+          
+      def remove_matching_files(self, pattern: str) -> bool:
+          """Remove files matching pattern from vector store."""
+          matches = self.find_matching_files(pattern)
+          if matches:
+              logger.info(f"Removing {len(matches)} matched files")
+              return self.document_remover.remove_documents(matches)
+          return True
+
+#### 3.2.5 Document Removal Interface (document_remover.py)
+- **Purpose**: Orchestrates the document removal process and provides interfaces for vector store operations
+- **Key Components**:
+  - Connection management
+  - Query operations
+  - Batch processing
+  - Error handling
+  - Removal validation
+  - Progress tracking
+  - Cleanup verification
+
+- **Logging Integration**:
+  ```python
+  from remove_files.logging_setup import setup_logging
+  import logging
+
+  # Get logger for this module
+  logger = logging.getLogger(__name__)
+
+  class DocumentRemover:
+      def __init__(self, vector_store, config):
+          self.vector_store = vector_store
+          self.config = config
+          self.logger = logging.getLogger(__name__)
+          
+      def remove_documents(self, file_paths):
+          self.logger.info(f"Starting removal of {len(file_paths)} documents")
+          try:
+              # Remove vectors by document IDs
+              self.vector_store.remove_documents(file_paths)
+              self.logger.debug(f"Successfully removed documents: {file_paths}")
+          except Exception as e:
+              self.logger.error(f"Error during document removal: {str(e)}")
+              raise
+  ```
+
+- **Vector Store Integration**:
+  ```python
+  from remove_files.vector_store import VectorStore
+  
+  vector_store = VectorStore(config)
+  # Remove vectors by document IDs
+  vector_store.remove_documents(doc_ids)
+  # Verify removal
+  vector_store.verify_removal(doc_ids)
+  ```
+
+- **Document Removal Implementation**:
+  ```python
+  from remove_files.document_remover import DocumentRemover
+  
+  remover = DocumentRemover(vector_store, config)
+  # Process removal request
+  remover.remove_documents(file_paths)
+  # Verify and cleanup
+  remover.verify_and_cleanup()
+  ```
+
+#### 3.2.6 Vector Store System (vector_store.py)
+- **Purpose**: Manages vector database operations, including storage, retrieval, and removal of document vectors
+
+- **Integration with Configuration and Logging**:
+  ```python
+  import logging
+  from remove_files.logging_setup import setup_logging
+  from remove_files.config import get_config
+
+  logger = logging.getLogger(__name__)
+
+  class VectorStore:
+      def __init__(self, config):
+          self.config = config
+          self.logger = logging.getLogger(__name__)
+          self.persist_directory = config.get_nested('VECTOR_STORE.PERSIST_DIRECTORY')
+          self.collection_name = config.get_nested('VECTOR_STORE.COLLECTION_NAME')
+          self.logger.debug(f"Initializing vector store in {self.persist_directory}")
+  ```
+
+- **Core Operations**:
+  ```python
+  def remove_documents(self, doc_ids: list[str]) -> bool:
+      """Remove documents and their vectors from the store."""
+      try:
+          self.logger.info(f"Removing {len(doc_ids)} documents from vector store")
+          # Implementation of vector removal
+          self.logger.debug(f"Successfully removed documents: {doc_ids}")
+          return True
+      except Exception as e:
+          self.logger.error(f"Error removing documents: {str(e)}")
+          raise
+
+  def verify_removal(self, doc_ids: list[str]) -> bool:
+      """Verify documents were successfully removed."""
+      self.logger.debug(f"Verifying removal of {len(doc_ids)} documents")
+      # Implementation of removal verification
+      return True
+  ```
+
+- **Key Features**:
+  - Chromadb integration for vector storage
+  - Batch operations support
+  - Automatic connection management
+  - Error recovery mechanisms
+  - Performance optimization
+  - Data integrity checks
+
+- **Error Handling**:
+  - Connection errors
+  - Database operation failures
+  - Data integrity issues
+  - Resource cleanup
+  - Transaction management
+
+- **Performance Considerations**:
+  - Connection pooling
+  - Batch processing optimization
+  - Resource management
+  - Memory usage monitoring
+  - Query optimization

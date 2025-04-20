@@ -4,7 +4,19 @@
 LOGGING:
   LEVEL: INFO
   LOG_FILE: "logs/remove_files.log"
+  DEBUG: false
 
+# File Matcher Configuration
+FILE_MATCHER:
+  # Enable recursive matching for directory patterns
+  RECURSIVE: true
+  # Case sensitivity in matching
+  CASE_SENSITIVE: false
+
+# Removal Validation Configuration
+REMOVAL_VALIDATION:
+  # Whether to require confirmation before removing files
+  REQUIRE_CONFIRMATION: true
 
 # Vector Database Configuration
 VECTOR_STORE:
