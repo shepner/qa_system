@@ -24,6 +24,28 @@ parser.add_argument(
     help="Path to process (can be a directory or individual file). Can be specified multiple times.",
 )
 parser.add_argument(
+    "--list",
+    action="store_true",
+    help="List the contents of the vector data store",
+)
+parser.add_argument(
+    "--filter",
+    type=str,
+    help="Filter pattern for --list and --remove operations (e.g. '*.md')",
+)
+parser.add_argument(
+    "--remove",
+    type=str,
+    help="Remove data from the vector data store (can be file or directory path)",
+)
+parser.add_argument(
+    "--query",
+    type=str,
+    nargs='?',
+    const='',
+    help="Enter interactive chat mode. Optionally provide a single query.",
+)
+parser.add_argument(
     "--config",
     type=str,
     default="./config/config.yaml",
@@ -41,7 +63,22 @@ def parse_args() -> argparse.Namespace:
     Returns:
         argparse.Namespace: Parsed command line arguments
     """
-    return parser.parse_args()
+    args = parser.parse_args()
+    
+    # Validate --filter is only used with --list or --remove
+    if args.filter and not (args.list or args.remove):
+        parser.error("--filter can only be used with --list or --remove")
+        
+    # Ensure only one main operation is specified
+    operations = sum(1 for op in [args.add, args.list, args.remove, args.query is not None] if op)
+    if operations > 1:
+        parser.error("Only one operation (--add, --list, --remove, --query) can be specified at a time")
+    elif operations == 0:
+        # Print help if no operation specified
+        parser.print_help()
+        sys.exit(0)
+        
+    return args
 
 def main() -> None:
     """Main entry point for the QA system.
@@ -100,10 +137,24 @@ def main() -> None:
                 logger.info("Document processing completed successfully")
             else:
                 logger.warning("No files were processed")
-        else:
-            # Print help if no paths provided
-            parser.print_help()
-            sys.exit(0)
+                
+        elif args.list:
+            logger.info("Listing vector store contents")
+            # TODO: Implement vector store listing functionality
+            # This will be implemented as per ARCHITECTURE-list-flow.md
+            
+        elif args.remove:
+            logger.info(f"Removing data: {args.remove}")
+            # TODO: Implement vector store removal functionality
+            # This will be implemented as per ARCHITECTURE-remove-flow.md
+            
+        elif args.query is not None:
+            if args.query:
+                logger.info(f"Processing single query: {args.query}")
+            else:
+                logger.info("Starting interactive chat mode")
+            # TODO: Implement query functionality
+            # This will be implemented as per ARCHITECTURE-query-flow.md
             
         # Successful execution
         sys.exit(0)

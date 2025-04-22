@@ -18,6 +18,25 @@ import os
 from pathlib import Path
 from typing import Optional
 
+# ANSI color codes for console output
+COLORS = {
+    'DEBUG': '\033[0;36m',    # Cyan
+    'INFO': '\033[0;32m',     # Green
+    'WARNING': '\033[0;33m',  # Yellow
+    'ERROR': '\033[0;31m',    # Red
+    'CRITICAL': '\033[0;35m', # Magenta
+    'RESET': '\033[0m',       # Reset
+}
+
+class ColorFormatter(logging.Formatter):
+    """Custom formatter adding colors to levelname for console output."""
+    
+    def format(self, record):
+        # Add color to levelname if color is available for this level
+        if record.levelname in COLORS:
+            record.levelname = f"{COLORS[record.levelname]}{record.levelname}{COLORS['RESET']}"
+        return super().format(record)
+
 def setup_logging(
     log_file: str,
     log_level: str = "INFO",
@@ -68,13 +87,15 @@ def setup_logging(
     )
     console_handler = logging.StreamHandler()
     
-    # Set format for both handlers
-    formatter = logging.Formatter(
+    # Set different formats for file and console
+    file_formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
+    console_formatter = ColorFormatter('%(levelname)s - %(message)s')
+    
+    file_handler.setFormatter(file_formatter)
+    console_handler.setFormatter(console_formatter)
     
     # Configure root logger
     root_logger = logging.getLogger()

@@ -84,7 +84,7 @@ class FileScanner:
         self.processor_map.update(custom_processor_map)
         
         # Initialize vector store from config
-        self.vector_store = VectorStore(config)
+        self.vector_store = VectorStore(None)  # Use the global config instance
         
         self.processed_files: Set[str] = set()
         self.file_checksums: Dict[str, str] = {}
@@ -171,7 +171,6 @@ class FileScanner:
             results = self.vector_store.query_similar(
                 query_embedding=[],  # Empty since we're using metadata filter
                 n_results=1,
-                collection_name=self.vector_collection,
                 metadata_filter={"checksum": checksum}
             )
             
