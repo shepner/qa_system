@@ -11,6 +11,19 @@ last_updated: 2024-03-20
 
 # Adding Files Flow
 
+## Table of Contents
+1. [Overview](#1-overview)
+2. [System Flow](#2-system-flow)
+3. [Components](#3-components)
+   3.1. [File Scanner](#31-file-scanner)
+   3.2. [Document Processors](#32-document-processors)
+   3.3. [Embedding Generator](#33-embedding-generator)
+   3.4. [Vector Database](#34-vector-database)
+
+## 1. Overview
+The Adding Files Flow describes the process of scanning, processing, and embedding files into the vector database for later retrieval and querying.
+
+## 2. System Flow
 ```mermaid
 sequenceDiagram
     participant FS as File Scanner
@@ -37,9 +50,9 @@ sequenceDiagram
     end
 ```
 
-#### Add Flow Components
+## 3. Components
 
-##### File Scanner
+### 3.1. File Scanner
 - **Purpose**: Handles discovery of local files and selection of appropriate Document Processor
 - **Key Functions**:
   - Exclusion and inclusion of identified files and directories using gitignore notation
@@ -58,74 +71,7 @@ sequenceDiagram
   - Python pathlib
   - hashlib for checksums
 
-##### Document Processors
-- **Purpose**: Handles ingestion and preprocessing of local files of specific filetypes
-- **Key Functions**:
-  - Text extraction and normalization
-  - Content chunking
-  - Metadata extraction
-    - File metadata (creation time, modification time, filename, path, etc)
-    - Document filetype specific information and relationships (ie hashtags, internal links, topics, etc)
-  - Format-specific processing
-- **Technologies**:
-  - Python
-  - Custom chunking algorithms
-  - Format-specific libraries (PyPDF2, markdown, etc.)
-
-###### Document Metadata
-- **File Metadata**:
-  - `path`: Absolute file path
-  - `relative_path`: Path relative to workspace root
-  - `directory`: Full directory hierarchy
-  - `filename_full`: Descriptive filename with extension
-  - `filename_stem`: Descriptive filename without extension
-  - `file_type`: Document format/extension
-  - `created_at`: Creation timestamp
-  - `last_modified`: Last modification timestamp
-  - `chunk_count`: Number of text chunks
-  - `total_tokens`: Total token count
-  - `checksum`: SHA256 hash of the file
-
-###### Vision Document Processor (vision_processor.py)
-- **Purpose**: Processes image files using Google Cloud Vision API to extract visual information and prepare it for embedding generation
-
-- **Input**:
-  - Image files in supported formats (PNG, JPEG, GIF, BMP, WEBP)
-  - Configuration settings from config.DOCUMENT_PROCESSING.VISION_PROCESSOR:
-    - API version and credentials
-    - Enabled feature types
-    - Batch processing parameters
-    - Performance settings
-
-- **Output**:
-  - Structured image analysis results including:
-    - OCR text extraction
-    - Object detection and localization
-    - Label detection and classification
-    - Face detection results
-    - Safe search annotations
-    - Image properties (color, quality, etc.)
-  - Processed metadata:
-    - Image dimensions and format
-    - Processing timestamp
-    - Feature detection confidence scores
-    - Error states and warnings
-
-##### Embedding Generator
-- **Purpose**: Generates vector embeddings using Google's models
-- **Key Functions**:
-  - Text chunk embedding generation
-  - Image embedding generation
-  - Batch processing
-  - Validation and optimization
-- **Technologies**:
-  - Google's Gemini API
-  - NumPy for vector operations
-
-
-
-
-#### 3.2.4 File Scanner (file_scanner.py)
+#### 3.1.1 File Scanner (file_scanner.py)
 - **Purpose**: Discovers and validates files for processing, manages file selection based on configuration, generates file checksums, and checks against Vector DB to avoid reprocessing
 - **Integration with Main**:
   - Receives paths from main's --add argument (supports both directories and individual files)
@@ -212,14 +158,60 @@ VECTOR_STORE:
   TOP_K: 5  # Number of results to retrieve
 ```
 
-#### 3.2.5 Document Processors
+### 3.2. Document Processors
+- **Purpose**: Handles ingestion and preprocessing of local files of specific filetypes
+- **Key Functions**:
+  - Text extraction and normalization
+  - Content chunking
+  - Metadata extraction
+    - File metadata (creation time, modification time, filename, path, etc)
+    - Document filetype specific information and relationships (ie hashtags, internal links, topics, etc)
+  - Format-specific processing
+- **Technologies**:
+  - Python
+  - Custom chunking algorithms
+  - Format-specific libraries (PyPDF2, markdown, etc.)
 
-##### 3.2.5.1 Overview
-- **Purpose**: Handles the processing and extraction of content from specific file types, providing a consistent interface for text extraction, metadata generation, and content chunking across different document formats.
+#### 3.2.1 Document Metadata
+- **File Metadata**:
+  - `path`: Absolute file path
+  - `relative_path`: Path relative to workspace root
+  - `directory`: Full directory hierarchy
+  - `filename_full`: Descriptive filename with extension
+  - `filename_stem`: Descriptive filename without extension
+  - `file_type`: Document format/extension
+  - `created_at`: Creation timestamp
+  - `last_modified`: Last modification timestamp
+  - `chunk_count`: Number of text chunks
+  - `total_tokens`: Total token count
+  - `checksum`: SHA256 hash of the file
 
-##### 3.2.5.2 Core Components
+#### 3.2.2 Vision Document Processor
+- **Purpose**: Processes image files using Google Cloud Vision API to extract visual information
+- **Input**:
+  - Image files in supported formats (PNG, JPEG, GIF, BMP, WEBP)
+  - Configuration settings from config.DOCUMENT_PROCESSING.VISION_PROCESSOR:
+    - API version and credentials
+    - Enabled feature types
+    - Batch processing parameters
+    - Performance settings
+- **Output**:
+  - Structured image analysis results including:
+    - OCR text extraction
+    - Object detection and localization
+    - Label detection and classification
+    - Face detection results
+    - Safe search annotations
+    - Image properties (color, quality, etc.)
+  - Processed metadata:
+    - Image dimensions and format
+    - Processing timestamp
+    - Feature detection confidence scores
+    - Error states and warnings
 
-###### Base Document Processor
+#### 3.2.3 Core Components
+
+##### Base Document Processor
 - **Module**: `base_processor.py`
 - **Responsibilities**:
   - Defines common interface for all document processors
@@ -228,7 +220,7 @@ VECTOR_STORE:
   - Requires implementation of `process()` method by subclasses
   - Implements sentence-aware text chunking to preserve sentence boundaries
 
-###### Supported Processors
+##### Supported Processors
 1. **PDF Processor** (`pdf_processor.py`):
    - Text extraction with page preservation
    - Header pattern recognition
@@ -269,9 +261,9 @@ VECTOR_STORE:
      - Pillow/PIL for image handling
      - Python async for concurrent API calls
 
-##### 3.2.5.3 Interface Specification
+#### 3.2.4 Interface Specification
 
-###### Input Parameters
+##### Input Parameters
 - `file_path`: Path to the document to process
 - `metadata`: Initial metadata dictionary containing:
   - `path`: Absolute file path
@@ -279,7 +271,7 @@ VECTOR_STORE:
   - `filename`: Name of the file
   - `checksum`: SHA256 hash of the file (provided by File Scanner)
 
-###### Output Format
+##### Output Format
 - **Metadata Dictionary**:
   - All input metadata fields
   - Processing timestamp
@@ -287,7 +279,7 @@ VECTOR_STORE:
   - Chunk information (if applicable)
   - Document-specific metadata (varies by processor)
 
-##### 3.2.5.4 Configuration
+#### 3.2.5 Configuration
 ```yaml
 DOCUMENT_PROCESSING:
   MAX_CHUNK_SIZE: 1500     # Maximum size of text chunks
@@ -308,15 +300,15 @@ DOCUMENT_PROCESSING:
     MAX_HEADER_LENGTH: 100  # Maximum length for a header line
 ```
 
-##### 3.2.5.5 Integration
+#### 3.2.6 Integration
 
-###### File Scanner Integration
+##### File Scanner Integration
 - Scanner maintains extension-to-processor mapping
 - Automatically selects processor based on file extension
 - Provides initial metadata to processor
 - Handles processor initialization and error handling
 
-###### Usage Example
+##### Usage Example
 ```python
 from embed_files.document_processors import PDFDocumentProcessor
 
@@ -332,27 +324,74 @@ metadata = {
 processed_metadata = processor.process("/path/to/document.pdf", metadata)
 ```
 
-##### 3.2.5.6 Error Handling
+##### Error Handling
 - Each processor implements specific error handling
 - Errors are logged with appropriate context
 - Processing continues despite individual failures
 - Failed documents are tracked in metadata
 
-##### 3.2.5.7 Extensibility
+##### Extensibility
 - New processors can be added by:
   1. Creating new class inheriting from `BaseDocumentProcessor`
   2. Implementing required `process()` method
   3. Adding mapping in `FileScanner.DEFAULT_PROCESSOR_MAP`
   4. Updating configuration if needed
 
-##### 3.2.5.8 Future Enhancements
+##### Future Enhancements
 - Support for additional file formats (docx, rtf, html, ppt)
 - Enhanced metadata extraction
 - Improved chunking strategies
 - OCR integration for images
 - Language detection and handling
 
-#### 3.2.6 Embedding Generator (embedding_system.py)
+#### 3.2.4 PDF Document Processor
+- **Purpose**: Extracts and processes content from PDF documents while preserving structure and formatting
+- **Input**:
+  - PDF files (`.pdf`)
+  - Configuration settings from config.DOCUMENT_PROCESSING.PDF_PROCESSOR:
+    - OCR settings
+    - Layout analysis options
+    - Image extraction preferences
+    - Table detection parameters
+- **Processing Steps**:
+  1. **Document Analysis**:
+     - Page layout detection
+     - Text flow analysis
+     - Font and style mapping
+     - Table and figure identification
+  2. **Content Extraction**:
+     - Text extraction with positioning
+     - Image extraction and processing
+     - Table structure preservation
+     - Form field detection
+  3. **Metadata Processing**:
+     - PDF document properties
+     - Embedded metadata
+     - Digital signatures
+     - Document security settings
+  4. **Structure Preservation**:
+     - Section hierarchy
+     - Page boundaries
+     - Headers and footers
+     - Footnotes and references
+- **Output**:
+  - Structured content:
+    - Clean text with formatting
+    - Extracted images
+    - Table data
+    - Form fields
+  - Enhanced metadata:
+    - Document properties
+    - Structure map
+    - Content statistics
+    - Security information
+  - Layout information:
+    - Page coordinates
+    - Text positioning
+    - Element relationships
+    - Visual hierarchy
+
+### 3.3 Embedding Generator
 - **Purpose**: Generates vector embeddings for document chunks and images using Google's models
 - **Input**:
   - Document chunks and metadata from Document Processors
@@ -433,4 +472,169 @@ EMBEDDING_MODEL:
   BATCH_SIZE: 15
   MAX_LENGTH: 3072
   DIMENSIONS: 768
+```
+
+### 3.4 Vector Database
+- **Purpose**: Stores vector embeddings and metadata for efficient retrieval and querying
+- **Key Functions**:
+  - Add embeddings to the database
+  - Retrieve embeddings based on query
+  - Manage database operations
+- **Technologies**:
+  - ChromaDB for vector storage
+  - Python for database operations
+
+#### 3.4.1 Core Components
+
+##### Vector Store Interface
+- **Module**: `vector_store.py`
+- **Responsibilities**:
+  - Defines common interface for vector database operations
+  - Manages database connections and lifecycle
+  - Implements retry logic and error handling
+  - Provides transaction management
+  - Handles batch operations efficiently
+
+##### ChromaDB Implementation
+- **Purpose**: Primary vector database implementation using ChromaDB
+- **Features**:
+  - Persistent storage of embeddings
+  - Efficient similarity search
+  - Metadata filtering and querying
+  - Collection management
+  - Automatic index optimization
+  - Concurrent access handling
+
+#### 3.4.2 Data Model
+
+##### Document Records
+- **Embedding Data**:
+  - Vector values (768 or 1024 or more dimensions)
+  - Chunk text content
+  - Distance metric (cosine similarity)
+  - Embedding model information
+  
+- **Metadata**:
+  - Document identifiers
+  - File information
+  - Chunk information
+  - Processing timestamps
+  - Document relationships
+  - Custom attributes
+
+##### Collection Structure
+- **Organization**:
+  - Multiple collections support
+  - Namespace isolation
+  - Version tracking
+  - Index management
+  - Backup/restore points
+
+#### 3.4.3 Operations
+
+##### Adding Documents
+- **Process**:
+  - Validate input data
+  - Generate unique identifiers
+  - Batch processing for efficiency
+  - Update existing records if needed
+  - Maintain consistency with retries
+  - Log operations for tracking
+
+##### Querying
+- **Capabilities**:
+  - Similarity search with configurable k
+  - Metadata filtering
+  - Range queries
+  - Aggregations
+  - Faceted search
+  - Combined queries (vector + metadata)
+
+
+#### 3.4.4 Configuration
+```yaml
+VECTOR_STORE:
+  # Database Settings
+  TYPE: "chroma"
+  PERSIST_DIRECTORY: "./vector_store"
+  COLLECTION_NAME: "documents"
+  
+  # Search Configuration
+  DISTANCE_METRIC: "cosine"
+  TOP_K: 5
+```
+
+#### 3.4.5 Integration
+
+##### Usage Example
+```python
+from embed_files.vector_store import ChromaVectorStore
+from embed_files.config import get_config
+from datetime import datetime
+
+# Initialize store
+config = get_config()
+vector_store = ChromaVectorStore(config)
+
+try:
+    # Example metadata incorporating all fields from section 3.2.1
+    metadata = {
+        # File location information
+        "path": "/Users/username/documents/research/paper.pdf",
+        "relative_path": "research/paper.pdf",
+        "directory": "research",
+        "filename_full": "paper.pdf",
+        "filename_stem": "paper",
+        "file_type": "pdf",
+        
+        # Timestamps
+        "created_at": datetime.now().isoformat(),
+        "last_modified": datetime.now().isoformat(),
+        
+        # Processing information
+        "chunk_count": 15,
+        "total_tokens": 4500,
+        "checksum": "abc123def456...",
+        "chunk_index": 0  # Index of current chunk
+    }
+
+    # Add embeddings with complete metadata
+    vector_store.add_embeddings(
+        embeddings=[embedding_vector],
+        texts=["chunk text content"],
+        metadatas=[metadata]
+    )
+
+    # Query similar documents with metadata filtering
+    results = vector_store.query(
+        query_vector=query_embedding,
+        top_k=5,
+        filter_criteria={
+            "file_type": "pdf",
+            "directory": "research",
+            "chunk_count": {"$gt": 10}  # Example of numeric filtering
+        }
+    )
+
+except VectorStoreError as e:
+    logger.error(f"Vector store operation failed: {str(e)}")
+    raise
+
+##### Error Handling
+```python
+class VectorStoreError(Exception):
+    """Base exception for vector store operations."""
+    pass
+
+class ConnectionError(VectorStoreError):
+    """Database connection errors."""
+    pass
+
+class QueryError(VectorStoreError):
+    """Query execution errors."""
+    pass
+
+class ValidationError(VectorStoreError):
+    """Data validation errors."""
+    pass
 ```
