@@ -10,12 +10,6 @@ version: 1.0
 last_updated: 2024-03-20
 ---
 
-**Navigation:**
-
-- Parent:: [System Documentation](../README.md)
-- Peer:: [Implementation Guide](./implementation.md)
-- Child:: [Component Details](./components.md)
-
 # File Embedding System Architecture Document
 
 ## Table of Contents
@@ -26,14 +20,11 @@ last_updated: 2024-03-20
 2. [System Architecture](#2-system-architecture)
    - [High-Level Components](#21-high-level-components)
    - [Component Details](#22-component-details)
-   - [Data Flow](#23-data-flow)
 3. [Technical Specifications](#3-technical-specifications)
    - [System Requirements](#31-system-requirements)
    - [Configuration and Main Modules](#32-configuration-and-main-modules)
    - [API Specifications](#33-api-specifications)
 4. [Implementation Strategy](#4-implementation-strategy)
-5. [Dependencies](#5-dependencies)
-6. [Command Line Interface](#6-command-line-interface)
 
 ## 1. System Overview
 
@@ -52,7 +43,7 @@ The QA System provides functionality to add new files for embedding, remove exis
 
 ### 2.1 High-Level Components
 
-The system is composed of several key components, each with its own dedicated architecture document:
+The system is composed of several key components which are designed to be modular and independent, with clear interfaces defined in their respective architecture document:
 
 0. **Common Components** ([ARCHITECTURE-common-components.md](ARCHITECTURE-common-components.md))
    - Core utilities and shared functionality
@@ -78,8 +69,45 @@ The system is composed of several key components, each with its own dedicated ar
    - Metadata management
    - Consistency verification
 
+4. **Query** ([ARCHITECTURE-query-flow.md](ARCHITECTURE-query-flow.md))
+   - Query processing and validation
+   - Vector similarity search
+   - Result ranking and filtering
+   - Response formatting
 
 
+## 3. Technical Specifications
+
+### 3.1 System Requirements
+- Python 3.13 or higher
+- Vector database support (e.g., Chroma)
+- Sufficient storage for embeddings and metadata
+- GPU support (optional, for improved performance)
+
+### 3.2 Configuration and Main Modules
+Configuration is managed through a combination of:
+- Environment variables
+- Configuration files
+- Command-line arguments
+
+Key modules are documented in their respective component architecture documents.
+
+### 3.3 API Specifications
+The system exposes a command-line interface with consistent argument patterns across all operations. Internal APIs between components are documented in the respective architecture documents.
 
 ## 4. Implementation Strategy
+The implementation follows these key principles:
 
+1. Modularity: Each component is independently maintainable
+2. Extensibility: New file types and embedding models can be added
+3. Reliability: Comprehensive error handling and validation
+4. Performance: Efficient processing and storage optimization
+
+## 5. Dependencies
+Core dependencies are managed through requirements.txt and include:
+- Vector database libraries
+- Embedding model frameworks
+- File processing utilities
+- CLI argument parsing
+
+Each component's specific dependencies are listed in their respective architecture documents.

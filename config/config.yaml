@@ -3,7 +3,7 @@
 # Logging Configuration
 LOGGING:
   LEVEL: INFO
-  LOG_FILE: "logs/embed_files.log"
+  LOG_FILE: "logs/qa_system.log"
 
 # Security & API Configuration
 # Note: These values are loaded from environment variables
@@ -145,7 +145,6 @@ DOCUMENT_PROCESSING:
 # Embedding Model Configuration
 EMBEDDING_MODEL:
   # Model name for Gemini embeddings
-  # Using text-embedding-004 model
   # Capabilities:
   #   - High quality embeddings for text similarity
   #   - Supports multiple languages
@@ -154,7 +153,7 @@ EMBEDDING_MODEL:
   #   - 60 requests per minute (RPM)
   #   - 1000 requests per day (RPD)
   # Source: 'https://ai.google.dev/gemini-api/docs/rate-limits#free-tier'
-  MODEL_NAME: "models/text-embedding-004"
+  MODEL_NAME: "models/embedding-001"
   
   # Batch size for processing multiple texts at once
   # Higher values are more efficient but use more memory
