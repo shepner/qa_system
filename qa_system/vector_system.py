@@ -13,8 +13,8 @@ import chromadb
 from chromadb.config import Settings
 from chromadb.api import Collection
 
-from embed_files.config import get_config
-from embed_files.logging_setup import setup_logging
+from qa_system.config import get_config
+from qa_system.logging_setup import setup_logging
 
 class VectorStore:
     """Vector database management system using ChromaDB.

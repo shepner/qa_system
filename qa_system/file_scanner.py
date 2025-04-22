@@ -5,9 +5,9 @@ from typing import Dict, List, Optional, Set, Any, Tuple, Type
 import hashlib
 import logging
 import fnmatch
-from embed_files.config import get_config
-from embed_files.vector_system import VectorStore
-from embed_files.document_processors import (
+from qa_system.config import get_config
+from qa_system.vector_system import VectorStore
+from qa_system.document_processors import (
     BaseDocumentProcessor,
     TextDocumentProcessor,
     MarkdownDocumentProcessor,
@@ -16,7 +16,20 @@ from embed_files.document_processors import (
     ImageDocumentProcessor
 )
 
+# Configure logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Create console handler with debug level
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+# Create formatter
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+
+# Add handler to logger
+logger.addHandler(ch)
 
 class FileScanner:
     """Scanner for discovering and processing files.
@@ -40,15 +53,13 @@ class FileScanner:
         'webp': ImageDocumentProcessor,
     }
 
-    def __init__(self, config, vector_store: Optional[VectorStore] = None):
-        """Initialize FileScanner with configuration and vector store.
+    def __init__(self, config):
+        """Initialize FileScanner with configuration.
         
         Args:
             config: Configuration object
-            vector_store: Optional VectorStore instance for checking existing files
         """
         self.config = config
-        self.vector_store = vector_store
         
         # Use get_nested to get the FILE_SCANNER section from config
         scanner_config = self.config.get_nested('FILE_SCANNER', {})
@@ -57,17 +68,30 @@ class FileScanner:
         self.hash_algorithm = scanner_config.get('HASH_ALGORITHM', 'sha256')
         self.document_path = scanner_config.get('DOCUMENT_PATH', './docs')
         
-        # Get configuration settings with defaults
-        self.chunk_size = scanner_config.get('chunk_size', 1024 * 1024)  # Default 1MB
+        # Get VECTOR_STORE configuration settings
+        vector_config = self.config.get_nested('VECTOR_STORE', {})
+        self.vector_collection = vector_config.get('COLLECTION_NAME', 'documents')
+        self.vector_dimensions = vector_config.get('DIMENSIONS', 1536)  # Default for many embedding models
+        self.vector_distance = vector_config.get('DISTANCE_METRIC', 'cosine')
+        
+        # Get document processing configuration settings
+        doc_processing_config = self.config.get_nested('DOCUMENT_PROCESSING', {})
+        self.max_chunk_size = doc_processing_config.get('MAX_CHUNK_SIZE', 3072)  # Default 3072 characters
         
         # Initialize processor map with defaults and any custom mappings from config
         self.processor_map = dict(self.DEFAULT_PROCESSOR_MAP)
         custom_processor_map = scanner_config.get('processor_map', {})
         self.processor_map.update(custom_processor_map)
         
+        # Initialize vector store from config
+        self.vector_store = VectorStore(config)
+        
+        self.processed_files: Set[str] = set()
+        self.file_checksums: Dict[str, str] = {}
+        
         logger.debug(f"FileScanner initialized with config: allowed_extensions={self.allowed_extensions}, "
                     f"exclude_patterns={self.exclude_patterns}, hash_algorithm={self.hash_algorithm}, "
-                    f"document_path={self.document_path}, chunk_size={self.chunk_size}")
+                    f"document_path={self.document_path}, max_chunk_size={self.max_chunk_size}")
 
     def should_process_file(self, file_path: str) -> Tuple[bool, str]:
         """Determine if a file should be processed based on configuration.
@@ -144,12 +168,16 @@ class FileScanner:
             
         try:
             # Query vector store for matching checksum
-            results = self.vector_store.collection.get(
-                where={"checksum": checksum}
+            results = self.vector_store.query_similar(
+                query_embedding=[],  # Empty since we're using metadata filter
+                n_results=1,
+                collection_name=self.vector_collection,
+                metadata_filter={"checksum": checksum}
             )
             
-            needs_processing = not bool(results and results['ids'])
-            logger.debug(f"File {file_path} needs processing: {needs_processing}")
+            # Check if we found any matches
+            needs_processing = len(results['ids']) == 0
+            logger.debug(f"File {file_path} needs processing: {needs_processing} (checksum: {checksum})")
             return needs_processing
             
         except Exception as e:

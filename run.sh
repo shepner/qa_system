@@ -12,7 +12,7 @@ print_step() {
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Where to find the config file
-CONFIG_FILE="$SCRIPT_DIR/config/embed_files_config.yaml"
+CONFIG_FILE="$SCRIPT_DIR/config/config.yaml"
 
 # Check if python3 is installed
 if ! command -v python3 &> /dev/null; then
@@ -56,7 +56,7 @@ fi
 # Run the program
 print_step "Starting the program..."
 cd "$SCRIPT_DIR"
-PYTHONPATH="$SCRIPT_DIR" python3 -m embed_files --config "$CONFIG_FILE" "$@"
+PYTHONPATH="$SCRIPT_DIR" python3 -m qa_system --config "$CONFIG_FILE" "$@"
 
 # Deactivate virtual environment
 deactivate 

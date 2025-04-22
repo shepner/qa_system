@@ -11,9 +11,9 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from embed_files.config import get_config, Config
-from embed_files.logging_setup import setup_logging
-from embed_files.file_scanner import FileScanner
+from qa_system.config import get_config, Config
+from qa_system.logging_setup import setup_logging
+from qa_system.file_scanner import FileScanner
 
 # Create parser at module level
 parser = argparse.ArgumentParser(description="QA System")

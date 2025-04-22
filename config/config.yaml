@@ -52,6 +52,16 @@ FILE_SCANNER:
   HASH_ALGORITHM: "sha256"
   SKIP_EXISTING: true  # Whether to skip files already in vector db
 
+# File Matcher Configuration
+DATA_REMOVER:
+  # Enable recursive matching for directory patterns
+  RECURSIVE: true
+  # Case sensitivity in matching
+  CASE_SENSITIVE: false
+
+  # Whether to require confirmation before removing files
+  REQUIRE_CONFIRMATION: true
+
 # Document Processing
 DOCUMENT_PROCESSING:
   # Maximum size of each text chunk when splitting documents
@@ -171,10 +181,6 @@ EMBEDDING_MODEL:
 # Vector Database Configuration
 VECTOR_STORE:
   # Vector store implementation to use
-  # Options:
-  #   "chroma" - ChromaDB for development and small-medium datasets
-  #   "milvus" - For production and large-scale deployments
-  #   "pgvector" - PostgreSQL with vector extension
   TYPE: "chroma"
 
   # Directory where vector store data will be persisted
