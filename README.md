@@ -49,20 +49,7 @@ The following Python packages are required:
 - duckdb (0.10.0+) - Database operations
 - typing-extensions (4.10.0+) - Type hinting support
 
-### Installation
-1. Clone the repository
-2. Install system dependencies (see above)
-3. Create and activate a virtual environment:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-4. Install Python dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Setup
+## Installation
 
 1. Clone the repository:
    ```bash
@@ -70,130 +57,180 @@ The following Python packages are required:
    cd <repository-directory>
    ```
 
-2. Run the setup script:
+2. Install system dependencies (see above)
+
+3. Create and activate a virtual environment:
    ```bash
-   ./run.sh
-   ```
-   
-   The script will:
-   - Create a Python virtual environment
-   - Install required dependencies
-   - Create a `.env` file from `.env.example` if it doesn't exist
-   - Load environment variables
-
-3. Configure the `.env` file with your settings:
-   ```ini
-   # Google Cloud & AI Configuration
-   GOOGLE_CLOUD_PROJECT=your-project-id
-   GOOGLE_APPLICATION_CREDENTIALS=./secrets/qa-system-key.json
-   API_KEY=your-gemini-api-key
-
-   # Vector Database Configuration
-   VECTOR_DB_PATH=./data/vectordb
-   VECTOR_DB_TYPE=chromadb
-
-   # Security Configuration
-   AUTH_REQUIRED=true
+   python3 -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
 
-## Google Cloud Authentication Setup
+4. Install Python dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### 1. Service Account Creation and Configuration
+## Configuration
 
-1. Create service account:
-```bash
-gcloud iam service-accounts create qa-system-sa --display-name="QA System Service Account"
+The system can be configured through:
+1. YAML configuration file (`config/config.yaml`)
+2. Environment variables (with QA_ prefix)
+3. Command-line arguments
+
+### Configuration File Structure
+
+```yaml
+# Logging Configuration
+LOGGING:
+  LEVEL: INFO
+  LOG_FILE: "logs/qa_system.log"
+
+# Security & API Configuration
+SECURITY:
+  GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
+  GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
+  GOOGLE_VISION_API_KEY: ${GOOGLE_VISION_API_KEY}
+
+# Document Processing
+FILE_SCANNER:
+  DOCUMENT_PATH: "./docs"
+  ALLOWED_EXTENSIONS:
+    - "txt"
+    - "md"
+    - "pdf"
+    - "doc"
+    - "docx"
+    - "rtf"
+    - "html"
+    - "png"
+    - "jpg"
+    - "jpeg"
+    - "gif"
+    - "webp"
+    - "bmp"
+    - "csv"
+  EXCLUDE_PATTERNS:
+    - ".*"
+    - "!README.md"
+    - "!ARCHITECTURE.md"
+  HASH_ALGORITHM: "sha256"
+  SKIP_EXISTING: true
+
+# Vector Database Configuration
+VECTOR_STORE:
+  TYPE: "chroma"
+  PERSIST_DIRECTORY: "./data/vector_store"
+  COLLECTION_NAME: "qa_documents"
+  DISTANCE_METRIC: "cosine"
+  TOP_K: 40
+  DIMENSIONS: 768
+
+# Embedding Model Configuration
+EMBEDDING_MODEL:
+  MODEL_NAME: "models/embedding-001"
+  BATCH_SIZE: 15
+  MAX_LENGTH: 3072
+  DIMENSIONS: 768
 ```
 
-2. Grant required IAM roles:
-```bash
-gcloud projects add-iam-policy-binding your-project-id \
-    --member="serviceAccount:qa-system-sa@your-project-id.iam.gserviceaccount.com" \
-    --role="roles/aiplatform.user"
-gcloud projects add-iam-policy-binding your-project-id \
-    --member="serviceAccount:qa-system-sa@your-project-id.iam.gserviceaccount.com" \
-    --role="roles/aiplatform.serviceAgent"
-gcloud projects add-iam-policy-binding your-project-id \
-    --member="serviceAccount:qa-system-sa@your-project-id.iam.gserviceaccount.com" \
-    --role="roles/vision.user"
+### Environment Variables
+
+Create a `.env` file in the `secrets` directory:
+
+```ini
+# Google Cloud & AI Configuration
+GOOGLE_CLOUD_PROJECT=your-project-id
+GOOGLE_APPLICATION_CREDENTIALS=./secrets/qa-system-key.json
+GOOGLE_VISION_API_KEY=your-vision-api-key
+
+# Vector Database Configuration
+QA_VECTOR_STORE_TYPE=chromadb
+QA_VECTOR_STORE_PATH=./data/vectordb
+
+# Security Configuration
+QA_SECURITY_AUTH_REQUIRED=true
 ```
-
-3. Generate service account key:
-```bash
-gcloud iam service-accounts keys create secrets/qa-system-key.json \
-    --iam-account=qa-system-sa@your-project-id.iam.gserviceaccount.com
-```
-
-### 2. API Enablement
-
-Enable required Google Cloud APIs:
-```bash
-gcloud services enable aiplatform.googleapis.com
-gcloud services enable vision.googleapis.com
-```
-
-### 3. Gemini API Setup
-
-1. Get your Gemini API key:
-   - Visit https://makersuite.google.com/app/apikey
-   - Create a new API key
-   - Add the key to your `.env` file as `API_KEY`
-
-### 4. Security Considerations
-
-1. Service Account Key:
-   - Store in `./secrets/qa-system-key.json`
-   - Add `secrets/` to `.gitignore`
-   - Set appropriate file permissions
-
-2. Environment Variables:
-   - Never commit `.env` to version control
-   - Keep API keys secure
-   - Regularly rotate credentials
 
 ## Usage
 
-Start the application:
+### Command-Line Interface
+
+The system provides several command-line operations:
+
+1. Process files or directories:
+   ```bash
+   python -m qa_system --add /path/to/docs                     # Process entire directory
+   python -m qa_system --add /path/to/docs/specific_file.md    # Process single file
+   python -m qa_system --add file1.md --add file2.pdf         # Process multiple files
+   ```
+
+2. List vector store contents:
+   ```bash
+   python -m qa_system --list                                  # List all contents
+   python -m qa_system --list --filter "*.md"                  # List only markdown files
+   ```
+
+3. Remove data from vector store:
+   ```bash
+   python -m qa_system --remove /path/to/docs/old_file.md      # Remove specific file
+   python -m qa_system --remove /path/to/old_docs/             # Remove entire directory
+   python -m qa_system --remove --filter "*.pdf"               # Remove all PDF files
+   ```
+
+4. Interactive chat mode:
+   ```bash
+   python -m qa_system --query                                 # Start interactive chat
+   python -m qa_system --query "What is the project about?"    # Single query mode
+   ```
+
+5. Configuration and debugging:
+   ```bash
+   python -m qa_system --add /path/to/docs --config custom_config.yaml    # Use custom config
+   python -m qa_system --add /path/to/docs --debug                        # Enable debug logging
+   ```
+
+### Using the Run Script
+
+For convenience, you can use the provided `run.sh` script:
+
 ```bash
-./run.sh
+./run.sh                                    # Start with default settings
+./run.sh --add /path/to/docs               # Add documents
+./run.sh --query "What is the project?"    # Run a single query
 ```
 
-The application will:
-1. Load environment variables from `.env`
-2. Initialize the vector database
-3. Set up API clients for Gemini and Vision AI
-4. Start processing documents and handling queries
+The script will:
+1. Create/activate virtual environment
+2. Install/upgrade dependencies
+3. Create necessary directories
+4. Load environment variables
+5. Run the program with provided arguments
 
-## Development
+## Directory Structure
 
-### Running Tests
-```bash
-# Activate the virtual environment first
-source .venv/bin/activate
-
-# Run tests
-pytest
-```
-
-### Directory Structure
 ```
 .
-├── .env                    # Environment configuration
+├── .env                    # Environment configuration (in secrets/)
 ├── .gitignore             # Git ignore file
 ├── README.md              # This file
 ├── requirements.txt       # Python dependencies
-├── run.sh                 # Setup and run script
-├── secrets/               # Service account keys and credentials
-│   └── qa-system-key.json
-├── data/                  # Data storage
-│   └── vectordb/         # Vector database files
-└── qa_system/            # Application source code
+├── run.sh                # Setup and run script
+├── config/               # Configuration files
+│   └── config.yaml      # Main configuration
+├── secrets/              # Sensitive configuration and keys
+│   ├── .env            # Environment variables
+│   └── qa-system-key.json  # Google Cloud service account key
+├── data/                # Data storage
+│   └── vector_store/   # Vector database files
+├── logs/               # Application logs
+│   └── qa_system.log  # Main log file
+└── qa_system/         # Application source code
 ```
 
 ## Troubleshooting
 
 1. Environment Issues:
-   - Verify `.env` file exists and is properly configured
+   - Verify `.env` file exists in `secrets/` directory
    - Check service account key path is correct
    - Ensure virtual environment is activated
 
@@ -206,42 +243,11 @@ pytest
    - Check `VECTOR_DB_PATH` exists and is writable
    - Verify ChromaDB is properly initialized
 
+4. File Processing Issues:
+   - Check file permissions
+   - Verify file formats are supported
+   - Check exclude patterns in configuration
+
 ## License
 
-MIT License
-
-# Environment Setup
-
-## Environment Variables
-
-The system requires certain environment variables to be set for Google Cloud services. You can set these up in two ways:
-
-1. Create a `.env` file:
-   ```bash
-   cp .env.template .env
-   ```
-   Then edit the `.env` file with your actual values.
-
-2. Set environment variables manually:
-   ```bash
-   export GOOGLE_CLOUD_PROJECT="your-project-id"
-   export GOOGLE_API_KEY="your-api-key"
-   ```
-
-### Required Variables
-- `GOOGLE_CLOUD_PROJECT`: Your Google Cloud Project ID
-- `GOOGLE_API_KEY`: Your Google API Key for accessing Google Generative AI services
-
-### Optional Variables
-- `GOOGLE_EMBEDDING_MODEL`: Model name for text embeddings (defaults to 'embedding-001')
-- `GOOGLE_CLOUD_REGION`: Region for Google Cloud services (defaults to 'us-central1')
-
-## Before Running
-
-1. Make sure you have enabled the Google Generative AI API in your Google Cloud Project
-2. Create an API key in the Google Cloud Console
-3. Set up your environment variables using one of the methods above
-4. Run the embedding system:
-   ```bash
-   ./run_embed_files.sh
-   ``` 
+MIT License 
