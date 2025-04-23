@@ -134,10 +134,22 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
         try:
             # Enhance metadata with required fields
             path_obj = Path(file_path)
-            relative_path = str(path_obj.relative_to(self.workspace_root))
+            
+            # Handle relative paths starting with ./ by using absolute paths
+            abs_path = path_obj.resolve()
+            workspace_root = Path(self.workspace_root).resolve()
+            
+            try:
+                relative_path = str(abs_path.relative_to(workspace_root))
+            except ValueError:
+                # If the path is not relative to workspace_root, try using the original path
+                if str(path_obj).startswith('./'):
+                    relative_path = str(path_obj)[2:]  # Remove ./ prefix
+                else:
+                    relative_path = str(path_obj)
             
             metadata.update({
-                "path": str(path_obj.absolute()),
+                "path": str(abs_path),
                 "relative_path": relative_path,
                 "directory": str(path_obj.parent),
                 "filename_full": path_obj.name,
