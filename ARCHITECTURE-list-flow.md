@@ -9,104 +9,99 @@ version: 1.0
 last_updated: 2024-03-20
 ---
 
-
 # Listing Flow
 
+## Table of Contents
+1. [Overview](#1-overview)
+2. [System Flow](#2-system-flow)
+3. [Components](#3-components)
+   3.1. [List Module](#31-list-module)
+      3.1.1. [API Usage](#311-api-usage)
+   3.2. [Vector Store Interface](#32-vector-store-interface)
+
+## 1. Overview
+The Listing Flow describes the process of retrieving and displaying document information from the vector database. This flow is initiated through the [Main Module](ARCHITECTURE-common-components.md#2-main-module) using the `--list` command-line argument.
+
+The flow utilizes several common components:
+- [Configuration Module](ARCHITECTURE-common-components.md#3-configuration-module): For loading and managing display settings
+- [Logging Setup](ARCHITECTURE-common-components.md#4-logging-setup): For consistent logging across all components
+- [Vector Database](ARCHITECTURE-common-components.md#5-vector-database): For retrieving document metadata
+
+## 2. System Flow
 ```mermaid
 sequenceDiagram
     actor User
-    participant CLI as Command Line Interface
-    participant VDB as Vector Database
-    participant Display as Display Formatter
+    participant Main
+    participant List as List Module
+    participant VDB as Vector Data Store
 
-    User->>CLI: Execute list command
-    CLI->>VDB: Query stored documents
-    VDB-->>CLI: Return document metadata
-    CLI->>Display: Format results
-    Display-->>User: Show formatted document list
+    User->>Main: Execute with --list [pattern]
+    Main->>List: Call with search pattern
+    List->>VDB: Query stored documents
+    VDB-->>List: Return results
+    List-->>User: Display formatted results
 ```
 
-The listing flow shows how document information is retrieved:
-1. User executes the list command
-2. CLI sends query to Vector Database
-3. Vector Database returns metadata of stored documents
-4. Results are formatted for display
-5. Formatted list is shown to user
+## 3. Components
 
-
-# List Flow Components
-
-This document details the components specific to the file listing flow in the File Embedding System.
-
-## List Flow Overview
-
-The list flow provides functionality to enumerate and display information about files that have been processed and stored in the system. It allows users to view metadata, statistics, and relationships between files in the vector database.
-
-## Components
-
-### List Command Processor
-- **Purpose**: Handles the processing and formatting of list commands from the CLI
+### 3.1. List Module
+- **Purpose**: Handles the listing of documents stored in the vector database
+- **Dependencies**:
+  - [Configuration Module](ARCHITECTURE-common-components.md#3-configuration-module) for system settings
+  - [Logging Setup](ARCHITECTURE-common-components.md#4-logging-setup) for operation tracking
+  - [Vector Database](ARCHITECTURE-common-components.md#5-vector-database) for data retrieval
 - **Key Functions**:
-  - Parsing of list command options and filters
-  - Query construction for the Vector Database
-  - Output formatting and display
-- **Technologies**:
-  - Python Click for CLI
-  - Custom formatting utilities
+  - Process search patterns from command line arguments
+  - Query vector database for matching documents
+  - Format and display results to the user
+  - Generate basic statistics about the results
 
-### Metadata Retriever
-- **Purpose**: Fetches and aggregates metadata from the Vector Database
-- **Key Functions**:
-  - Retrieval of file metadata
-  - Collection of embedding statistics
-  - Aggregation of relationship data
-- **Technologies**:
-  - Vector Database client libraries
-  - Python data processing utilities
+#### 3.1.1 API Usage
+```python
+# Import the list module
+from qa_system.list import get_list_module
 
-## Output Formats
+# Get configured list module instance
+list_module = get_list_module()
 
-### Default List Format
-- File path (relative to workspace root)
-- File type
-- Last modified date
-- Number of chunks
-- Total tokens
-- Embedding status
+# List all documents
+results = list_module.list_documents()
 
-### Detailed List Format
-- All default format information
-- Creation date
-- Absolute path
-- Directory structure
-- Checksum
-- Related files
-- Custom metadata based on file type
+# List documents matching a pattern
+python_files = list_module.list_documents("**/*.py")
 
-### JSON Format
-- Machine-readable output
-- Complete metadata dump
-- Relationship graphs
-- Statistics and analytics
+# Get collection statistics
+stats = list_module.get_collection_stats()
+print(f"Total documents: {stats['total_documents']}")
+print(f"Document types: {stats['document_types']}")
 
-## List Flow Sequence
+# Get just the document count
+count = list_module.get_document_count()
+print(f"Number of documents: {count}")
+```
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant CLI
-    participant ListProcessor
-    participant VectorDB
-    participant MetadataRetriever
+The List module provides a simple interface for retrieving document information:
 
-    User->>CLI: Execute list command
-    CLI->>ListProcessor: Process list options
-    ListProcessor->>VectorDB: Query file metadata
-    VectorDB-->>ListProcessor: Return metadata
-    ListProcessor->>MetadataRetriever: Request additional data
-    MetadataRetriever->>VectorDB: Fetch relationships
-    VectorDB-->>MetadataRetriever: Return relationships
-    MetadataRetriever-->>ListProcessor: Aggregate data
-    ListProcessor-->>CLI: Format output
-    CLI-->>User: Display results
-``` 
+- `list_documents(pattern=None)`: Returns list of document metadata
+  - `pattern`: Optional glob pattern to filter results (e.g. "*.py", "docs/*.md")
+  - Returns: List of dictionaries containing document metadata
+
+- `get_collection_stats()`: Returns statistics about the document collection
+  - Returns: Dictionary with collection-level metrics
+
+- `get_document_count()`: Returns total number of documents
+  - Returns: Integer count of documents in collection
+
+### 3.2. Vector Store Interface
+The List flow uses the [Vector Database](ARCHITECTURE-common-components.md#5-vector-database) component for accessing document metadata. For full details on the vector store implementation, data model, and configuration, see the common components documentation.
+
+List-specific usage focuses on:
+- Metadata-only retrieval (no embedding lookup needed)
+- Pattern-based document filtering
+- Collection statistics and document counts
+
+For the complete vector store interface documentation, including:
+- Data model and metadata fields: [Section 5.2](ARCHITECTURE-common-components.md#52-data-model)
+- Query operations: [Section 5.3](ARCHITECTURE-common-components.md#53-operations)
+- Configuration options: [Section 5.4](ARCHITECTURE-common-components.md#54-configuration)
+- Integration examples: [Section 5.5](ARCHITECTURE-common-components.md#55-integration)

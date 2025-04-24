@@ -25,6 +25,7 @@ last_updated: 2024-03-20
    - [Configuration and Main Modules](#32-configuration-and-main-modules)
    - [API Specifications](#33-api-specifications)
 4. [Implementation Strategy](#4-implementation-strategy)
+5. [Dependencies](#5-dependencies)
 
 ## 1. System Overview
 
@@ -43,38 +44,53 @@ The QA System provides functionality to add new files for embedding, remove exis
 
 ### 2.1 High-Level Components
 
-The system is composed of several key components which are designed to be modular and independent, with clear interfaces defined in their respective architecture document:
+The system is composed of several key components which are designed to be modular and independent, with clear interfaces defined in their respective architecture documents:
 
 0. **Common Components** ([ARCHITECTURE-common-components.md](ARCHITECTURE-common-components.md))
-   - Core utilities and shared functionality
-   - Configuration management
-   - Logging and monitoring
-   - Error handling
+   - Main Module: Command-line interface and system entry point
+   - Configuration Module: Manages system-wide settings and environment variables
+   - Logging Setup: Centralized logging with file and console output
+   - Vector Database: ChromaDB-based vector storage and retrieval
+   For detailed information about shared components, including configuration, logging, and the vector database, refer to the common components documentation.
 
 1. **Adding Files** ([ARCHITECTURE-add-flow.md](ARCHITECTURE-add-flow.md))
-   - File scanning and validation
-   - Document processing by type
-   - Embedding generation
-   - Vector and metadata storage
+   - File Scanner: Discovers and validates files for processing
+   - Document Processors: Handles multiple file formats (PDF, Text, Markdown, CSV, Images)
+   - Embedding Generator: Creates vector embeddings using Gemini model
+   - Metadata Management: Tracks document information and relationships
+   For detailed information about the file addition process, document processors, and embedding generation, refer to the add flow documentation.
 
 2. **Listing** ([ARCHITECTURE-list-flow.md](ARCHITECTURE-list-flow.md))
-   - Document metadata retrieval
-   - Filtering and sorting capabilities
-   - Information display and statistics
-   - Status reporting
+   - Pattern-based document filtering
+   - Collection statistics and metrics
+   - Metadata retrieval and formatting
+   - Integration with vector database queries
+   For detailed information about listing stored documents and retrieving metadata, refer to the list flow documentation.
 
 3. **Removal** ([ARCHITECTURE-remove-flow.md](ARCHITECTURE-remove-flow.md))
-   - Request validation
-   - Vector database cleanup
-   - Metadata management
+   - Pattern matching for document selection
+   - Batch removal operations
    - Consistency verification
+   - Error recovery procedures
+   - Transaction management
+   For detailed information about document removal, cleanup procedures, and consistency checks, refer to the remove flow documentation.
 
 4. **Query** ([ARCHITECTURE-query-flow.md](ARCHITECTURE-query-flow.md))
-   - Query processing and validation
-   - Vector similarity search
-   - Result ranking and filtering
-   - Response formatting
+   - Query Processor: Handles semantic search and similarity calculations
+   - Response Generator: Creates contextual responses using Gemini model
+   - Multiple query types (Basic, Advanced, Hybrid)
+   - Source attribution and confidence scoring
+   For detailed information about semantic querying, response generation, and the Gemini model integration, refer to the query flow documentation.
 
+### 2.2 Component Details
+
+Each component is documented in detail in its respective architecture document. The components are designed to be:
+
+1. **Modular**: Each component operates independently with well-defined interfaces
+2. **Extensible**: New functionality can be added without modifying existing components
+3. **Maintainable**: Clear separation of concerns and comprehensive documentation
+4. **Reliable**: Built-in error handling and recovery procedures
+5. **Performant**: Optimized for efficient processing and resource usage
 
 ## 3. Technical Specifications
 
@@ -90,10 +106,10 @@ Configuration is managed through a combination of:
 - Configuration files
 - Command-line arguments
 
-Key modules are documented in their respective component architecture documents.
+Key modules are documented in their respective component architecture documents. For detailed configuration information, refer to the [Configuration Module](ARCHITECTURE-common-components.md#3-configuration-module) documentation.
 
 ### 3.3 API Specifications
-The system exposes a command-line interface with consistent argument patterns across all operations. Internal APIs between components are documented in the respective architecture documents.
+The system exposes a command-line interface with consistent argument patterns across all operations. Internal APIs between components are documented in the respective architecture documents. For detailed API information, refer to the [Main Module](ARCHITECTURE-common-components.md#2-main-module) documentation.
 
 ## 4. Implementation Strategy
 The implementation follows these key principles:

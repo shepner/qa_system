@@ -14,8 +14,23 @@ last_updated: 2024-03-20
 ## Table of Contents
 1. [Overview](#1-overview)
 2. [Main Module](#2-main-module)
+   - [2.1 Purpose](#21-purpose)
+   - [2.2 Interface](#22-interface)
+   - [2.3 Usage](#23-usage)
 3. [Configuration Module](#3-configuration-module)
+   - [3.1 Purpose](#31-purpose)
+   - [3.2 Interface](#32-interface)
+   - [3.3 Usage](#33-usage)
 4. [Logging Setup](#4-logging-setup)
+   - [4.1 Purpose](#41-purpose)
+   - [4.2 Interface](#42-interface)
+   - [4.3 Usage](#43-usage)
+5. [Vector Database](#5-vector-database)
+   - [5.1 Core Components](#51-core-components)
+   - [5.2 Data Model](#52-data-model)
+   - [5.3 Operations](#53-operations)
+   - [5.4 Configuration](#54-configuration)
+   - [5.5 Integration](#55-integration)
 
 ## 1. Overview
 This document details the common components used across all flows in the File Embedding System. Each component is designed to be modular, reusable, and follows consistent configuration patterns.
@@ -272,4 +287,208 @@ Example log output:
 2024-03-20 15:30:46 - qa_system.processor - INFO - Processing document: size=1.2MB, type=PDF
 2024-03-20 15:30:47 - qa_system.processor - WARNING - Document contains unsupported elements
 2024-03-20 15:30:47 - qa_system.processor - DEBUG - process_document completed in 2.34 seconds
+```
+
+## 5. Vector Database
+- **Purpose**: Stores vector embeddings and metadata for efficient retrieval and querying
+- **Key Functions**:
+  - Add embeddings to the database
+  - Retrieve embeddings based on query
+  - Manage database operations
+- **Technologies**:
+  - ChromaDB for vector storage
+  - Python for database operations
+
+#### 5.1 Core Components
+
+##### Vector Store Interface
+- **Module**: `vector_store.py`
+- **Responsibilities**:
+  - Defines common interface for vector database operations
+  - Manages database connections and lifecycle
+  - Implements retry logic and error handling
+  - Provides transaction management
+  - Handles batch operations efficiently
+
+##### ChromaDB Implementation
+- **Purpose**: Primary vector database implementation using ChromaDB
+- **Features**:
+  - Persistent storage of embeddings
+  - Efficient similarity search
+  - Metadata filtering and querying
+  - Collection management
+  - Automatic index optimization
+  - Concurrent access handling
+
+#### 5.2 Data Model
+
+##### Document Records
+- **Embedding Data**:
+  - Vector values (768 or 1024 or more dimensions)
+  - Chunk text content
+  - Distance metric (cosine similarity)
+  - Embedding model information
+  
+- **Metadata**:
+  - Document identifiers
+  - File information
+  - Chunk information
+  - Processing timestamps
+  - Document relationships
+  - Custom attributes
+
+##### Collection Structure
+- **Organization**:
+  - Multiple collections support
+  - Namespace isolation
+  - Version tracking
+  - Index management
+  - Backup/restore points
+
+#### 5.3 Operations
+
+##### Adding Documents
+- **Process**:
+  - Validate input data
+  - Generate unique identifiers
+  - Batch processing for efficiency
+  - Update existing records if needed
+  - Maintain consistency with retries
+  - Log operations for tracking
+
+##### Querying
+- **Capabilities**:
+  - Similarity search with configurable k
+  - Metadata filtering
+  - Range queries
+  - Aggregations
+  - Faceted search
+  - Combined queries (vector + metadata)
+
+
+#### 5.4 Configuration
+```yaml
+VECTOR_STORE:
+  # Database Settings
+  TYPE: "chroma"
+  PERSIST_DIRECTORY: "./vector_store"
+  COLLECTION_NAME: "documents"
+  
+  # Search Configuration
+  DISTANCE_METRIC: "cosine"
+  TOP_K: 40
+```
+
+#### 5.5 Integration
+
+##### Usage Example
+```python
+from embed_files.vector_store import ChromaVectorStore
+from embed_files.config import get_config
+from datetime import datetime
+
+# Initialize store
+config = get_config()
+vector_store = ChromaVectorStore(config)
+
+try:
+    # Example metadata incorporating all fields from section 3.2.1
+    metadata = {
+        # File location information
+        "path": "/Users/username/documents/research/paper.pdf",
+        "relative_path": "research/paper.pdf",
+        "directory": "research",
+        "filename_full": "paper.pdf",
+        "filename_stem": "paper",
+        "file_type": "pdf",
+        
+        # Timestamps
+        "created_at": datetime.now().isoformat(),
+        "last_modified": datetime.now().isoformat(),
+        
+        # Processing information
+        "chunk_count": 15,
+        "total_tokens": 4500,
+        "checksum": "abc123def456...",
+        "chunk_index": 0  # Index of current chunk
+    }
+
+    # Add embeddings with complete metadata
+    vector_store.add_embeddings(
+        embeddings=[embedding_vector],
+        texts=["chunk text content"],
+        metadatas=[metadata]
+    )
+
+    # Query similar documents with metadata filtering
+    results = vector_store.query(
+        query_vector=query_embedding,
+        top_k=5,
+        filter_criteria={
+            "file_type": "pdf",
+            "directory": "research",
+            "chunk_count": {"$gt": 10}  # Example of numeric filtering
+        }
+    )
+
+    # Delete documents by various criteria
+    try:
+        # Delete by file path
+        vector_store.delete(
+            filter_criteria={"path": "/Users/username/documents/research/paper.pdf"}
+        )
+
+        # Delete by directory
+        vector_store.delete(
+            filter_criteria={"directory": "research"}
+        )
+
+        # Delete by multiple criteria
+        vector_store.delete(
+            filter_criteria={
+                "file_type": "pdf",
+                "created_at": {"$lt": "2024-01-01T00:00:00"}  # Delete PDFs created before 2024
+            }
+        )
+
+        # Delete specific chunks
+        vector_store.delete(
+            filter_criteria={
+                "path": "/Users/username/documents/research/paper.pdf",
+                "chunk_index": {"$in": [0, 1, 2]}  # Delete specific chunks
+            }
+        )
+
+        # Batch delete with confirmation
+        deleted_count = vector_store.delete(
+            filter_criteria={"directory": "old_docs"},
+            require_confirmation=True  # Prompts for confirmation before deletion
+        )
+        logger.info(f"Deleted {deleted_count} documents")
+
+    except VectorStoreError as e:
+        logger.error(f"Deletion failed: {str(e)}")
+        raise
+
+except VectorStoreError as e:
+    logger.error(f"Vector store operation failed: {str(e)}")
+    raise
+
+##### Error Handling
+```python
+class VectorStoreError(Exception):
+    """Base exception for vector store operations."""
+    pass
+
+class ConnectionError(VectorStoreError):
+    """Database connection errors."""
+    pass
+
+class QueryError(VectorStoreError):
+    """Query execution errors."""
+    pass
+
+class ValidationError(VectorStoreError):
+    """Data validation errors."""
+    pass
 ```
