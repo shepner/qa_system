@@ -9,100 +9,313 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+import json
+from datetime import datetime
+import signal
+import os
+from tqdm import tqdm
 
-from qa_system.config import get_config, Config
+from qa_system.config import get_config, ConfigError
 from qa_system.logging_setup import setup_logging
 from qa_system.file_scanner import FileScanner
+from qa_system.vector_system import VectorStore
+from qa_system.query_system import QuerySystem
 
-# Create parser at module level
-parser = argparse.ArgumentParser(description="QA System")
-parser.add_argument(
-    "--add",
-    type=str,
-    action='append',
-    help="Path to process (can be a directory or individual file). Can be specified multiple times.",
-)
-parser.add_argument(
-    "--list",
-    action="store_true",
-    help="List the contents of the vector data store",
-)
-parser.add_argument(
-    "--filter",
-    type=str,
-    help="Filter pattern for --list and --remove operations (e.g. '*.md')",
-)
-parser.add_argument(
-    "--remove",
-    type=str,
-    help="Remove data from the vector data store (can be file or directory path)",
-)
-parser.add_argument(
-    "--query",
-    type=str,
-    nargs='?',
-    const='',
-    help="Enter interactive chat mode. Optionally provide a single query.",
-)
-parser.add_argument(
-    "--config",
-    type=str,
-    default="./config/config.yaml",
-    help="Path to configuration file",
-)
-parser.add_argument(
-    "--debug",
-    action="store_true",
-    help="Enable debug logging",
-)
+# Global flag for graceful shutdown
+shutdown_requested = False
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully."""
+    global shutdown_requested
+    print("\nShutdown requested. Completing current operation...")
+    shutdown_requested = True
+
+def validate_config_file(config_path: str) -> bool:
+    """Validate configuration file existence and format.
+    
+    Args:
+        config_path: Path to configuration file
+        
+    Returns:
+        bool: True if valid, False otherwise
+        
+    Raises:
+        ConfigError: If configuration is invalid
+    """
+    try:
+        if not os.path.exists(config_path):
+            raise ConfigError(f"Configuration file not found: {config_path}")
+            
+        config = get_config(config_path)
+        return True
+        
+    except Exception as e:
+        raise ConfigError(f"Configuration validation failed: {str(e)}")
 
 def parse_args() -> argparse.Namespace:
     """Parse and validate command line arguments.
     
     Returns:
-        argparse.Namespace: Parsed command line arguments
+        Parsed command line arguments
+        
+    Raises:
+        SystemExit: If arguments are invalid
     """
+    parser = argparse.ArgumentParser(description="QA System")
+    
+    # File operations
+    parser.add_argument(
+        "--add",
+        type=str,
+        action='append',
+        help="Path to process (can be a directory or individual file). Can be specified multiple times."
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List the contents of the vector data store"
+    )
+    parser.add_argument(
+        "--filter",
+        type=str,
+        help="Filter pattern for --list and --remove operations (e.g. '*.md')"
+    )
+    parser.add_argument(
+        "--remove",
+        type=str,
+        help="Remove data from the vector data store (can be file or directory path)"
+    )
+    
+    # Query operations
+    parser.add_argument(
+        "--query",
+        type=str,
+        nargs='?',
+        const='',
+        help="Enter interactive chat mode. Optionally provide a single query."
+    )
+    
+    # Configuration
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="./config/config.yaml",
+        help="Path to configuration file"
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging"
+    )
+    
     args = parser.parse_args()
     
     # Validate --filter is only used with --list or --remove
     if args.filter and not (args.list or args.remove):
         parser.error("--filter can only be used with --list or --remove")
-        
+    
     # Ensure only one main operation is specified
     operations = sum(1 for op in [args.add, args.list, args.remove, args.query is not None] if op)
     if operations > 1:
         parser.error("Only one operation (--add, --list, --remove, --query) can be specified at a time")
     elif operations == 0:
-        # Print help if no operation specified
         parser.print_help()
         sys.exit(0)
-        
+    
     return args
 
-def main() -> None:
-    """Main entry point for the QA system.
+def handle_add(paths: List[str], config_path: str) -> None:
+    """Handle file addition operation.
     
-    This function:
-    1. Parses command line arguments
-    2. Loads system configuration
-    3. Sets up logging based on configuration
-    4. Processes input files using the file scanner
-    5. Handles errors and provides appropriate exit codes
-    
-    Exit codes:
-        0: Successful execution
-        1: Error occurred during execution
+    Args:
+        paths: List of file/directory paths to process
+        config_path: Path to configuration file
     """
+    logger = logging.getLogger(__name__)
+    scanner = FileScanner(config_path)
+    vector_store = VectorStore(config_path)
+    
+    total_files = 0
+    successful = 0
+    failed = 0
+    
     try:
-        args = parse_args()
-        logger: Optional[logging.Logger] = None
-
-        # Load configuration first
-        config: Config = get_config(args.config)
+        # First scan all paths to get total file count
+        all_files = []
+        for path in paths:
+            try:
+                result = scanner.scan_files(path)
+                all_files.extend(result)
+                total_files += len(result)
+            except Exception as e:
+                logger.error(f"Failed to scan path {path}: {str(e)}")
+                failed += 1
         
-        # Setup logging using configuration values
-        # Pass arguments in order: LOG_FILE, LOG_LEVEL, DEBUG as per architecture spec
+        # Process files with progress bar
+        with tqdm(total=total_files, desc="Processing files") as pbar:
+            for file_info in all_files:
+                if shutdown_requested:
+                    logger.warning("Shutdown requested, stopping processing")
+                    break
+                    
+                try:
+                    vector_store.add_embeddings(
+                        embeddings=file_info['embeddings'],
+                        metadata=file_info['metadata'],
+                        ids=file_info.get('ids')
+                    )
+                    successful += 1
+                except Exception as e:
+                    logger.error(f"Failed to store embeddings for {file_info['metadata']['path']}: {str(e)}")
+                    failed += 1
+                finally:
+                    pbar.update(1)
+                    
+    except Exception as e:
+        logger.error(f"Fatal error during processing: {str(e)}")
+        raise
+    finally:
+        logger.info(f"Processing complete: {successful} successful, {failed} failed, {total_files} total files")
+
+def handle_list(filter_pattern: Optional[str], config_path: str) -> None:
+    """Handle list operation.
+    
+    Args:
+        filter_pattern: Optional pattern to filter results
+        config_path: Path to configuration file
+    """
+    logger = logging.getLogger(__name__)
+    vector_store = VectorStore(config_path)
+    
+    try:
+        # Get collection stats
+        stats = vector_store.get_collection_stats()
+        
+        # Get and filter documents
+        docs = vector_store.list_documents(filter_pattern)
+        
+        # Print results
+        print("\nCollection Statistics:")
+        print(f"Total Documents: {stats['total_documents']}")
+        print(f"Total Chunks: {stats['total_chunks']}")
+        print(f"Last Updated: {stats['last_updated']}")
+        
+        print("\nDocuments:")
+        for doc in docs:
+            print(f"\nFile: {doc['path']}")
+            print(f"Type: {doc['file_type']}")
+            print(f"Chunks: {doc['chunk_count']}")
+            print(f"Last Modified: {doc['last_modified']}")
+            
+    except Exception as e:
+        logger.error(f"Failed to list documents: {str(e)}")
+        sys.exit(1)
+
+def handle_remove(path: str, filter_pattern: Optional[str], config_path: str) -> None:
+    """Handle remove operation.
+    
+    Args:
+        path: Path or pattern to remove
+        filter_pattern: Optional additional filter pattern
+        config_path: Path to configuration file
+    """
+    logger = logging.getLogger(__name__)
+    vector_store = VectorStore(config_path)
+    
+    try:
+        # Remove documents
+        result = vector_store.remove_documents(path, filter_pattern)
+        
+        print(f"\nRemoval complete:")
+        print(f"Documents removed: {result['documents_removed']}")
+        print(f"Chunks removed: {result['chunks_removed']}")
+        
+    except Exception as e:
+        logger.error(f"Failed to remove documents: {str(e)}")
+        sys.exit(1)
+
+def handle_query(query: Optional[str], config_path: str) -> None:
+    """Handle query operation.
+    
+    Args:
+        query: Optional query text (if None, enter interactive mode)
+        config_path: Path to configuration file
+    """
+    logger = logging.getLogger(__name__)
+    query_system = QuerySystem(config_path)
+    
+    try:
+        if query:
+            # Single query mode
+            result = query_system.query(query)
+            
+            print(f"\nResponse: {result['response']}")
+            print(f"\nSources:")
+            for source in result['sources']:
+                print(f"- {source['file_path']} (similarity: {source['similarity']:.2f})")
+            print(f"\nConfidence: {result['confidence']:.2f}")
+            
+        else:
+            # Interactive chat mode
+            print("\nEntering interactive chat mode (type 'exit' to quit)")
+            messages = []
+            
+            while True:
+                try:
+                    user_input = input("\nYou: ").strip()
+                    if user_input.lower() in ('exit', 'quit'):
+                        break
+                    
+                    messages.append({
+                        'role': 'user',
+                        'content': user_input
+                    })
+                    
+                    result = query_system.chat(messages)
+                    
+                    print(f"\nAssistant: {result['response']}")
+                    print(f"\nSources:")
+                    for source in result['sources']:
+                        print(f"- {source['file_path']} (similarity: {source['similarity']:.2f})")
+                    print(f"Confidence: {result['confidence']:.2f}")
+                    
+                    messages.append({
+                        'role': 'assistant',
+                        'content': result['response']
+                    })
+                    
+                except KeyboardInterrupt:
+                    print("\nExiting chat mode...")
+                    break
+                except Exception as e:
+                    logger.error(f"Error in chat: {str(e)}")
+                    print("\nAn error occurred. Please try again.")
+                    
+    except Exception as e:
+        logger.error(f"Failed to process query: {str(e)}")
+        sys.exit(1)
+
+def main() -> None:
+    """Main entry point for the QA system."""
+    try:
+        # Set up signal handlers
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        
+        args = parse_args()
+        
+        # Validate configuration file
+        try:
+            validate_config_file(args.config)
+        except ConfigError as e:
+            print(f"Configuration error: {str(e)}", file=sys.stderr)
+            sys.exit(1)
+        
+        # Load configuration
+        config = get_config(args.config)
+        
+        # Setup logging
         setup_logging(
             config.get_nested('LOGGING.LOG_FILE'),
             config.get_nested('LOGGING.LEVEL', default="INFO"),
@@ -110,62 +323,30 @@ def main() -> None:
         )
         
         logger = logging.getLogger(__name__)
-        logger.debug(f"Configuration loaded successfully from {args.config}")
-
-        if args.add:
-            paths: List[str] = args.add
-            logger.info(f"Processing {len(paths)} input paths")
-            scanner = FileScanner(config)
-            
-            # Process each provided path
-            total_files = 0
-            for path in paths:
-                logger.info(f"Scanning path: {path}")
-                try:
-                    file_info = scanner.scan_files(path)
-                    total_files += len(file_info)
-                    logger.debug(f"Found {len(file_info)} files in {path}")
-                except Exception as e:
-                    logger.error(f"Failed to process path {path}: {str(e)}")
-                    continue
-                
-                # TODO: Add document processing, embedding generation, and vector storage
-                # This will be implemented in subsequent phases as per architecture Section 4.1
-            
-            if total_files > 0:
-                logger.info(f"Total files found: {total_files}")
-                logger.info("Document processing completed successfully")
-            else:
-                logger.warning("No files were processed")
-                
-        elif args.list:
-            logger.info("Listing vector store contents")
-            # TODO: Implement vector store listing functionality
-            # This will be implemented as per ARCHITECTURE-list-flow.md
-            
-        elif args.remove:
-            logger.info(f"Removing data: {args.remove}")
-            # TODO: Implement vector store removal functionality
-            # This will be implemented as per ARCHITECTURE-remove-flow.md
-            
-        elif args.query is not None:
-            if args.query:
-                logger.info(f"Processing single query: {args.query}")
-            else:
-                logger.info("Starting interactive chat mode")
-            # TODO: Implement query functionality
-            # This will be implemented as per ARCHITECTURE-query-flow.md
-            
-        # Successful execution
-        sys.exit(0)
-
-    except Exception as e:
-        # Ensure we have a logger even if setup failed
-        if logger is None:
-            logging.basicConfig(level=logging.ERROR)
-            logger = logging.getLogger(__name__)
+        logger.debug(f"Configuration loaded from {args.config}")
         
-        logger.error(f"Fatal error occurred: {str(e)}", exc_info=True)
+        # Handle operations
+        try:
+            if args.add:
+                handle_add(args.add, args.config)
+            elif args.list:
+                handle_list(args.filter, args.config)
+            elif args.remove:
+                handle_remove(args.remove, args.filter, args.config)
+            elif args.query is not None:
+                handle_query(args.query if args.query else None, args.config)
+        except KeyboardInterrupt:
+            logger.info("Operation interrupted by user")
+            sys.exit(130)  # Standard exit code for SIGINT
+        except Exception as e:
+            logger.error(f"Operation failed: {str(e)}", exc_info=True)
+            sys.exit(1)
+        
+        sys.exit(0)
+        
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Fatal error: {str(e)}", exc_info=True)
         sys.exit(1)
 
 if __name__ == "__main__":

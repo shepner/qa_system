@@ -12,6 +12,8 @@ from typing import Dict, List, Optional, Any, Union
 import chromadb
 from chromadb.config import Settings
 from chromadb.api import Collection
+import time
+from datetime import datetime
 
 from qa_system.config import get_config
 from qa_system.logging_setup import setup_logging
@@ -36,60 +38,106 @@ class VectorStore:
         
         Args:
             config_path: Optional path to configuration file
+            
+        Raises:
+            RuntimeError: If initialization fails
         """
-        # Load configuration
-        self.config = get_config(config_path)
-        
-        # Setup logging
-        setup_logging(
-            log_file=self.config.get_nested('LOGGING.LOG_FILE'),
-            log_level=self.config.get_nested('LOGGING.LEVEL', "INFO"),
-            enable_debug=self.config.get_nested('LOGGING.DEBUG', False)
-        )
-        
-        self.logger = logging.getLogger(__name__)
-        self.logger.info("Initializing VectorStore")
-        
-        # Get vector store configuration
-        self.persist_directory = self.config.get_nested(
-            'VECTOR_STORE.PERSIST_DIRECTORY',
-            './data/vector_store'
-        )
-        self.collection_name = self.config.get_nested(
-            'VECTOR_STORE.COLLECTION_NAME',
-            'embeddings'
-        )
-        self.distance_metric = self.config.get_nested(
-            'VECTOR_STORE.DISTANCE_METRIC',
-            'cosine'
-        )
-        
-        # Ensure persist directory exists
-        Path(self.persist_directory).mkdir(parents=True, exist_ok=True)
-        
-        # Initialize ChromaDB client
-        self.client = chromadb.PersistentClient(
-            path=self.persist_directory,
-            settings=Settings(
-                anonymized_telemetry=False,
-                allow_reset=True
+        try:
+            # Load configuration
+            self.config = get_config(config_path)
+            
+            # Setup logging with architecture-specified defaults
+            setup_logging(
+                log_file=self.config.get_nested('LOGGING.LOG_FILE', "logs/qa_system.log"),
+                log_level=self.config.get_nested('LOGGING.LEVEL', "INFO"),
+                enable_debug=self.config.get_nested('LOGGING.DEBUG', False)
             )
-        )
-        
-        # Get or create collection
-        self.collection = self._get_or_create_collection()
-        
-        self.logger.info(f"VectorStore initialized with collection: {self.collection_name}")
+            
+            self.logger = logging.getLogger(__name__)
+            self.logger.info("Initializing VectorStore", extra={
+                'component': 'vector_store',
+                'operation': 'initialization'
+            })
+            
+            # Get vector store configuration with architecture-specified defaults
+            vector_config = self.config.get_nested('VECTOR_STORE', {})
+            self.persist_directory = vector_config.get('PERSIST_DIRECTORY', './data/vector_store')
+            self.collection_name = vector_config.get('COLLECTION_NAME', 'qa_documents')
+            self.distance_metric = vector_config.get('DISTANCE_METRIC', 'cosine')
+            self.top_k = vector_config.get('TOP_K', 40)
+            
+            # Ensure persist directory exists
+            persist_path = Path(self.persist_directory)
+            persist_path.mkdir(parents=True, exist_ok=True)
+            
+            # Initialize ChromaDB client with architecture-aligned settings
+            self.client = chromadb.PersistentClient(
+                path=str(persist_path),
+                settings=Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=True
+                )
+            )
+            
+            # Get or create collection
+            self.collection = self._get_or_create_collection()
+            
+            self.logger.info(
+                "VectorStore initialization complete",
+                extra={
+                    'component': 'vector_store',
+                    'collection': self.collection_name,
+                    'persist_directory': str(persist_path),
+                    'distance_metric': self.distance_metric
+                }
+            )
+            
+        except Exception as e:
+            self.logger.error(
+                f"VectorStore initialization failed: {str(e)}",
+                extra={
+                    'component': 'vector_store',
+                    'error_type': type(e).__name__
+                },
+                exc_info=True
+            )
+            raise RuntimeError(f"VectorStore initialization failed: {str(e)}")
     
     def _get_or_create_collection(self) -> Collection:
         """Get existing collection or create new one if it doesn't exist."""
         try:
-            return self.client.get_or_create_collection(
+            start_time = time.time()
+            collection = self.client.get_or_create_collection(
                 name=self.collection_name,
-                metadata={"hnsw:space": self.distance_metric}
+                metadata={
+                    "hnsw:space": self.distance_metric,
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat()
+                }
             )
+            duration = time.time() - start_time
+            
+            self.logger.debug(
+                "Collection operation complete",
+                extra={
+                    'component': 'vector_store',
+                    'operation': 'get_or_create_collection',
+                    'collection': self.collection_name,
+                    'duration_seconds': duration
+                }
+            )
+            return collection
+            
         except Exception as e:
-            self.logger.error(f"Error getting/creating collection: {str(e)}")
+            self.logger.error(
+                f"Error getting/creating collection: {str(e)}",
+                extra={
+                    'component': 'vector_store',
+                    'operation': 'get_or_create_collection',
+                    'error_type': type(e).__name__
+                },
+                exc_info=True
+            )
             raise
     
     def add_embeddings(
@@ -105,15 +153,22 @@ class VectorStore:
             metadata: List of metadata dictionaries for each embedding
             ids: Optional list of IDs for the embeddings. If not provided,
                  will be generated automatically.
+                 
+        Raises:
+            ValueError: If input validation fails
+            RuntimeError: If storage operation fails
         """
         try:
+            start_time = time.time()
+            
             # Validate input lengths match
             if len(embeddings) != len(metadata):
                 raise ValueError("Number of embeddings must match number of metadata entries")
             
             # Generate IDs if not provided
             if ids is None:
-                ids = [f"doc_{i}" for i in range(len(embeddings))]
+                timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                ids = [f"doc_{timestamp}_{i}" for i in range(len(embeddings))]
             elif len(ids) != len(embeddings):
                 raise ValueError("Number of IDs must match number of embeddings")
             
@@ -124,23 +179,42 @@ class VectorStore:
                 ids=ids
             )
             
-            self.logger.info(f"Added {len(embeddings)} embeddings to collection")
+            duration = time.time() - start_time
+            self.logger.info(
+                f"Added embeddings to collection",
+                extra={
+                    'component': 'vector_store',
+                    'operation': 'add_embeddings',
+                    'embedding_count': len(embeddings),
+                    'duration_seconds': duration,
+                    'collection': self.collection_name
+                }
+            )
             
         except Exception as e:
-            self.logger.error(f"Error adding embeddings: {str(e)}")
+            self.logger.error(
+                f"Error adding embeddings: {str(e)}",
+                extra={
+                    'component': 'vector_store',
+                    'operation': 'add_embeddings',
+                    'error_type': type(e).__name__,
+                    'embedding_count': len(embeddings)
+                },
+                exc_info=True
+            )
             raise
     
     def query_similar(
         self,
         query_embedding: List[float],
-        n_results: int = 5,
+        n_results: Optional[int] = None,
         metadata_filter: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Query for similar vectors in the database.
         
         Args:
             query_embedding: Vector to find similar embeddings for
-            n_results: Number of results to return (default: 5)
+            n_results: Number of results to return (default: uses TOP_K from config)
             metadata_filter: Optional filter for metadata fields
             
         Returns:
@@ -148,15 +222,35 @@ class VectorStore:
             - ids: List of matching document IDs
             - distances: List of distances to query vector
             - metadatas: List of metadata for matching documents
+            
+        Raises:
+            RuntimeError: If query operation fails
         """
         try:
+            start_time = time.time()
+            
+            # Use configured TOP_K if n_results not specified
+            if n_results is None:
+                n_results = self.top_k
+            
             results = self.collection.query(
                 query_embeddings=[query_embedding],
                 n_results=n_results,
                 where=metadata_filter
             )
             
-            self.logger.debug(f"Query returned {len(results['ids'][0])} results")
+            duration = time.time() - start_time
+            self.logger.debug(
+                "Query complete",
+                extra={
+                    'component': 'vector_store',
+                    'operation': 'query_similar',
+                    'result_count': len(results['ids'][0]),
+                    'duration_seconds': duration,
+                    'n_requested': n_results,
+                    'has_filter': bool(metadata_filter)
+                }
+            )
             
             return {
                 'ids': results['ids'][0],
@@ -165,7 +259,16 @@ class VectorStore:
             }
             
         except Exception as e:
-            self.logger.error(f"Error querying similar vectors: {str(e)}")
+            self.logger.error(
+                f"Error querying similar vectors: {str(e)}",
+                extra={
+                    'component': 'vector_store',
+                    'operation': 'query_similar',
+                    'error_type': type(e).__name__,
+                    'n_requested': n_results
+                },
+                exc_info=True
+            )
             raise
     
     def get_collection_stats(self) -> Dict[str, Any]:
@@ -173,26 +276,86 @@ class VectorStore:
         
         Returns:
             Dictionary containing collection statistics
+            
+        Raises:
+            RuntimeError: If stats collection fails
         """
         try:
+            start_time = time.time()
             count = self.collection.count()
-            return {
+            
+            stats = {
                 'name': self.collection_name,
                 'count': count,
                 'distance_metric': self.distance_metric,
-                'persist_directory': self.persist_directory
+                'persist_directory': self.persist_directory,
+                'timestamp': datetime.utcnow().isoformat()
             }
+            
+            duration = time.time() - start_time
+            self.logger.debug(
+                "Collection stats retrieved",
+                extra={
+                    'component': 'vector_store',
+                    'operation': 'get_stats',
+                    'duration_seconds': duration,
+                    'document_count': count
+                }
+            )
+            
+            return stats
+            
         except Exception as e:
-            self.logger.error(f"Error getting collection stats: {str(e)}")
+            self.logger.error(
+                f"Error getting collection stats: {str(e)}",
+                extra={
+                    'component': 'vector_store',
+                    'operation': 'get_stats',
+                    'error_type': type(e).__name__
+                },
+                exc_info=True
+            )
             raise
     
     def reset_collection(self) -> None:
-        """Reset the current collection, removing all data."""
+        """Reset the current collection, removing all data.
+        
+        Raises:
+            RuntimeError: If reset operation fails
+        """
         try:
-            self.logger.warning(f"Resetting collection: {self.collection_name}")
+            start_time = time.time()
+            
+            self.logger.warning(
+                "Resetting collection",
+                extra={
+                    'component': 'vector_store',
+                    'operation': 'reset',
+                    'collection': self.collection_name
+                }
+            )
+            
             self.client.reset()
             self.collection = self._get_or_create_collection()
-            self.logger.info("Collection reset complete")
+            
+            duration = time.time() - start_time
+            self.logger.info(
+                "Collection reset complete",
+                extra={
+                    'component': 'vector_store',
+                    'operation': 'reset',
+                    'duration_seconds': duration
+                }
+            )
+            
         except Exception as e:
-            self.logger.error(f"Error resetting collection: {str(e)}")
+            self.logger.error(
+                f"Error resetting collection: {str(e)}",
+                extra={
+                    'component': 'vector_store',
+                    'operation': 'reset',
+                    'error_type': type(e).__name__
+                },
+                exc_info=True
+            )
             raise 

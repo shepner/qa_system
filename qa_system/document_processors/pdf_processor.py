@@ -9,19 +9,18 @@ from pathlib import Path
 import asyncio
 from .base_processor import BaseDocumentProcessor
 from ..embedding_system import EmbeddingGenerator
+from qa_system.exceptions import ProcessingError, ValidationError
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 class PDFDocumentProcessor(BaseDocumentProcessor):
-    """PDF document processor implementation.
-    
-    Handles extraction and processing of PDF documents using PyMuPDF (fitz).
-    Implements the BaseDocumentProcessor interface with PDF-specific functionality.
-    Features:
-    - Text extraction with page preservation
-    - Header pattern recognition
-    - Intelligent chunking based on section boundaries
-    - PDF-specific metadata extraction
-    - Token counting using tiktoken
+    """PDF document processor for the QA system.
+
+    This module provides functionality for processing PDF documents, extracting text
+    and metadata, and handling errors appropriately.
     """
+    
+    # Maximum file size (100MB by default)
+    MAX_FILE_SIZE = 100 * 1024 * 1024
     
     def __init__(self, config):
         """Initialize the PDF document processor.
@@ -89,6 +88,26 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
         
         self.logger = logging.getLogger(__name__)
     
+    def _check_file_size(self, file_path: str) -> None:
+        """Check if file size is within limits.
+        
+        Args:
+            file_path: Path to the file to check
+            
+        Raises:
+            ValidationError: If file size exceeds limit
+        """
+        file_size = os.path.getsize(file_path)
+        if file_size > self.MAX_FILE_SIZE:
+            raise ValidationError(
+                f"File size {file_size} bytes exceeds limit of {self.MAX_FILE_SIZE} bytes"
+            )
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        reraise=True
+    )
     async def _generate_embeddings(self, chunks: List[str], metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate embeddings for the document chunks.
         
@@ -108,124 +127,157 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
             self.logger.error(f"Failed to generate embeddings: {e}")
             raise RuntimeError(f"Embedding generation failed: {e}")
     
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        reraise=True
+    )
     def process(self, file_path: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """Process a PDF document and extract its content and metadata.
+        """Process a PDF file and extract text and metadata.
         
         Args:
             file_path: Path to the PDF file
-            metadata: Initial metadata dictionary
+            metadata: Dictionary containing metadata about the file
             
         Returns:
-            Dict containing:
-            - Document metadata (type, timestamps, etc.)
-            - Extracted text chunks
-            - PDF-specific metadata (title, author, etc.)
-            - Token counts
-            - Headers and structure information
-            - Embeddings
+            Dictionary containing metadata and extracted text chunks
             
         Raises:
-            ValueError: If file is not a valid PDF or metadata is invalid
-            IOError: If file cannot be read
+            ProcessingError: If processing fails
+            ValidationError: If file validation fails
         """
-        if not isinstance(metadata, dict):
-            raise ValueError("metadata must be a dictionary")
-            
+        self.logger.debug(f"Processing PDF file: {file_path}")
+        
         try:
-            # Enhance metadata with required fields
-            path_obj = Path(file_path)
+            # Validate file size
+            self._check_file_size(file_path)
             
-            # Handle relative paths starting with ./ by using absolute paths
-            abs_path = path_obj.resolve()
-            workspace_root = Path(self.workspace_root).resolve()
+            # Enhance metadata with standard fields
+            metadata = self._enhance_metadata(file_path, metadata)
             
+            # Validate metadata
+            self._validate_metadata(metadata)
+            
+            # Process PDF file
+            pdf_document = None
             try:
-                relative_path = str(abs_path.relative_to(workspace_root))
-            except ValueError:
-                # If the path is not relative to workspace_root, try using the original path
-                if str(path_obj).startswith('./'):
-                    relative_path = str(path_obj)[2:]  # Remove ./ prefix
-                else:
-                    relative_path = str(path_obj)
-            
-            metadata.update({
-                "path": str(abs_path),
-                "relative_path": relative_path,
-                "directory": str(path_obj.parent),
-                "filename_full": path_obj.name,
-                "filename_stem": path_obj.stem,
-                "file_type": "pdf",
-                "created_at": datetime.fromtimestamp(path_obj.stat().st_ctime).isoformat(),
-                "last_modified": datetime.fromtimestamp(path_obj.stat().st_mtime).isoformat()
-            })
-            
-            # Open and process the PDF
-            with fitz.open(file_path) as pdf_doc:
-                if len(pdf_doc) == 0:
-                    raise ValueError("PDF file contains no pages")
-                    
-                # Extract text from all pages with proper separation
-                text_parts = []
-                for page in pdf_doc:
-                    page_text = page.get_text().strip()
-                    if page_text:  # Only add non-empty pages
-                        text_parts.append(page_text)
+                pdf_document = fitz.open(file_path)
                 
-                # Join pages with newlines to preserve separation
-                text = '\n\n'.join(text_parts)
-                if not text.strip():
-                    self.logger.warning(f"No text content found in PDF: {file_path}")
-                
-                # Get PDF metadata
-                pdf_info = pdf_doc.metadata
-                if pdf_info:
-                    # Clean and validate metadata values
-                    cleaned_info = {
-                        key: str(value).strip() if value else ''
-                        for key, value in pdf_info.items()
-                    }
-                    metadata.update({
-                        'title': cleaned_info.get('title', ''),
-                        'author': cleaned_info.get('author', ''),
-                        'subject': cleaned_info.get('subject', ''),
-                        'keywords': cleaned_info.get('keywords', ''),
-                        'creator': cleaned_info.get('creator', ''),
-                        'producer': cleaned_info.get('producer', ''),
-                        'page_count': len(pdf_doc)
-                    })
-                
-                # Add processing metadata
+                # Extract document metadata
+                pdf_metadata = pdf_document.metadata
                 metadata.update({
-                    'processor': 'PDFDocumentProcessor',
-                    'processed_at': datetime.utcnow().isoformat(),
-                    'content_type': 'application/pdf',
-                    'file_path': file_path,
-                    'has_text_content': bool(text.strip())
+                    'pdf_title': pdf_metadata.get('title', ''),
+                    'pdf_author': pdf_metadata.get('author', ''),
+                    'pdf_subject': pdf_metadata.get('subject', ''),
+                    'pdf_keywords': pdf_metadata.get('keywords', ''),
+                    'pdf_creator': pdf_metadata.get('creator', ''),
+                    'pdf_producer': pdf_metadata.get('producer', ''),
+                    'pdf_creation_date': pdf_metadata.get('creationDate', ''),
+                    'pdf_modification_date': pdf_metadata.get('modDate', '')
                 })
                 
-                # Chunk the extracted text if any exists
-                if text.strip():
-                    chunks = self._chunk_text_with_sentences(
-                        text,
-                        max_chunk_size=self.max_chunk_size,
-                        overlap=self.chunk_overlap
-                    )
-                    metadata['chunks'] = chunks
+                # Extract text from each page
+                text_chunks = []
+                toc = []
+                
+                for page_num in range(len(pdf_document)):
+                    if self._should_stop():
+                        self.logger.warning("Processing interrupted")
+                        break
+                        
+                    page = pdf_document[page_num]
                     
-                    # Generate embeddings
-                    embeddings = asyncio.run(self._generate_embeddings(chunks, metadata))
-                    metadata['embeddings'] = embeddings
-                else:
-                    metadata['chunks'] = []
-                    metadata['embeddings'] = []
+                    # Extract text with page context
+                    text = page.get_text()
+                    if text.strip():
+                        chunk = f"Page {page_num + 1}:\n{text}"
+                        text_chunks.append(chunk)
+                    
+                    # Extract links for table of contents
+                    links = page.get_links()
+                    for link in links:
+                        if 'uri' in link:
+                            toc.append({
+                                'page': page_num + 1,
+                                'uri': link['uri']
+                            })
                 
-                return metadata
+                # Calculate total tokens
+                total_tokens = sum(self._count_tokens(chunk) for chunk in text_chunks)
                 
-        except fitz.FileDataError as e:
-            raise ValueError(f"Invalid PDF file: {e}")
-        except IOError as e:
-            raise IOError(f"Failed to read PDF file: {e}")
+                # Update processing metadata
+                metadata.update({
+                    'processor_type': 'pdf',
+                    'total_tokens': total_tokens,
+                    'chunk_count': len(text_chunks),
+                    'average_chunk_size': total_tokens / len(text_chunks) if text_chunks else 0,
+                    'content_type': 'application/pdf',
+                    'page_count': len(pdf_document),
+                    'table_of_contents': toc
+                })
+                
+                return {
+                    'metadata': metadata,
+                    'chunks': text_chunks
+                }
+                
+            except fitz.FileDataError as e:
+                raise ValidationError(f"Invalid PDF file: {str(e)}")
+            except Exception as e:
+                raise ProcessingError(f"Failed to process PDF: {str(e)}")
+            finally:
+                if pdf_document:
+                    try:
+                        pdf_document.close()
+                    except Exception as e:
+                        self.logger.warning(f"Failed to close PDF document: {str(e)}")
+                
         except Exception as e:
-            # Log the specific error type for debugging
-            self.logger.error(f"Error processing PDF {file_path}: {type(e).__name__}: {e}")
-            raise 
+            self.logger.error(f"Error processing PDF file {file_path}: {str(e)}")
+            raise
+    
+    def _should_stop(self) -> bool:
+        """Check if processing should be stopped."""
+        return False  # Override in subclass if needed
+
+    def _enhance_metadata(self, file_path: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Enhance the metadata dictionary with additional information."""
+        # Add file path and timestamp
+        metadata.update({
+            'file_path': file_path,
+            'timestamp': datetime.now().isoformat()
+        })
+        return metadata
+
+    def _validate_metadata(self, metadata: Dict[str, Any]) -> None:
+        """Validate the metadata dictionary."""
+        # Add file path and timestamp
+        metadata.update({
+            'file_path': metadata['file_path'],
+            'timestamp': metadata['timestamp']
+        })
+
+    def _count_tokens(self, text: str) -> int:
+        """Count the number of tokens in a given text."""
+        return len(self.tokenizer.encode(text))
+
+    def _chunk_text_with_sentences(self, text: str) -> List[str]:
+        """Chunk the text into sentences."""
+        sentences = re.split(r'(?<=[。！？])', text)
+        chunks = []
+        current_chunk = ""
+        current_tokens = 0
+        
+        for sentence in sentences:
+            if current_tokens + len(sentence) > self.max_chunk_size:
+                chunks.append(current_chunk)
+                current_chunk = sentence
+                current_tokens = len(sentence)
+            else:
+                current_chunk += sentence
+                current_tokens += len(sentence)
+        
+        if current_chunk:
+            chunks.append(current_chunk)
+        
+        return chunks 

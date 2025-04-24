@@ -2,8 +2,9 @@
 
 # Logging Configuration
 LOGGING:
-  LEVEL: INFO
+  LEVEL: "INFO"
   LOG_FILE: "logs/qa_system.log"
+  DEBUG: false
 
 # Security & API Configuration
 # Note: These values are loaded from environment variables
@@ -23,31 +24,23 @@ FILE_SCANNER:
   ALLOWED_EXTENSIONS:
     - "txt"
     - "md"
-    - "rst"
+    - "csv"
     - "pdf"
-    - "doc"
-    - "docx"
-    - "rtf"
-    - "html"
-    - "htm"
-    - "png"
     - "jpg"
     - "jpeg"
+    - "png"
     - "gif"
-    - "webp"
     - "bmp"
-    - "csv"
+    - "webp"
 
   # Patterns to exclude from processing
   EXCLUDE_PATTERNS:
-    - "!README.md"
-    - "!ARCHITECTURE.md"
-    - "!docs/*.md"
-    - ".*"  # Hidden files and directories
-    - "Excalidraw/"
-    - "smart-chats/"
-    - "stylesheets/"
-    - "tags/"
+    - ".*"
+    - "__pycache__"
+    - "*.pyc"
+    - "node_modules"
+    - ".git"
+    - ".env"
 
   HASH_ALGORITHM: "sha256"
   SKIP_EXISTING: true  # Whether to skip files already in vector db
@@ -127,15 +120,13 @@ DOCUMENT_PROCESSING:
     ENABLED: true
     # List of Vision API features to enable
     # Available features:
+    #   - DOCUMENT_TEXT_DETECTION: Extract text (OCR)
+    #   - IMAGE_PROPERTIES: Extract image properties
     #   - LABEL_DETECTION: Detect and extract labels
-    #   - TEXT_DETECTION: Extract text (OCR)
-    #   - OBJECT_LOCALIZATION: Detect and locate objects
-    #   - FACE_DETECTION: Detect and analyze faces
     FEATURES:
+      - DOCUMENT_TEXT_DETECTION
+      - IMAGE_PROPERTIES
       - LABEL_DETECTION
-      - TEXT_DETECTION
-      - OBJECT_LOCALIZATION
-      - FACE_DETECTION
     # Maximum number of results to return per feature
     # Higher values provide more comprehensive analysis
     # but increase API usage and cost

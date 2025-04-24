@@ -3,60 +3,103 @@
 # Exit on error
 set -e
 
-# Function to print messages
-print_step() {
-    echo "===> $1"
-}
-
-# Get the directory where the script is located
+# Script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Where to find the config file
-CONFIG_FILE="$SCRIPT_DIR/config/config.yaml"
+# Configuration
+VENV_DIR=".venv"
+CONFIG_DIR="config"
+LOGS_DIR="logs"
+DATA_DIR="data/vector_store"
+SECRETS_DIR="secrets"
 
-# Check if python3 is installed
-if ! command -v python3 &> /dev/null; then
-    echo "Error: python3 is not installed"
-    exit 1
-fi
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-# Create virtual environment if it doesn't exist
-if [ ! -d ".venv" ]; then
-    print_step "Creating virtual environment..."
-    python3 -m venv .venv
-fi
+# Helper functions
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
 
-# Activate virtual environment
-print_step "Activating virtual environment..."
-source .venv/bin/activate
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
 
-# Upgrade pip
-print_step "Upgrading pip..."
-python3 -m pip install -q --upgrade pip
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Create required directories
+create_directories() {
+    log_info "Creating required directories..."
+    mkdir -p "$LOGS_DIR" "$DATA_DIR" "$CONFIG_DIR" "$SECRETS_DIR"
+}
+
+# Setup virtual environment
+setup_venv() {
+    if [ ! -d "$VENV_DIR" ]; then
+        log_info "Creating virtual environment..."
+        python3 -m venv "$VENV_DIR"
+    fi
+
+    log_info "Activating virtual environment..."
+    source "$VENV_DIR/bin/activate"
+}
 
 # Install/upgrade dependencies
-print_step "Installing/upgrading dependencies..."
-pip install -q -r requirements.txt
+install_dependencies() {
+    log_info "Installing/upgrading dependencies..."
+    pip install --upgrade pip
+    pip install -q -r requirements.txt
+}
 
-# Create logs directory if it doesn't exist
-print_step "Ensuring logs directory exists..."
-mkdir -p logs
+# Check configuration
+check_config() {
+    if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
+        if [ -f "$CONFIG_DIR/config.yaml.example" ]; then
+            log_warn "config.yaml not found. Copying from example..."
+            cp "$CONFIG_DIR/config.yaml.example" "$CONFIG_DIR/config.yaml"
+            log_warn "Please update $CONFIG_DIR/config.yaml with your settings"
+        else
+            log_error "No configuration file found!"
+            exit 1
+        fi
+    fi
+}
 
-# Load environment variables from .env file if it exists
-print_step "Loading environment variables..."
-if [ -f "$SCRIPT_DIR/secrets/.env" ]; then
-    set -a  # automatically export all variables
-    source "$SCRIPT_DIR/secrets/.env"
-    set +a
-else
-    echo "Warning: .env file not found at $SCRIPT_DIR/secrets/.env"
-    echo "Make sure GOOGLE_CLOUD_PROJECT and GOOGLE_API_KEY are set in your environment"
-fi
+# Load environment variables
+load_env() {
+    if [ -f "$SECRETS_DIR/.env" ]; then
+        log_info "Loading environment variables..."
+        set -a
+        source "$SECRETS_DIR/.env"
+        set +a
+    else
+        log_warn "No .env file found in $SECRETS_DIR"
+    fi
+}
 
-# Run the program
-print_step "Starting the program..."
-cd "$SCRIPT_DIR"
-PYTHONPATH="$SCRIPT_DIR" python3 -m qa_system --config "$CONFIG_FILE" "$@"
+# Main execution
+main() {
+    cd "$SCRIPT_DIR"
+    
+    create_directories
+    setup_venv
+    install_dependencies
+    check_config
+    load_env
 
-# Deactivate virtual environment
-deactivate 
+    if [ $# -eq 0 ]; then
+        log_info "No arguments provided. Starting interactive mode..."
+        python -m qa_system --query
+    else
+        log_info "Running with arguments: $@"
+        python -m qa_system "$@"
+    fi
+}
+
+# Run main function with all script arguments
+main "$@" 

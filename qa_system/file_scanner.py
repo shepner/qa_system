@@ -166,6 +166,10 @@ class FileScanner:
     def check_existing_file(self, file_path: str, checksum: str) -> bool:
         """Check if a file exists in the vector store based on its checksum.
         
+        This is a key architectural decision point that determines whether a file needs processing:
+        - If the checksum exists in the vector store, the file is skipped (return False)
+        - If the checksum doesn't exist, the file needs processing (return True)
+        
         Args:
             file_path: Path to the file
             checksum: File's checksum
@@ -485,6 +489,73 @@ class FileScanner:
         except Exception as e:
             logger.error(f"Error during file processing: {str(e)}")
             return []
+
+    def process_file(self, file_path: str) -> Tuple[bool, Optional[str]]:
+        """Process a single file following the architectural flow.
+        
+        The processing follows these steps:
+        1. Validate file access and readability
+        2. Generate checksum
+        3. Check if file exists in vector store
+        4. If new/changed file:
+           - Process with appropriate Document Processor
+           - Generate embeddings
+           - Store in vector database
+        5. If existing file: skip processing
+        
+        Args:
+            file_path: Path to the file to process
+            
+        Returns:
+            Tuple[bool, Optional[str]]: (success, error_message)
+            where error_message is None if processing was successful
+        """
+        try:
+            # 1. Validate file access
+            if not os.path.exists(file_path):
+                raise FileAccessError(f"File does not exist: {file_path}")
+            if not os.access(file_path, os.R_OK):
+                raise FileAccessError(f"File not readable: {file_path}")
+            
+            # 2. Generate checksum
+            try:
+                checksum = self.calculate_checksum(file_path)
+            except Exception as e:
+                raise FileValidationError(f"Failed to generate checksum: {str(e)}")
+            
+            # 3. Check if file exists in vector store
+            try:
+                needs_processing = self.check_existing_file(file_path, checksum)
+                if not needs_processing:
+                    logger.info(f"Skipping existing file: {file_path}")
+                    return True, None
+            except Exception as e:
+                raise ProcessingError(f"Failed to check file existence: {str(e)}")
+            
+            # 4. Process new/changed file
+            should_process, reason, processor_class = self.should_process_file(file_path)
+            if not should_process:
+                raise FileValidationError(f"File validation failed: {reason}")
+            
+            # Process file with appropriate processor
+            success, error = self.process_document(file_path, processor_class)
+            if not success:
+                raise ProcessingError(f"Document processing failed: {error}")
+            
+            return True, None
+            
+        except FileAccessError as e:
+            logger.error(f"File access error for {file_path}: {str(e)}")
+            return False, f"access error: {str(e)}"
+        except FileValidationError as e:
+            logger.error(f"File validation error for {file_path}: {str(e)}")
+            return False, f"validation error: {str(e)}"
+        except ProcessingError as e:
+            logger.error(f"Processing error for {file_path}: {str(e)}")
+            return False, f"processing error: {str(e)}"
+        except Exception as e:
+            logger.error(f"Unexpected error processing {file_path}: {str(e)}", exc_info=True)
+            return False, f"unexpected error: {str(e)}"
 
 class FileProcessingError(Exception):
     """Base exception for file processing errors."""
