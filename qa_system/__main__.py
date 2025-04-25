@@ -21,6 +21,12 @@ from qa_system.logging_setup import setup_logging
 from qa_system.file_scanner import FileScanner
 from qa_system.vector_system import VectorStore
 from qa_system.query_system import QuerySystem
+from .exceptions import (
+    QASystemError,
+    ConfigurationError,
+    ValidationError,
+    handle_exception
+)
 
 # Global flag for graceful shutdown
 shutdown_requested = False
@@ -51,7 +57,14 @@ def validate_config_file(config_path: str) -> bool:
         return True
         
     except Exception as e:
-        raise ConfigError(f"Configuration validation failed: {str(e)}")
+        error_details = handle_exception(
+            e,
+            "Configuration validation failed",
+            reraise=False
+        )
+        raise ConfigError(
+            f"Configuration validation failed: {error_details['message']}"
+        ) from e
 
 def parse_args() -> argparse.Namespace:
     """Parse and validate command line arguments.

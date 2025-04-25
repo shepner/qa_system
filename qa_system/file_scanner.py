@@ -15,6 +15,14 @@ from qa_system.document_processors import (
     PDFDocumentProcessor,
     ImageDocumentProcessor
 )
+from .exceptions import (
+    QASystemError,
+    FileError,
+    FileAccessError,
+    FileProcessingError,
+    ValidationError,
+    handle_exception
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -144,9 +152,8 @@ class FileScanner:
             logger.debug(f"File {file_path} approved for processing with processor {processor_class.__name__}")
             return True, "approved for processing", processor_class
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Error checking file {file_path}: {error_msg}")
-            return False, f"error during check: {error_msg}", None
+            error_details = handle_exception(e, f"Error checking file {file_path}", reraise=False)
+            return False, f"error during check: {error_details['message']}", None
 
     def calculate_checksum(self, file_path: str) -> str:
         """Calculate checksum for a file using configured hash algorithm."""
@@ -309,9 +316,15 @@ class FileScanner:
                         skipped_files.append({"path": path, "reason": reason})
                         logger.debug(f"Skipping file {path}: {reason}")
                 except Exception as e:
-                    error_msg = str(e)
-                    logger.error(f"Error processing file {path}: {error_msg}", exc_info=True)
-                    skipped_files.append({"path": path, "reason": f"error during processing: {error_msg}"})
+                    error_details = handle_exception(
+                        e,
+                        f"Error processing file {path}",
+                        reraise=False
+                    )
+                    skipped_files.append({
+                        "path": path,
+                        "reason": error_details['message']
+                    })
             
             # Handle directory
             else:
@@ -345,9 +358,15 @@ class FileScanner:
                                 logger.debug(f"Skipping file {file_path}: {reason}")
                                 
                         except Exception as e:
-                            error_msg = str(e)
-                            logger.error(f"Error processing file {file_path}: {error_msg}", exc_info=True)
-                            skipped_files.append({"path": file_path, "reason": f"error during processing: {error_msg}"})
+                            error_details = handle_exception(
+                                e,
+                                f"Error processing file {file_path}",
+                                reraise=False
+                            )
+                            skipped_files.append({
+                                "path": file_path,
+                                "reason": error_details['message']
+                            })
                             continue
 
             # Log summary with more details
@@ -366,7 +385,12 @@ class FileScanner:
             return file_info_list
             
         except Exception as e:
-            logger.error(f"Error scanning path {path}: {str(e)}", exc_info=True)
+            error_details = handle_exception(
+                e,
+                f"Error scanning path {path}",
+                reraise=False
+            )
+            logger.error(f"File processing failed: {error_details['message']}")
             return []
 
     def process_document(self, file_path: str, processor_class: Type[BaseDocumentProcessor]) -> Tuple[bool, Optional[str]]:
@@ -419,14 +443,23 @@ class FileScanner:
                 return True, None
                 
             except Exception as proc_error:
-                error_msg = f"Document processor error: {str(proc_error)}"
-                logger.error(error_msg)
-                return False, error_msg
+                error_details = handle_exception(
+                    proc_error, 
+                    f"Document processor error for {file_path}",
+                    reraise=False
+                )
+                return False, error_details['message']
             
+        except FileAccessError as e:
+            error_details = handle_exception(e, context="File access error", reraise=False)
+            return False, error_details['message']
         except Exception as e:
-            error_msg = f"Error in process_document for {file_path}: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return False, error_msg
+            error_details = handle_exception(
+                e, 
+                f"Error in process_document for {file_path}",
+                reraise=False
+            )
+            return False, error_details['message']
 
     def process_files(self, base_path: Union[str, Path]) -> List[Dict[str, Any]]:
         """Process all files in the given path.
@@ -439,12 +472,12 @@ class FileScanner:
         """
         logger.info(f"Starting file processing from base path: {base_path}")
         processed_files = []
+        skipped_files = []
         
         try:
             base_path = Path(base_path)
             if not base_path.exists():
-                logger.error(f"Base path does not exist: {base_path}")
-                return []
+                raise FileAccessError(f"Base path does not exist: {base_path}")
                 
             if base_path.is_file():
                 logger.debug(f"Processing individual file: {base_path}")
@@ -458,11 +491,25 @@ class FileScanner:
                             if success:
                                 processed_files.append(file_info)
                             else:
-                                logger.error(f"Failed to process file {base_path}: {error}")
+                                skipped_files.append({
+                                    "path": str(base_path),
+                                    "reason": error
+                                })
                     else:
-                        logger.debug(f"Skipping file {base_path}: {reason}")
+                        skipped_files.append({
+                            "path": str(base_path),
+                            "reason": reason
+                        })
                 except Exception as e:
-                    logger.error(f"Error processing file {base_path}: {str(e)}")
+                    error_details = handle_exception(
+                        e,
+                        f"Error processing file {base_path}",
+                        reraise=False
+                    )
+                    skipped_files.append({
+                        "path": str(base_path),
+                        "reason": error_details['message']
+                    })
             else:
                 logger.debug(f"Processing directory: {base_path}")
                 for file_path in base_path.rglob('*'):
@@ -477,85 +524,86 @@ class FileScanner:
                                     if success:
                                         processed_files.append(file_info)
                                     else:
-                                        logger.error(f"Failed to process file {file_path}: {error}")
+                                        skipped_files.append({
+                                            "path": str(file_path),
+                                            "reason": error
+                                        })
                             else:
-                                logger.debug(f"Skipping file {file_path}: {reason}")
+                                skipped_files.append({
+                                    "path": str(file_path),
+                                    "reason": reason
+                                })
                         except Exception as e:
-                            logger.error(f"Error processing file {file_path}: {str(e)}")
-                            
-            logger.info(f"Completed processing {len(processed_files)} files")
+                            error_details = handle_exception(
+                                e,
+                                f"Error processing file {file_path}",
+                                reraise=False
+                            )
+                            skipped_files.append({
+                                "path": str(file_path),
+                                "reason": error_details['message']
+                            })
+            
+            # Log summary
+            logger.info(
+                f"File processing complete. "
+                f"Processed: {len(processed_files)}, "
+                f"Skipped: {len(skipped_files)}"
+            )
+            
+            if skipped_files:
+                logger.debug("Summary of skipped files:")
+                for skip_info in skipped_files:
+                    logger.debug(f"Skipped {skip_info['path']}: {skip_info['reason']}")
+            
             return processed_files
             
         except Exception as e:
-            logger.error(f"Error during file processing: {str(e)}")
+            error_details = handle_exception(
+                e,
+                "Error during file processing",
+                reraise=False
+            )
+            logger.error(f"File processing failed: {error_details['message']}")
             return []
 
     def process_file(self, file_path: str) -> Tuple[bool, Optional[str]]:
-        """Process a single file following the architectural flow.
-        
-        The processing follows these steps:
-        1. Validate file access and readability
-        2. Generate checksum
-        3. Check if file exists in vector store
-        4. If new/changed file:
-           - Process with appropriate Document Processor
-           - Generate embeddings
-           - Store in vector database
-        5. If existing file: skip processing
-        
-        Args:
-            file_path: Path to the file to process
-            
-        Returns:
-            Tuple[bool, Optional[str]]: (success, error_message)
-            where error_message is None if processing was successful
-        """
+        """Process a single file with proper error handling."""
         try:
-            # 1. Validate file access
+            # Validate file access
             if not os.path.exists(file_path):
                 raise FileAccessError(f"File does not exist: {file_path}")
             if not os.access(file_path, os.R_OK):
                 raise FileAccessError(f"File not readable: {file_path}")
             
-            # 2. Generate checksum
-            try:
-                checksum = self.calculate_checksum(file_path)
-            except Exception as e:
-                raise FileValidationError(f"Failed to generate checksum: {str(e)}")
+            # Get file stats for context
+            file_stats = os.stat(file_path)
+            file_size = file_stats.st_size
             
-            # 3. Check if file exists in vector store
-            try:
-                needs_processing = self.check_existing_file(file_path, checksum)
-                if not needs_processing:
-                    logger.info(f"Skipping existing file: {file_path}")
-                    return True, None
-            except Exception as e:
-                raise ProcessingError(f"Failed to check file existence: {str(e)}")
+            logger.info(f"Processing file: {file_path} (size: {file_size} bytes)")
             
-            # 4. Process new/changed file
-            should_process, reason, processor_class = self.should_process_file(file_path)
-            if not should_process:
-                raise FileValidationError(f"File validation failed: {reason}")
+            # Validate file
+            is_valid, validation_error = self._validate_file(file_path)
+            if not is_valid:
+                raise ValidationError(f"File validation failed: {validation_error}")
             
-            # Process file with appropriate processor
-            success, error = self.process_document(file_path, processor_class)
+            # Process file
+            success, result = self._process_file_content(file_path)
             if not success:
-                raise ProcessingError(f"Document processing failed: {error}")
+                raise FileProcessingError(f"File processing failed: {result}")
             
             return True, None
             
-        except FileAccessError as e:
-            logger.error(f"File access error for {file_path}: {str(e)}")
-            return False, f"access error: {str(e)}"
-        except FileValidationError as e:
-            logger.error(f"File validation error for {file_path}: {str(e)}")
-            return False, f"validation error: {str(e)}"
-        except ProcessingError as e:
-            logger.error(f"Processing error for {file_path}: {str(e)}")
-            return False, f"processing error: {str(e)}"
+        except (FileAccessError, ValidationError, FileProcessingError) as e:
+            error_details = handle_exception(e, context="File processing error", reraise=False)
+            return False, error_details['message']
         except Exception as e:
-            logger.error(f"Unexpected error processing {file_path}: {str(e)}", exc_info=True)
-            return False, f"unexpected error: {str(e)}"
+            error_details = handle_exception(
+                e,
+                f"Unexpected error processing {file_path}",
+                reraise=False
+            )
+            return False, error_details['message']
 
 class FileProcessingError(Exception):
     """Base exception for file processing errors."""

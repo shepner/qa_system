@@ -31,6 +31,10 @@ last_updated: 2024-03-20
    - [5.3 Operations](#53-operations)
    - [5.4 Configuration](#54-configuration)
    - [5.5 Integration](#55-integration)
+6. [Exceptions Module](#6-exceptions-module)
+   - [6.1 Purpose](#61-purpose)
+   - [6.2 Core Exceptions](#62-core-exceptions)
+   - [6.3 Usage](#63-usage)
 
 ## 1. Overview
 This document details the common components used across all flows in the File Embedding System. Each component is designed to be modular, reusable, and follows consistent configuration patterns.
@@ -491,4 +495,94 @@ class QueryError(VectorStoreError):
 class ValidationError(VectorStoreError):
     """Data validation errors."""
     pass
+```
+
+## 6. Exceptions Module (exceptions.py)
+
+### 6.1 Purpose
+Provides a centralized set of exception classes for consistent error handling across the system. All custom exceptions inherit from a base system exception to ensure consistent error handling patterns.
+
+### 6.2 Core Exceptions
+```python
+class QASystemError(Exception):
+    """Base exception for all system errors."""
+    pass
+
+class ValidationError(QASystemError):
+    """Raised when input validation fails."""
+    pass
+
+class ProcessingError(QASystemError):
+    """Raised when document processing fails."""
+    pass
+
+class ConfigurationError(QASystemError):
+    """Raised when configuration is invalid or missing."""
+    pass
+
+class StorageError(QASystemError):
+    """Raised when storage operations fail."""
+    pass
+
+class EmbeddingError(QASystemError):
+    """Raised when embedding generation fails."""
+    pass
+
+class APIError(QASystemError):
+    """Raised when external API calls fail."""
+    pass
+```
+
+### 6.3 Usage
+```python
+from qa_system.exceptions import ValidationError, ProcessingError
+
+def process_document(file_path: str) -> Dict:
+    """Process a document with proper error handling.
+    
+    Args:
+        file_path: Path to document to process
+        
+    Returns:
+        Processed document data
+        
+    Raises:
+        ValidationError: If document validation fails
+        ProcessingError: If processing fails
+    """
+    try:
+        # Validate input
+        if not os.path.exists(file_path):
+            raise ValidationError(f"File not found: {file_path}")
+            
+        # Process document
+        result = perform_processing(file_path)
+        if not result:
+            raise ProcessingError(f"Failed to process {file_path}")
+            
+        return result
+        
+    except Exception as e:
+        # Convert unknown errors to ProcessingError
+        if not isinstance(e, (ValidationError, ProcessingError)):
+            raise ProcessingError(f"Unexpected error: {str(e)}") from e
+        raise
+```
+
+Example error handling pattern:
+```python
+try:
+    result = process_document(file_path)
+except ValidationError as e:
+    logger.error(f"Validation failed: {str(e)}")
+    # Handle validation error (e.g., skip file)
+except ProcessingError as e:
+    logger.error(f"Processing failed: {str(e)}")
+    # Handle processing error (e.g., retry or log)
+except QASystemError as e:
+    logger.error(f"System error: {str(e)}")
+    # Handle any other system error
+except Exception as e:
+    logger.critical(f"Unexpected error: {str(e)}")
+    # Handle unexpected errors
 ```

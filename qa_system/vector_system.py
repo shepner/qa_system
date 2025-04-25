@@ -6,6 +6,7 @@ using ChromaDB as the backend. It supports storing embeddings with metadata,
 querying similar vectors, and managing the vector database lifecycle.
 """
 
+import os
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
@@ -17,6 +18,15 @@ from datetime import datetime
 
 from qa_system.config import get_config
 from qa_system.logging_setup import setup_logging
+from .exceptions import (
+    QASystemError,
+    StorageError,
+    VectorStoreError,
+    ConfigurationError,
+    handle_exception
+)
+
+logger = logging.getLogger(__name__)
 
 class VectorStore:
     """Vector database management system using ChromaDB.
@@ -40,7 +50,7 @@ class VectorStore:
             config_path: Optional path to configuration file
             
         Raises:
-            RuntimeError: If initialization fails
+            VectorStoreError: If initialization fails
         """
         try:
             # Load configuration
@@ -93,15 +103,14 @@ class VectorStore:
             )
             
         except Exception as e:
-            self.logger.error(
-                f"VectorStore initialization failed: {str(e)}",
-                extra={
-                    'component': 'vector_store',
-                    'error_type': type(e).__name__
-                },
-                exc_info=True
+            error_details = handle_exception(
+                e,
+                "VectorStore initialization failed",
+                reraise=False
             )
-            raise RuntimeError(f"VectorStore initialization failed: {str(e)}")
+            raise VectorStoreError(
+                f"VectorStore initialization failed: {error_details['message']}"
+            ) from e
     
     def _get_or_create_collection(self) -> Collection:
         """Get existing collection or create new one if it doesn't exist."""
@@ -129,16 +138,14 @@ class VectorStore:
             return collection
             
         except Exception as e:
-            self.logger.error(
-                f"Error getting/creating collection: {str(e)}",
-                extra={
-                    'component': 'vector_store',
-                    'operation': 'get_or_create_collection',
-                    'error_type': type(e).__name__
-                },
-                exc_info=True
+            error_details = handle_exception(
+                e,
+                "Error getting/creating collection",
+                reraise=False
             )
-            raise
+            raise VectorStoreError(
+                f"Failed to get/create collection: {error_details['message']}"
+            ) from e
     
     def add_embeddings(
         self,
@@ -156,53 +163,54 @@ class VectorStore:
                  
         Raises:
             ValueError: If input validation fails
-            RuntimeError: If storage operation fails
+            VectorStoreError: If storage operation fails
         """
         try:
-            start_time = time.time()
-            
-            # Validate input lengths match
+            if not embeddings or not metadata:
+                raise ValueError("Embeddings and metadata cannot be empty")
             if len(embeddings) != len(metadata):
-                raise ValueError("Number of embeddings must match number of metadata entries")
+                raise ValueError(
+                    f"Number of embeddings ({len(embeddings)}) must match "
+                    f"number of metadata entries ({len(metadata)})"
+                )
             
             # Generate IDs if not provided
             if ids is None:
-                timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-                ids = [f"doc_{timestamp}_{i}" for i in range(len(embeddings))]
+                ids = [f"doc_{i}_{time.time()}" for i in range(len(embeddings))]
             elif len(ids) != len(embeddings):
-                raise ValueError("Number of IDs must match number of embeddings")
+                raise ValueError(
+                    f"Number of IDs ({len(ids)}) must match "
+                    f"number of embeddings ({len(embeddings)})"
+                )
             
             # Add to collection
+            start_time = time.time()
             self.collection.add(
                 embeddings=embeddings,
                 metadatas=metadata,
                 ids=ids
             )
-            
             duration = time.time() - start_time
+            
             self.logger.info(
-                f"Added embeddings to collection",
+                "Added embeddings to vector store",
                 extra={
                     'component': 'vector_store',
                     'operation': 'add_embeddings',
                     'embedding_count': len(embeddings),
-                    'duration_seconds': duration,
-                    'collection': self.collection_name
+                    'duration_seconds': duration
                 }
             )
             
         except Exception as e:
-            self.logger.error(
-                f"Error adding embeddings: {str(e)}",
-                extra={
-                    'component': 'vector_store',
-                    'operation': 'add_embeddings',
-                    'error_type': type(e).__name__,
-                    'embedding_count': len(embeddings)
-                },
-                exc_info=True
+            error_details = handle_exception(
+                e,
+                "Error adding embeddings",
+                reraise=False
             )
-            raise
+            raise VectorStoreError(
+                f"Failed to add embeddings: {error_details['message']}"
+            ) from e
     
     def query_similar(
         self,
@@ -224,31 +232,30 @@ class VectorStore:
             - metadatas: List of metadata for matching documents
             
         Raises:
-            RuntimeError: If query operation fails
+            ValueError: If query embedding is empty
+            VectorStoreError: If query operation fails
         """
         try:
+            if not query_embedding:
+                raise ValueError("Query embedding cannot be empty")
+            
+            n_results = n_results or self.top_k
+            
             start_time = time.time()
-            
-            # Use configured TOP_K if n_results not specified
-            if n_results is None:
-                n_results = self.top_k
-            
             results = self.collection.query(
                 query_embeddings=[query_embedding],
                 n_results=n_results,
                 where=metadata_filter
             )
-            
             duration = time.time() - start_time
-            self.logger.debug(
+            
+            self.logger.info(
                 "Query complete",
                 extra={
                     'component': 'vector_store',
                     'operation': 'query_similar',
-                    'result_count': len(results['ids'][0]),
-                    'duration_seconds': duration,
-                    'n_requested': n_results,
-                    'has_filter': bool(metadata_filter)
+                    'n_results': n_results,
+                    'duration_seconds': duration
                 }
             )
             
@@ -259,17 +266,14 @@ class VectorStore:
             }
             
         except Exception as e:
-            self.logger.error(
-                f"Error querying similar vectors: {str(e)}",
-                extra={
-                    'component': 'vector_store',
-                    'operation': 'query_similar',
-                    'error_type': type(e).__name__,
-                    'n_requested': n_results
-                },
-                exc_info=True
+            error_details = handle_exception(
+                e,
+                "Error querying vector store",
+                reraise=False
             )
-            raise
+            raise VectorStoreError(
+                f"Failed to query similar vectors: {error_details['message']}"
+            ) from e
     
     def get_collection_stats(self) -> Dict[str, Any]:
         """Get statistics about the current collection.

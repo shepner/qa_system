@@ -50,6 +50,7 @@ sequenceDiagram
   - [Configuration Module](ARCHITECTURE-common-components.md#3-configuration-module) for system settings
   - [Logging Setup](ARCHITECTURE-common-components.md#4-logging-setup) for operation tracking
   - [Vector Database](ARCHITECTURE-common-components.md#5-vector-database) for data retrieval
+  - [Exceptions Module](ARCHITECTURE-common-components.md#6-exceptions-module) for error handling
 - **Key Functions**:
   - Process search patterns from command line arguments
   - Query vector database for matching documents

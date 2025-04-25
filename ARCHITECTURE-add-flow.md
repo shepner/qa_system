@@ -78,6 +78,7 @@ sequenceDiagram
   - [Configuration Module](ARCHITECTURE-common-components.md#3-configuration-module) for file scanning settings
   - [Logging Setup](ARCHITECTURE-common-components.md#4-logging-setup) for operation tracking
   - [Vector Database](ARCHITECTURE-common-components.md#5-vector-database) for checking existing files
+  - [Exceptions Module](ARCHITECTURE-common-components.md#6-exceptions-module) for error handling
 - **Key Functions**:
   - Exclusion and inclusion of identified files and directories using gitignore notation
   - Generation of SHA256 hash of file for comparison and for the Document Processors
@@ -162,6 +163,7 @@ For usage examples and configuration, see [Configuration Module Usage](ARCHITECT
 - **Dependencies**:
   - [Configuration Module](ARCHITECTURE-common-components.md#3-configuration-module) for processing settings
   - [Logging Setup](ARCHITECTURE-common-components.md#4-logging-setup) for operation tracking
+  - [Exceptions Module](ARCHITECTURE-common-components.md#6-exceptions-module) for error handling
 - **Key Functions**:
   - Text extraction and normalization
   - Content chunking
@@ -388,6 +390,7 @@ The Document Processors integrate with other system components in the following 
   - [Configuration Module](ARCHITECTURE-common-components.md#3-configuration-module) for model settings
   - [Logging Setup](ARCHITECTURE-common-components.md#4-logging-setup) for operation tracking
   - [Vector Database](ARCHITECTURE-common-components.md#5-vector-database) for storing embeddings
+  - [Exceptions Module](ARCHITECTURE-common-components.md#6-exceptions-module) for error handling
 - **Input**:
   - Document chunks and metadata from Document Processors
   - Raw image data and Vision API analysis from Vision Document Processor

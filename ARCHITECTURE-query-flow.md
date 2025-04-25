@@ -63,6 +63,11 @@ sequenceDiagram
 
 ## 3.1 Query Processor
 - **Purpose**: Handles semantic search queries and manages the search process
+- **Dependencies**:
+  - [Configuration Module](ARCHITECTURE-common-components.md#3-configuration-module) for query settings
+  - [Logging Setup](ARCHITECTURE-common-components.md#4-logging-setup) for operation tracking
+  - [Vector Database](ARCHITECTURE-common-components.md#5-vector-database) for similarity search
+  - [Exceptions Module](ARCHITECTURE-common-components.md#6-exceptions-module) for error handling
 - **Key Functions**:
   - Query embedding generation
     - Converts text queries to vector embeddings
@@ -82,6 +87,10 @@ sequenceDiagram
 
 ## 3.2 Response Generator
 - **Purpose**: Generates contextual responses using retrieved information
+- **Dependencies**:
+  - [Configuration Module](ARCHITECTURE-common-components.md#3-configuration-module) for response settings
+  - [Logging Setup](ARCHITECTURE-common-components.md#4-logging-setup) for operation tracking
+  - [Exceptions Module](ARCHITECTURE-common-components.md#6-exceptions-module) for error handling
 - **Key Functions**:
   - Context integration
     - Combines retrieved chunks

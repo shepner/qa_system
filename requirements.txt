@@ -33,6 +33,7 @@ duckdb>=0.10.0
 
 # Text processing
 tiktoken>=0.6.0
+chardet>=5.0.0
 
 # Utilities
 tenacity>=8.2.3

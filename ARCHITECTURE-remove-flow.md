@@ -19,6 +19,7 @@ last_updated: 2024-03-20
 4. [Error Handling](#4-error-handling)
    4.1. [Common Error Scenarios](#41-common-error-scenarios)
    4.2. [Recovery Procedures](#42-recovery-procedures)
+   4.3. [Exceptions Module Integration](#43-exceptions-module-integration)
 5. [Configuration](#5-configuration)
 6. [Usage Examples](#6-usage-examples)
    6.1. [Command Line Interface](#command-line-interface)
@@ -61,6 +62,7 @@ sequenceDiagram
   - [Configuration Module](ARCHITECTURE-common-components.md#3-configuration-module) for removal settings
   - [Logging Setup](ARCHITECTURE-common-components.md#4-logging-setup) for operation tracking
   - [Vector Database](ARCHITECTURE-common-components.md#5-vector-database) for document removal
+  - [Exceptions Module](ARCHITECTURE-common-components.md#6-exceptions-module) for error handling
 - **Key Functions**:
   - Pattern matching for file selection
     - Supports exact file paths
@@ -84,6 +86,7 @@ sequenceDiagram
   - Receives paths/patterns from main's --remove argument
   - Receives configuration either from default or main's --config argument
   - Loads VECTOR_STORE configuration from config.py for Vector DB integration
+  - Utilizes Exceptions Module for standardized error handling
 - **Input**:
   - `pattern`: File or pattern to match (from main's --remove argument)
   - `vector_db`: Instance of Vector DB for document operations
@@ -96,10 +99,12 @@ sequenceDiagram
     - `removed`: List of successfully removed documents
     - `failed`: List of documents that failed to remove
     - `not_found`: List of patterns with no matches
+    - `errors`: List of error details with exception information
 - **Key Functions**:
   - `find_matches`: Queries vector store for documents matching pattern
   - `remove_documents`: Removes matched documents from vector store
   - `verify_removal`: Confirms complete removal of documents and metadata
+  - `handle_exceptions`: Processes and formats exceptions using Exceptions Module
 
 ## 3.2. Vector Database
 The remove flow utilizes the vector database component described in [ARCHITECTURE-common-components.md](ARCHITECTURE-common-components.md#5-vector-database) for all document operations including:
@@ -137,6 +142,24 @@ For configuration and usage details, see [Vector Database Configuration](ARCHITE
    - Post-removal consistency check
    - Automatic repair of minor issues
    - Notification for major problems
+
+## 4.3 Exceptions Module Integration
+The remove flow leverages the [Exceptions Module](ARCHITECTURE-common-components.md#6-exceptions-module) for standardized error handling:
+
+1. **Custom Exceptions**
+   - `DocumentNotFoundError`: When specified documents don't exist
+   - `RemovalError`: For general removal operation failures
+   - `ValidationError`: For pattern validation failures
+
+2. **Exception Flow**
+   - Exceptions are caught and logged at appropriate levels
+   - User-facing messages are generated from exception details
+   - System state is preserved through transaction management
+
+3. **Error Reporting**
+   - Detailed error information for debugging
+   - User-friendly error messages
+   - Consistent error format across operations
 
 # 5. Configuration
 
@@ -219,4 +242,24 @@ if result['removed']:
 if result['failed']:
     print(f"Failed to remove: {result['failed']}")
 if result['not_found']:
-    print(f"No matches found for: {result['not_found']}") 
+    print(f"No matches found for: {result['not_found']}")
+
+# Error handling example
+from qa_system.exceptions import DocumentNotFoundError, RemovalError, ValidationError
+
+try:
+    result = handler.remove_documents("invalid/pattern/**")
+except ValidationError as e:
+    print(f"Invalid pattern: {e}")
+    # Access detailed error information
+    print(f"Error code: {e.code}")
+    print(f"Error context: {e.context}")
+except DocumentNotFoundError as e:
+    print(f"Document not found: {e}")
+    # Log the error with full context
+    logger.error(f"Document removal failed: {e}", extra=e.to_dict())
+except RemovalError as e:
+    print(f"Removal failed: {e}")
+    # Handle cleanup if needed
+    if e.requires_cleanup:
+        handler.cleanup_failed_removal(e.document_id) 
