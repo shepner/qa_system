@@ -139,7 +139,7 @@ sequenceDiagram
 - **Usage**:
 ```python
 from embed_files.file_scanner import FileScanner
-from embed_files.vector_system import VectorDB
+from embed_files.vector_system import VectorStore
 
 # Initialize components
 config = get_config()
@@ -385,7 +385,7 @@ The Document Processors integrate with other system components in the following 
 - Language detection and handling
 
 ### 3.3. Embedding Generator
-- **Purpose**: Generates vector embeddings for document chunks and images using Google's models
+- **Purpose**: Generates vector embeddings for document chunks and images using Google's models documented here: https://ai.google.dev/gemini-api/docs/embeddings
 - **Dependencies**:
   - [Configuration Module](ARCHITECTURE-common-components.md#3-configuration-module) for model settings
   - [Logging Setup](ARCHITECTURE-common-components.md#4-logging-setup) for operation tracking

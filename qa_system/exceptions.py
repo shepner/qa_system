@@ -42,6 +42,10 @@ class ValidationError(QASystemError):
     """Raised when input validation fails."""
     pass
 
+class ProcessingError(QASystemError):
+    """Raised when document processing fails."""
+    pass
+
 class FileError(QASystemError):
     """Base class for file-related errors."""
     pass

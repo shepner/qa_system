@@ -90,7 +90,7 @@ main() {
     setup_venv
     install_dependencies
     check_config
-    load_env
+    load_env  # Load any updated environment variables
 
     if [ $# -eq 0 ]; then
         log_info "No arguments provided. Starting interactive mode..."

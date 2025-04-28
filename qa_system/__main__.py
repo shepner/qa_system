@@ -18,9 +18,10 @@ from tqdm import tqdm
 
 from qa_system.config import get_config, ConfigError
 from qa_system.logging_setup import setup_logging
-from qa_system.file_scanner import FileScanner
-from qa_system.vector_system import VectorStore
-from qa_system.query_system import QuerySystem
+from qa_system.add_flow import AddFlow
+from qa_system.list_flow import ListFlow
+from qa_system.remove_flow import RemoveFlow
+from qa_system.query_flow import QueryFlow
 from .exceptions import (
     QASystemError,
     ConfigurationError,
@@ -139,57 +140,48 @@ def parse_args() -> argparse.Namespace:
     return args
 
 def handle_add(paths: List[str], config_path: str) -> None:
-    """Handle file addition operation.
+    """Process file addition operation.
     
     Args:
         paths: List of file/directory paths to process
         config_path: Path to configuration file
     """
-    logger = logging.getLogger(__name__)
-    scanner = FileScanner(config_path)
-    vector_store = VectorStore(config_path)
-    
-    total_files = 0
-    successful = 0
-    failed = 0
-    
     try:
-        # First scan all paths to get total file count
-        all_files = []
-        for path in paths:
-            try:
-                result = scanner.scan_files(path)
-                all_files.extend(result)
-                total_files += len(result)
-            except Exception as e:
-                logger.error(f"Failed to scan path {path}: {str(e)}")
-                failed += 1
+        # Initialize AddFlow component
+        add_flow = AddFlow(config_path)
         
-        # Process files with progress bar
-        with tqdm(total=total_files, desc="Processing files") as pbar:
-            for file_info in all_files:
-                if shutdown_requested:
-                    logger.warning("Shutdown requested, stopping processing")
-                    break
-                    
+        total_files = 0
+        successful = 0
+        failed = 0
+        
+        # Process each path
+        with tqdm(total=len(paths), desc="Processing paths") as pbar:
+            for path in paths:
                 try:
-                    vector_store.add_embeddings(
-                        embeddings=file_info['embeddings'],
-                        metadata=file_info['metadata'],
-                        ids=file_info.get('ids')
-                    )
-                    successful += 1
-                except Exception as e:
-                    logger.error(f"Failed to store embeddings for {file_info['metadata']['path']}: {str(e)}")
-                    failed += 1
-                finally:
-                    pbar.update(1)
+                    # Process files through AddFlow
+                    result = add_flow.process_path(path)
                     
+                    # Update statistics
+                    total_files += result['total_files']
+                    successful += result['successful']
+                    failed += result['failed']
+                    
+                except Exception as e:
+                    logging.error(f"Failed to process path: {path}: {str(e)}", exc_info=True)
+                    
+                pbar.update(1)
+        
+        # Log summary
+        logging.info(
+            f"Processing complete. "
+            f"Total files: {total_files}, "
+            f"Successful: {successful}, "
+            f"Failed: {failed}"
+        )
+        
     except Exception as e:
-        logger.error(f"Fatal error during processing: {str(e)}")
+        logging.error(f"Fatal error during processing: {str(e)}", exc_info=True)
         raise
-    finally:
-        logger.info(f"Processing complete: {successful} successful, {failed} failed, {total_files} total files")
 
 def handle_list(filter_pattern: Optional[str], config_path: str) -> None:
     """Handle list operation.
@@ -199,23 +191,20 @@ def handle_list(filter_pattern: Optional[str], config_path: str) -> None:
         config_path: Path to configuration file
     """
     logger = logging.getLogger(__name__)
-    vector_store = VectorStore(config_path)
+    list_flow = ListFlow(config_path)
     
     try:
-        # Get collection stats
-        stats = vector_store.get_collection_stats()
-        
-        # Get and filter documents
-        docs = vector_store.list_documents(filter_pattern)
+        # Get collection stats and documents
+        result = list_flow.list_documents(filter_pattern)
         
         # Print results
         print("\nCollection Statistics:")
-        print(f"Total Documents: {stats['total_documents']}")
-        print(f"Total Chunks: {stats['total_chunks']}")
-        print(f"Last Updated: {stats['last_updated']}")
+        print(f"Total Documents: {result['stats']['total_documents']}")
+        print(f"Total Chunks: {result['stats']['total_chunks']}")
+        print(f"Last Updated: {result['stats']['last_updated']}")
         
         print("\nDocuments:")
-        for doc in docs:
+        for doc in result['documents']:
             print(f"\nFile: {doc['path']}")
             print(f"Type: {doc['file_type']}")
             print(f"Chunks: {doc['chunk_count']}")
@@ -234,11 +223,11 @@ def handle_remove(path: str, filter_pattern: Optional[str], config_path: str) ->
         config_path: Path to configuration file
     """
     logger = logging.getLogger(__name__)
-    vector_store = VectorStore(config_path)
+    remove_flow = RemoveFlow(config_path)
     
     try:
         # Remove documents
-        result = vector_store.remove_documents(path, filter_pattern)
+        result = remove_flow.remove_documents(path, filter_pattern)
         
         print(f"\nRemoval complete:")
         print(f"Documents removed: {result['documents_removed']}")
@@ -256,12 +245,12 @@ def handle_query(query: Optional[str], config_path: str) -> None:
         config_path: Path to configuration file
     """
     logger = logging.getLogger(__name__)
-    query_system = QuerySystem(config_path)
+    query_flow = QueryFlow(config_path)
     
     try:
         if query:
             # Single query mode
-            result = query_system.query(query)
+            result = query_flow.query(query)
             
             print(f"\nResponse: {result['response']}")
             print(f"\nSources:")
@@ -285,7 +274,7 @@ def handle_query(query: Optional[str], config_path: str) -> None:
                         'content': user_input
                     })
                     
-                    result = query_system.chat(messages)
+                    result = query_flow.chat(messages)
                     
                     print(f"\nAssistant: {result['response']}")
                     print(f"\nSources:")

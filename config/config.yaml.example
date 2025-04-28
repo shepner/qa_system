@@ -57,10 +57,35 @@ DOCUMENT_PROCESSING:
     MAX_RESULTS: 50
 
 EMBEDDING_MODEL:
-  MODEL_NAME: "models/embedding-001"  # Gemini model name
+  # Model name for Gemini embeddings
+  # Capabilities:
+  #   - High quality embeddings for text similarity
+  #   - Supports multiple languages
+  #   - Optimized for semantic search and retrieval
+  #   - Task-specific embeddings for different use cases
+  MODEL_NAME: "gemini-embedding-exp-03-07"
+  
+  # Batch size for processing multiple texts at once
+  # Higher values are more efficient but use more memory
+  # Recommended: 10-15 for optimal throughput while staying within rate limits
   BATCH_SIZE: 15
+  
+  # Maximum length of text to embed (in tokens)
+  # Texts longer than this will be truncated
   MAX_LENGTH: 3072
-  DIMENSIONS: 768  # Output embedding dimensions
+  
+  # Output embedding dimensions
+  # Must match VECTOR_STORE.EMBEDDINGS.DIMENSION
+  DIMENSIONS: 768
+  
+  # Task type for optimizing embeddings
+  # Options: SEMANTIC_SIMILARITY, CLASSIFICATION, CLUSTERING,
+  #          RETRIEVAL_DOCUMENT, RETRIEVAL_QUERY, QUESTION_ANSWERING,
+  #          FACT_VERIFICATION, CODE_RETRIEVAL_QUERY
+  TASK_TYPE: "RETRIEVAL_DOCUMENT"
+  
+  # Whether to automatically truncate text that exceeds MAX_LENGTH
+  AUTO_TRUNCATE: true
 
 VECTOR_STORE:
   TYPE: "chroma"

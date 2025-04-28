@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 import asyncio
 from .base_processor import BaseDocumentProcessor
-from ..embedding_system import EmbeddingGenerator
 from qa_system.exceptions import ProcessingError, ValidationError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -26,50 +25,34 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
         """Initialize the PDF document processor.
         
         Args:
-            config: Either a dictionary or Config object containing configuration settings.
-                   Must contain DOCUMENT_PROCESSING section with required parameters.
-        
-        Raises:
-            ValueError: If config is invalid or required parameters are not met
-        """
-        super().__init__()
-        
-        if config is None:
-            raise ValueError("Config cannot be None")
+            config: Configuration object or path
             
-        # First determine the type of config we received
-        if hasattr(config, 'get_nested'):
-            # Config object - extract document processing settings
-            doc_processing = config.get_nested('DOCUMENT_PROCESSING', {})
-            if not isinstance(doc_processing, dict):
-                raise ValueError("DOCUMENT_PROCESSING section from Config object must be a dictionary")
-        elif isinstance(config, dict):
-            # Dictionary config - either direct settings or nested under DOCUMENT_PROCESSING
-            if 'DOCUMENT_PROCESSING' in config:
-                doc_processing = config['DOCUMENT_PROCESSING']
-                if not isinstance(doc_processing, dict):
-                    raise ValueError("DOCUMENT_PROCESSING section must be a dictionary")
-            else:
-                # Assume direct settings
-                doc_processing = config
-        else:
-            raise ValueError(f"Config must be either a dictionary or a Config object with get_nested method, got {type(config)}")
-
-        # Extract and validate settings with defaults
-        self.max_chunk_size = doc_processing.get('MAX_CHUNK_SIZE', 1500)
-        self.chunk_overlap = doc_processing.get('CHUNK_OVERLAP', 300)
-        self.header_patterns = []
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        # Get document processing configuration
+        doc_processing = config.get_nested('DOCUMENT_PROCESSING', {})
         
-        # Extract header patterns if available
-        pdf_header_config = doc_processing.get('PDF_HEADER_RECOGNITION', {})
-        if isinstance(pdf_header_config, dict) and pdf_header_config.get('ENABLED', True):
-            self.header_patterns = pdf_header_config.get('PATTERNS', [])
-
-        # Validate configuration parameters
-        if not isinstance(self.max_chunk_size, int) or self.max_chunk_size <= 0:
-            raise ValueError(f"max_chunk_size must be a positive integer, got {self.max_chunk_size}")
-        if not isinstance(self.chunk_overlap, int) or self.chunk_overlap < 0:
-            raise ValueError(f"chunk_overlap must be a non-negative integer, got {self.chunk_overlap}")
+        # Set chunk parameters
+        self.max_chunk_size = doc_processing.get('MAX_CHUNK_SIZE', 3072)
+        self.min_chunk_size = doc_processing.get('MIN_CHUNK_SIZE', 1024)
+        self.chunk_overlap = doc_processing.get('CHUNK_OVERLAP', 768)
+        self.preserve_sentences = doc_processing.get('PRESERVE_SENTENCES', True)
+        
+        # Get PDF-specific settings
+        pdf_config = doc_processing.get('PDF_HEADER_RECOGNITION', {})
+        self.header_recognition = pdf_config.get('ENABLED', True)
+        self.min_font_size = pdf_config.get('MIN_FONT_SIZE', 12)
+        self.header_patterns = pdf_config.get('PATTERNS', [])
+        self.max_header_length = pdf_config.get('MAX_HEADER_LENGTH', 100)
+        
+        # Validate configuration
+        if self.max_chunk_size < 1:
+            raise ValueError(f"max_chunk_size must be positive, got {self.max_chunk_size}")
+        if self.min_chunk_size < 1:
+            raise ValueError(f"min_chunk_size must be positive, got {self.min_chunk_size}")
+        if self.chunk_overlap < 0:
+            raise ValueError(f"chunk_overlap must be non-negative, got {self.chunk_overlap}")
         if self.chunk_overlap >= self.max_chunk_size:
             raise ValueError(f"chunk_overlap ({self.chunk_overlap}) must be less than max_chunk_size ({self.max_chunk_size})")
         if not isinstance(self.header_patterns, list):
@@ -80,11 +63,6 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
         
         # Store workspace root for relative path calculation
         self.workspace_root = doc_processing.get('DOCUMENT_PATH', os.getcwd())
-        
-        # Initialize embedding generator
-        # If config is a Config object, it will have a config_path attribute
-        config_path = getattr(config, 'config_path', None) if hasattr(config, 'config_path') else None
-        self.embedding_generator = EmbeddingGenerator(config_path)
         
         self.logger = logging.getLogger(__name__)
     
@@ -102,30 +80,6 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
             raise ValidationError(
                 f"File size {file_size} bytes exceeds limit of {self.MAX_FILE_SIZE} bytes"
             )
-    
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        reraise=True
-    )
-    async def _generate_embeddings(self, chunks: List[str], metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Generate embeddings for the document chunks.
-        
-        Args:
-            chunks: List of text chunks to generate embeddings for
-            metadata: Document metadata to include with embeddings
-            
-        Returns:
-            List of dictionaries containing embeddings and metadata
-            
-        Raises:
-            RuntimeError: If embedding generation fails
-        """
-        try:
-            return await self.embedding_generator.generate_embeddings(chunks, metadata)
-        except Exception as e:
-            self.logger.error(f"Failed to generate embeddings: {e}")
-            raise RuntimeError(f"Embedding generation failed: {e}")
     
     @retry(
         stop=stop_after_attempt(3),

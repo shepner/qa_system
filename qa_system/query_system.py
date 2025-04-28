@@ -16,7 +16,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from qa_system.config import get_config
 from qa_system.vector_system import VectorStore
-from qa_system.embedding_system import EmbeddingSystem
+from qa_system.embedding_system import EmbeddingGenerator
 from .exceptions import (
     QASystemError,
     QueryError,
@@ -25,7 +25,7 @@ from .exceptions import (
 )
 
 class QuerySystem:
-    """Handles semantic search and response generation."""
+    """Handles querying the vector database with natural language queries."""
     
     def __init__(self, config_path: Optional[str] = None):
         """Initialize the query system.
@@ -44,8 +44,8 @@ class QuerySystem:
             self.logger = logging.getLogger(__name__)
             
             # Initialize components
-            self.vector_store = VectorStore(config_path)
-            self.embedding_system = EmbeddingSystem(config_path)
+            self.vector_db = VectorStore(config_path)
+            self.embedding_system = EmbeddingGenerator(config_path)
             
             # Get model configuration
             model_config = self.config.get_nested('EMBEDDING_MODEL', {})
@@ -118,7 +118,7 @@ class QuerySystem:
             query_embedding = self.embedding_system.generate_embedding(query_text)
             
             # Query vector store
-            results = self.vector_store.query_similar(
+            results = self.vector_db.query_similar(
                 query_embedding=query_embedding,
                 n_results=top_k
             )
@@ -199,7 +199,7 @@ class QuerySystem:
             query_embedding = self.embedding_system.generate_embedding(latest_message)
             
             # Query vector store
-            results = self.vector_store.query_similar(
+            results = self.vector_db.query_similar(
                 query_embedding=query_embedding,
                 n_results=top_k
             )

@@ -60,6 +60,7 @@ sequenceDiagram
 ```
 
 # 3. Components
+Implementation of the Google Gemini AI models are to follow the API guide found here: https://ai.google.dev/gemini-api/docs/text-generation
 
 ## 3.1 Query Processor
 - **Purpose**: Handles semantic search queries and manages the search process

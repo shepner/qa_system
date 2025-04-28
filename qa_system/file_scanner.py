@@ -26,24 +26,12 @@ from .exceptions import (
 
 # Configure logging
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-# Create console handler with debug level
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-
-# Create formatter
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-ch.setFormatter(formatter)
-
-# Add handler to logger
-logger.addHandler(ch)
 
 class FileScanner:
     """Scanner for discovering and processing files.
     
     Handles file discovery, validation, and metadata collection according to configuration.
-    Integrates with VectorDB to determine which files need processing.
+    Integrates with VectorStore to determine which files need processing.
     """
 
     # Default mapping of file extensions to processor classes
@@ -266,11 +254,11 @@ class FileScanner:
             logger.error(f"Error getting metadata for {file_path}: {str(e)}", exc_info=True)
             raise
 
-    def scan_files(self, path: str) -> List[Dict[str, Any]]:
+    def scan_files(self, path: Union[str, List[str]]) -> List[Dict[str, Any]]:
         """Scan directory or individual file and collect metadata.
         
         Args:
-            path: Path to scan (can be a directory or individual file)
+            path: Path or list of paths to scan (can be directories or individual files)
             
         Returns:
             List of dictionaries containing file metadata including:
@@ -282,116 +270,121 @@ class FileScanner:
         """
         logger.debug(f"Starting file scan for path: {path}")
         
-        if not os.path.exists(path):
-            logger.error(f"Path does not exist: {path}")
-            return []
-
+        # Convert single path to list for uniform handling
+        paths = [path] if isinstance(path, str) else path
+        
         file_info_list = []
         skipped_files = []
-        base_path = Path(os.path.dirname(path) if os.path.isfile(path) else path).resolve()
+        
+        for current_path in paths:
+            if not os.path.exists(current_path):
+                logger.error(f"Path does not exist: {current_path}")
+                continue
 
-        try:
-            # Handle individual file
-            if os.path.isfile(path):
-                logger.debug(f"Processing individual file: {path}")
-                try:
-                    should_process, reason, processor_class = self.should_process_file(path)
-                    if should_process:
-                        file_info = self.get_file_metadata(path, str(base_path))
-                        if file_info['needs_processing']:
-                            # Process the document using appropriate processor
-                            success, error = self.process_document(path, processor_class)
-                            file_info.update({
-                                'processed': success,
-                                'processor_error': error,
-                                'processor_type': processor_class.__name__,
-                                'processing_completed': datetime.utcnow().isoformat() if success else None
-                            })
-                        file_info_list.append(file_info)
-                        if success:
-                            logger.info(f"Successfully processed file: {path}")
-                        else:
-                            logger.warning(f"Failed to process file: {path} - {error}")
-                    else:
-                        skipped_files.append({"path": path, "reason": reason})
-                        logger.debug(f"Skipping file {path}: {reason}")
-                except Exception as e:
-                    error_details = handle_exception(
-                        e,
-                        f"Error processing file {path}",
-                        reraise=False
-                    )
-                    skipped_files.append({
-                        "path": path,
-                        "reason": error_details['message']
-                    })
-            
-            # Handle directory
-            else:
-                logger.debug(f"Beginning directory walk: {path}")
-                for root, dirs, files in os.walk(path):
-                    logger.debug(f"Scanning directory: {root}")
-                    for filename in files:
-                        file_path = os.path.join(root, filename)
-                        logger.debug(f"Processing file: {file_path}")
-                        
-                        try:
-                            should_process, reason, processor_class = self.should_process_file(file_path)
-                            if should_process:
-                                file_info = self.get_file_metadata(file_path, str(base_path))
-                                if file_info['needs_processing']:
-                                    # Process the document using appropriate processor
-                                    success, error = self.process_document(file_path, processor_class)
-                                    file_info.update({
-                                        'processed': success,
-                                        'processor_error': error,
-                                        'processor_type': processor_class.__name__,
-                                        'processing_completed': datetime.utcnow().isoformat() if success else None
-                                    })
-                                file_info_list.append(file_info)
-                                if success:
-                                    logger.info(f"Successfully processed file: {file_path}")
-                                else:
-                                    logger.warning(f"Failed to process file: {file_path} - {error}")
+            base_path = Path(os.path.dirname(current_path) if os.path.isfile(current_path) else current_path).resolve()
+
+            try:
+                # Handle individual file
+                if os.path.isfile(current_path):
+                    logger.debug(f"Processing individual file: {current_path}")
+                    try:
+                        should_process, reason, processor_class = self.should_process_file(current_path)
+                        if should_process:
+                            file_info = self.get_file_metadata(current_path, str(base_path))
+                            if file_info['needs_processing']:
+                                # Process the document using appropriate processor
+                                success, error = self.process_document(current_path, processor_class)
+                                file_info.update({
+                                    'processed': success,
+                                    'processor_error': error,
+                                    'processor_type': processor_class.__name__,
+                                    'processing_completed': datetime.utcnow().isoformat() if success else None
+                                })
+                            file_info_list.append(file_info)
+                            if success:
+                                logger.info(f"Successfully processed file: {current_path}")
                             else:
-                                skipped_files.append({"path": file_path, "reason": reason})
-                                logger.debug(f"Skipping file {file_path}: {reason}")
-                                
-                        except Exception as e:
-                            error_details = handle_exception(
-                                e,
-                                f"Error processing file {file_path}",
-                                reraise=False
-                            )
-                            skipped_files.append({
-                                "path": file_path,
-                                "reason": error_details['message']
-                            })
-                            continue
+                                logger.warning(f"Failed to process file: {current_path} - {error}")
+                        else:
+                            skipped_files.append({"path": current_path, "reason": reason})
+                            logger.debug(f"Skipping file {current_path}: {reason}")
+                    except Exception as e:
+                        error_details = handle_exception(
+                            e,
+                            f"Error processing file {current_path}",
+                            reraise=False
+                        )
+                        skipped_files.append({
+                            "path": current_path,
+                            "reason": error_details['message']
+                        })
+                
+                # Handle directory
+                else:
+                    logger.debug(f"Beginning directory walk: {current_path}")
+                    for root, dirs, files in os.walk(current_path):
+                        logger.debug(f"Scanning directory: {root}")
+                        for filename in files:
+                            file_path = os.path.join(root, filename)
+                            logger.debug(f"Processing file: {file_path}")
+                            
+                            try:
+                                should_process, reason, processor_class = self.should_process_file(file_path)
+                                if should_process:
+                                    file_info = self.get_file_metadata(file_path, str(base_path))
+                                    if file_info['needs_processing']:
+                                        # Process the document using appropriate processor
+                                        success, error = self.process_document(file_path, processor_class)
+                                        file_info.update({
+                                            'processed': success,
+                                            'processor_error': error,
+                                            'processor_type': processor_class.__name__,
+                                            'processing_completed': datetime.utcnow().isoformat() if success else None
+                                        })
+                                    file_info_list.append(file_info)
+                                    if success:
+                                        logger.info(f"Successfully processed file: {file_path}")
+                                    else:
+                                        logger.warning(f"Failed to process file: {file_path} - {error}")
+                                else:
+                                    skipped_files.append({"path": file_path, "reason": reason})
+                                    logger.debug(f"Skipping file {file_path}: {reason}")
+                                    
+                            except Exception as e:
+                                error_details = handle_exception(
+                                    e,
+                                    f"Error processing file {file_path}",
+                                    reraise=False
+                                )
+                                skipped_files.append({
+                                    "path": file_path,
+                                    "reason": error_details['message']
+                                })
+                                continue
 
-            # Log summary with more details
-            processed_count = sum(1 for f in file_info_list if f.get('processed', False))
-            failed_count = sum(1 for f in file_info_list if not f.get('processed', True))
-            logger.info(
-                f"File scan completed. Successfully processed {processed_count} files, "
-                f"failed to process {failed_count} files, skipped {len(skipped_files)} files"
-            )
-            
-            if skipped_files:
-                logger.debug("Summary of skipped files:")
-                for skip_info in skipped_files:
-                    logger.debug(f"Skipped {skip_info['path']}: {skip_info['reason']}")
-            
-            return file_info_list
-            
-        except Exception as e:
-            error_details = handle_exception(
-                e,
-                f"Error scanning path {path}",
-                reraise=False
-            )
-            logger.error(f"File processing failed: {error_details['message']}")
-            return []
+            except Exception as e:
+                error_details = handle_exception(
+                    e,
+                    f"Error scanning path {current_path}",
+                    reraise=False
+                )
+                logger.error(f"File processing failed: {error_details['message']}")
+                continue
+
+        # Log summary with more details
+        processed_count = sum(1 for f in file_info_list if f.get('processed', False))
+        failed_count = sum(1 for f in file_info_list if not f.get('processed', True))
+        logger.info(
+            f"File scan completed. Successfully processed {processed_count} files, "
+            f"failed to process {failed_count} files, skipped {len(skipped_files)} files"
+        )
+        
+        if skipped_files:
+            logger.debug("Summary of skipped files:")
+            for skip_info in skipped_files:
+                logger.debug(f"Skipped {skip_info['path']}: {skip_info['reason']}")
+        
+        return file_info_list
 
     def process_document(self, file_path: str, processor_class: Type[BaseDocumentProcessor]) -> Tuple[bool, Optional[str]]:
         """Process a document using the appropriate document processor.
@@ -604,6 +597,27 @@ class FileScanner:
                 reraise=False
             )
             return False, error_details['message']
+
+    def get_processor_for_file(self, file_path: str) -> BaseDocumentProcessor:
+        """Get the appropriate document processor instance for a file.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            Instance of appropriate document processor
+            
+        Raises:
+            ValueError: If no processor is available for the file type
+        """
+        should_process, reason, processor_class = self.should_process_file(file_path)
+        if not should_process:
+            raise ValueError(f"Cannot get processor for file {file_path}: {reason}")
+        
+        if not processor_class:
+            raise ValueError(f"No processor available for file {file_path}")
+            
+        return processor_class(self.config)
 
 class FileProcessingError(Exception):
     """Base exception for file processing errors."""
