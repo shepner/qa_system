@@ -144,8 +144,8 @@ EMBEDDING_MODEL:
   # Rate limits (Free Tier):
   #   - 60 requests per minute (RPM)
   #   - 1000 requests per day (RPD)
-  # Source: 'https://ai.google.dev/gemini-api/docs/rate-limits#free-tier'
-  MODEL_NAME: "models/embedding-001"
+  # Source: 'https://ai.google.dev/docs/rate_limits'
+  MODEL_NAME: "text-embedding-004"
   
   # Batch size for processing multiple texts at once
   # Higher values are more efficient but use more memory

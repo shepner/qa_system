@@ -8,20 +8,12 @@ This module handles:
 - Token counting and validation
 
 Authentication Setup:
-    This module requires proper authentication setup using Google Cloud credentials:
-    1. Enable the Google Generative Language API in your Google Cloud project
-    2. Set up application default credentials (ADC):
-       - Create OAuth client ID credentials in Google Cloud Console
-       - Download the client_secret.json file
-       - Run: gcloud auth application-default login --client-id-file=client_secret.json \
-         --scopes='https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/generative-language.retriever'
-    3. Set GOOGLE_APPLICATION_CREDENTIALS environment variable to point to your credentials file
+    This module requires proper authentication setup:
+    1. Get an API key from Google AI Studio (https://makersuite.google.com/app/apikey)
+    2. Set the GOOGLE_API_KEY environment variable
     
-    For detailed OAuth setup instructions, see:
-    https://ai.google.dev/gemini-api/docs/oauth#set-application-default
-
-API Reference:
-    https://googleapis.github.io/python-genai/
+    For detailed setup instructions, see:
+    https://ai.google.dev/docs/authentication
 """
 
 import logging
@@ -29,7 +21,8 @@ from typing import List, Dict, Any, Optional
 import time
 from datetime import datetime
 import os
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
 
 from qa_system.config import get_config, ConfigLoadError
@@ -89,7 +82,7 @@ class EmbeddingGenerator:
                 }
             )
             
-            self.model_name = model_config.get('MODEL_NAME', 'models/embedding-001')
+            self.model_name = model_config.get('MODEL_NAME', 'text-embedding-004')
             self.batch_size = model_config.get('BATCH_SIZE', 15)
             self.max_length = model_config.get('MAX_LENGTH', 3072)
             self.dimensions = model_config.get('DIMENSIONS', 768)
@@ -110,22 +103,7 @@ class EmbeddingGenerator:
                 }
             )
             
-            # Get security configuration
-            security_config = self.config.get_nested('SECURITY', {})
-            self.logger.debug(
-                "Loaded security configuration",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'init',
-                    'security_config_keys': list(security_config.keys()),
-                    'has_credentials_config': 'GOOGLE_APPLICATION_CREDENTIALS' in security_config,
-                    'has_project_id': 'GOOGLE_CLOUD_PROJECT' in security_config,
-                    'security_config_type': type(security_config).__name__,
-                    'security_config': security_config  # Log full config for debugging
-                }
-            )
-            
-            # Get API key from environment or config
+            # Get API key from environment
             api_key = os.getenv('GOOGLE_API_KEY')
             self.logger.debug(
                 "Checking environment for API key",
@@ -133,38 +111,18 @@ class EmbeddingGenerator:
                     'component': 'embedding_system',
                     'operation': 'init',
                     'api_key_in_env': api_key is not None,
-                    'api_key_length': len(api_key) if api_key else 0,
-                    'env_vars': {k: v for k, v in os.environ.items() if 'GOOGLE' in k},  # Log all Google-related env vars
-                    'env_vars_type': {k: type(v).__name__ for k, v in os.environ.items() if 'GOOGLE' in k}
+                    'api_key_length': len(api_key) if api_key else 0
                 }
             )
             
             if not api_key:
-                api_key = security_config.get('GOOGLE_APPLICATION_CREDENTIALS')
-                self.logger.debug(
-                    "Falling back to config for API key",
-                    extra={
-                        'component': 'embedding_system',
-                        'operation': 'init',
-                        'api_key_in_config': api_key is not None,
-                        'api_key_length': len(api_key) if api_key else 0,
-                        'api_key_type': type(api_key).__name__ if api_key else None,
-                        'api_key_value': api_key  # Log actual key for debugging
-                    }
-                )
-            
-            if not api_key:
-                error_msg = "GOOGLE_API_KEY not configured in environment or security config"
+                error_msg = "GOOGLE_API_KEY not configured in environment"
                 self.logger.error(
                     error_msg,
                     extra={
                         'component': 'embedding_system',
                         'operation': 'init',
-                        'error_type': 'ConfigurationError',
-                        'security_config': security_config,
-                        'env_vars': dict(os.environ),
-                        'config_type': type(self.config).__name__,
-                        'security_config_type': type(security_config).__name__
+                        'error_type': 'ConfigurationError'
                     }
                 )
                 raise EmbeddingError(error_msg)
@@ -175,46 +133,17 @@ class EmbeddingGenerator:
                 extra={
                     'component': 'embedding_system',
                     'operation': 'init',
-                    'api_key_length': len(api_key),
-                    'api_key_prefix': api_key[:4] if api_key else None,
-                    'api_key_type': type(api_key).__name__,
-                    'api_key': api_key  # Log actual key for debugging
+                    'api_key_length': len(api_key)
                 }
             )
             
             try:
-                genai.configure(api_key=api_key)
+                self.client = genai.Client(api_key=api_key)
                 self.logger.debug(
                     "Google Generative AI client configured successfully",
                     extra={
                         'component': 'embedding_system',
-                        'operation': 'init',
-                        'genai_version': genai.__version__,
-                        'genai_config': {
-                            'api_key_set': bool(genai.get_api_key()),
-                            'default_model': genai.get_default_model()
-                        }
-                    }
-                )
-                
-                self.logger.debug(
-                    "Attempting to get model",
-                    extra={
-                        'component': 'embedding_system',
-                        'operation': 'init',
-                        'model_name': self.model_name,
-                        'available_models': [str(m) for m in genai.list_models()]
-                    }
-                )
-                self.model = genai.get_model(self.model_name)
-                
-                self.logger.debug(
-                    "Model retrieved successfully",
-                    extra={
-                        'component': 'embedding_system',
-                        'operation': 'init',
-                        'model': str(self.model),
-                        'model_type': type(self.model).__name__
+                        'operation': 'init'
                     }
                 )
                 
@@ -225,11 +154,7 @@ class EmbeddingGenerator:
                         'component': 'embedding_system',
                         'operation': 'init',
                         'error_type': type(e).__name__,
-                        'error_message': str(e),
-                        'api_key_length': len(api_key) if api_key else 0,
-                        'api_key_type': type(api_key).__name__,
-                        'api_key': api_key,  # Log actual key for debugging
-                        'traceback': str(e.__traceback__)
+                        'error_message': str(e)
                     },
                     exc_info=True
                 )
@@ -242,7 +167,6 @@ class EmbeddingGenerator:
                     'component': 'embedding_system',
                     'operation': 'init',
                     'model_name': self.model_name,
-                    'genai_version': genai.__version__,
                     'dimensions': self.dimensions,
                     'task_type': self.task_type
                 }
@@ -318,13 +242,19 @@ class EmbeddingGenerator:
             )
             
             # Generate embedding using the model
-            result = self.model.embed_content(text)
+            response = self.client.models.embed_content(
+                model=self.model_name,
+                contents=text,
+                config=types.EmbedContentConfig(
+                    output_dimensionality=self.dimensions
+                )
+            )
             
-            if not result or not result.embedding:
+            if not response or not response.embeddings:
                 raise EmbeddingError("No embedding in response")
                 
             # Extract embedding from response
-            embedding = result.embedding
+            embedding = response.embeddings[0]
             
             # Validate dimensions
             if len(embedding) != self.dimensions:
@@ -415,32 +345,35 @@ class EmbeddingGenerator:
                 )
                 
                 # Generate embeddings for the batch
-                batch_results = [
-                    self.model.embed_content(text)
-                    for text in batch
-                ]
+                response = self.client.models.embed_content(
+                    model=self.model_name,
+                    contents=batch,
+                    config=types.EmbedContentConfig(
+                        output_dimensionality=self.dimensions
+                    )
+                )
+                
+                if not response or not response.embeddings:
+                    raise EmbeddingError("No embeddings in response")
                 
                 # Process batch results
-                for j, result in enumerate(batch_results):
-                    if not result or not result.embedding:
-                        raise EmbeddingError(f"No embedding in response for text {i + j}")
-                        
+                for j, embedding in enumerate(response.embeddings):
                     # Validate dimensions
-                    if len(result.embedding) != self.dimensions:
+                    if len(embedding) != self.dimensions:
                         raise EmbeddingError(
                             f"Unexpected embedding dimensions for text {i + j}: "
-                            f"{len(result.embedding)} != {self.dimensions}"
+                            f"{len(embedding)} != {self.dimensions}"
                         )
                     
                     # Add embedding to results
-                    embeddings.append(result.embedding)
+                    embeddings.append(embedding)
                     
                     # Update metadata
                     if batch_metadata:
                         text_metadata = batch_metadata[j].copy()
                         text_metadata.update({
                             'embedding_generated': datetime.now().isoformat(),
-                            'embedding_dimensions': len(result.embedding),
+                            'embedding_dimensions': len(embedding),
                             'text_length': len(batch[j])
                         })
                         processed_metadata.append(text_metadata)
@@ -553,7 +486,7 @@ class EmbeddingGenerator:
             )
             
             # Generate embedding
-            result = self.model.embed_content(text)
+            result = self.client.generate_embedding(text)
             
             if not result or not result.embedding:
                 raise EmbeddingError("No embedding in response")

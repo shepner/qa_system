@@ -56,13 +56,7 @@ class VectorStore:
             # Load configuration
             self.config = get_config(config_path)
             
-            # Setup logging with architecture-specified defaults
-            setup_logging(
-                log_file=self.config.get_nested('LOGGING.LOG_FILE', "logs/qa_system.log"),
-                log_level=self.config.get_nested('LOGGING.LEVEL', "INFO"),
-                enable_debug=self.config.get_nested('LOGGING.DEBUG', False)
-            )
-            
+            # Setup logging
             self.logger = logging.getLogger(__name__)
             self.logger.info("Initializing VectorStore", extra={
                 'component': 'vector_store',

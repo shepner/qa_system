@@ -49,11 +49,12 @@ class FileScanner:
         'webp': ImageDocumentProcessor,
     }
 
-    def __init__(self, config):
+    def __init__(self, config, vector_store=None):
         """Initialize FileScanner with configuration.
         
         Args:
             config: Configuration object
+            vector_store: Optional VectorStore instance. If not provided, all files will be marked for processing.
         """
         self.config = config
         
@@ -79,8 +80,8 @@ class FileScanner:
         custom_processor_map = scanner_config.get('processor_map', {})
         self.processor_map.update(custom_processor_map)
         
-        # Initialize vector store from config
-        self.vector_store = VectorStore(None)  # Use the global config instance
+        # Use provided vector store or None
+        self.vector_store = vector_store
         
         self.processed_files: Set[str] = set()
         self.file_checksums: Dict[str, str] = {}
