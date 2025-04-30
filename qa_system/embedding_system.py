@@ -1,550 +1,556 @@
-"""
-Embedding system for generating text embeddings using Google's Gemini model.
+"""Embedding generation system using Google's Gemini models.
 
 This module handles:
 - Text embedding generation
+- Image embedding generation
 - Batch processing
 - Error handling and retries
-- Token counting and validation
-
-Authentication Setup:
-    This module requires proper authentication setup:
-    1. Get an API key from Google AI Studio (https://makersuite.google.com/app/apikey)
-    2. Set the GOOGLE_API_KEY environment variable
-    
-    For detailed setup instructions, see:
-    https://ai.google.dev/docs/authentication
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, List, Optional, Literal, Union
 import time
 from datetime import datetime
-import os
-from google import genai
-from google.genai import types
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
+import math
+import google.generativeai as genai
+from tenacity import retry, stop_after_attempt, wait_exponential
 
-from qa_system.config import get_config, ConfigLoadError
-from qa_system.exceptions import EmbeddingError
+from qa_system.config import get_config
+from .exceptions import (
+    EmbeddingError,
+    ValidationError,
+    handle_exception
+)
 
-# Configure module-level logging
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.NullHandler())  # Let the application configure logging
+# Define valid task types as per Gemini API
+TaskType = Literal[
+    'SEMANTIC_SIMILARITY',
+    'CLASSIFICATION',
+    'CLUSTERING',
+    'RETRIEVAL_DOCUMENT',
+    'RETRIEVAL_QUERY',
+    'QUESTION_ANSWERING',
+    'FACT_VERIFICATION',
+    'CODE_RETRIEVAL_QUERY'
+]
 
 class EmbeddingGenerator:
-    """
-    A class for generating text embeddings using Google's Generative AI model.
+    """Handles generation of embeddings using Google's Gemini models."""
     
-    This class handles:
-    - Initialization of the embedding model
-    - Generation of embeddings for single texts
-    - Batch processing of multiple texts
-    - Error handling and retries
-    - Token validation and logging
+    DEFAULT_TASK_TYPE: TaskType = 'RETRIEVAL_DOCUMENT'
     
-    API Reference:
-        https://googleapis.github.io/python-genai/
-    """
+    # Required metadata fields from Document Processors
+    REQUIRED_DOC_METADATA = {
+        'path',
+        'file_type',
+        'filename',
+        'checksum'
+    }
     
-    def __init__(self, logger: Optional[logging.Logger] = None):
-        """
-        Initialize the embedding system.
+    # Required fields for image data from Vision Processor
+    REQUIRED_IMAGE_FIELDS = {
+        'text_content',
+        'labels',
+        'vision_analysis'
+    }
+    
+    def __init__(self, config_path: Optional[str] = None):
+        """Initialize the embedding generator.
         
         Args:
-            logger (Optional[logging.Logger]): Logger instance to use. If None, creates a new logger.
+            config_path: Optional path to configuration file
+            
+        Raises:
+            RuntimeError: If initialization fails
         """
-        # Setup logging first
-        self.logger = logger or logging.getLogger(__name__)
-        
         try:
             # Load configuration
-            self.config = get_config()
-            self.logger.debug(
-                "Loaded base configuration",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'init',
-                    'config_keys': list(self.config.keys()) if hasattr(self.config, 'keys') else None,
-                    'config_type': type(self.config).__name__
-                }
-            )
+            self.config = get_config(config_path)
+            
+            # Setup logging
+            self.logger = logging.getLogger(__name__)
             
             # Get model configuration
             model_config = self.config.get_nested('EMBEDDING_MODEL', {})
-            self.logger.debug(
-                "Loaded model configuration",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'init',
-                    'model_config': model_config,
-                    'model_config_type': type(model_config).__name__
-                }
-            )
-            
-            self.model_name = model_config.get('MODEL_NAME', 'text-embedding-004')
+            self.model_name = model_config.get('MODEL_NAME', 'gemini-embedding-exp-03-07')
             self.batch_size = model_config.get('BATCH_SIZE', 15)
             self.max_length = model_config.get('MAX_LENGTH', 3072)
             self.dimensions = model_config.get('DIMENSIONS', 768)
-            self.task_type = model_config.get('TASK_TYPE', 'RETRIEVAL_DOCUMENT')
-            self.auto_truncate = model_config.get('AUTO_TRUNCATE', True)
             
-            self.logger.debug(
-                "Model parameters configured",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'init',
-                    'model_name': self.model_name,
-                    'batch_size': self.batch_size,
-                    'max_length': self.max_length,
-                    'dimensions': self.dimensions,
-                    'task_type': self.task_type,
-                    'auto_truncate': self.auto_truncate
-                }
-            )
+            # Initialize Gemini
+            credentials = self.config.get_nested('SECURITY.GOOGLE_APPLICATION_CREDENTIALS')
+            project_id = self.config.get_nested('SECURITY.GOOGLE_CLOUD_PROJECT')
             
-            # Get API key from environment
-            api_key = os.getenv('GOOGLE_API_KEY')
-            self.logger.debug(
-                "Checking environment for API key",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'init',
-                    'api_key_in_env': api_key is not None,
-                    'api_key_length': len(api_key) if api_key else 0
-                }
-            )
-            
-            if not api_key:
-                error_msg = "GOOGLE_API_KEY not configured in environment"
-                self.logger.error(
-                    error_msg,
-                    extra={
-                        'component': 'embedding_system',
-                        'operation': 'init',
-                        'error_type': 'ConfigurationError'
-                    }
-                )
-                raise EmbeddingError(error_msg)
-            
-            # Initialize the Google Generative AI client
-            self.logger.debug(
-                "Configuring Google Generative AI client",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'init',
-                    'api_key_length': len(api_key)
-                }
-            )
-            
-            try:
-                self.client = genai.Client(api_key=api_key)
-                self.logger.debug(
-                    "Google Generative AI client configured successfully",
-                    extra={
-                        'component': 'embedding_system',
-                        'operation': 'init'
-                    }
-                )
+            if not credentials or not project_id:
+                raise RuntimeError("Missing required Google Cloud credentials")
                 
-            except Exception as e:
-                self.logger.error(
-                    f"Failed to initialize Google Generative AI client: {str(e)}",
-                    extra={
-                        'component': 'embedding_system',
-                        'operation': 'init',
-                        'error_type': type(e).__name__,
-                        'error_message': str(e)
-                    },
-                    exc_info=True
-                )
-                raise
-            
-            # Log debug information about the model
-            self.logger.debug(
-                "Initialized embedding model",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'init',
-                    'model_name': self.model_name,
-                    'dimensions': self.dimensions,
-                    'task_type': self.task_type
-                }
+            genai.configure(
+                project_id=project_id,
+                credentials=credentials
             )
+            
+            # Initialize model
+            self.model = genai.GenerativeModel(self.model_name)
             
             self.logger.info(
-                "Embedding system initialized",
+                "Embedding generator initialized",
                 extra={
-                    'component': 'embedding_system',
+                    'component': 'embedding_generator',
                     'model': self.model_name,
                     'dimensions': self.dimensions
                 }
             )
             
-        except ConfigLoadError as e:
-            self.logger.error(
-                f"Configuration loading failed: {str(e)}",
-                extra={
-                    'component': 'embedding_system',
-                    'error_type': 'ConfigLoadError'
-                },
-                exc_info=True
-            )
-            raise EmbeddingError(f"Failed to load configuration: {str(e)}")
-            
         except Exception as e:
-            self.logger.error(
-                f"Failed to initialize embedding system: {str(e)}",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'init',
-                    'error_type': type(e).__name__
-                },
-                exc_info=True
+            error_details = handle_exception(
+                e,
+                "Failed to initialize embedding generator",
+                reraise=False
             )
-            raise
+            raise RuntimeError(
+                f"Embedding generator initialization failed: {error_details['message']}"
+            ) from e
+    
+    def validate_metadata(self, metadata: Dict[str, Any], is_document: bool = True) -> None:
+        """Validate metadata contains required fields.
+        
+        Args:
+            metadata: Metadata dictionary to validate
+            is_document: Whether this is document metadata (vs image)
+            
+        Raises:
+            ValidationError: If metadata is invalid
+        """
+        if not isinstance(metadata, dict):
+            raise ValidationError("Metadata must be a dictionary")
+        
+        required_fields = self.REQUIRED_DOC_METADATA if is_document else self.REQUIRED_IMAGE_FIELDS
+        missing_fields = required_fields - set(metadata.keys())
+        
+        if missing_fields:
+            raise ValidationError(
+                f"Missing required metadata fields: {', '.join(missing_fields)}"
+            )
+    
+    def normalize_text(self, text: Union[str, bytes, List[str]]) -> str:
+        """Normalize text input to string format.
+        
+        Args:
+            text: Input text in various formats
+            
+        Returns:
+            Normalized string
+            
+        Raises:
+            ValidationError: If text cannot be normalized
+        """
+        try:
+            if isinstance(text, bytes):
+                return text.decode('utf-8')
+            elif isinstance(text, list):
+                return ' '.join(str(item) for item in text)
+            elif isinstance(text, str):
+                return text
+            else:
+                raise ValidationError(
+                    f"Unsupported text type: {type(text)}"
+                )
+        except Exception as e:
+            raise ValidationError(
+                f"Failed to normalize text: {str(e)}"
+            )
     
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(EmbeddingError),
-        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING)
+        wait=wait_exponential(multiplier=1, min=4, max=10)
     )
-    def generate_embedding(self, text: str) -> List[float]:
-        """
-        Generate an embedding for a single text using Google's Generative AI model.
+    def generate_embedding(
+        self,
+        text: Union[str, bytes, List[str]],
+        task_type: Optional[TaskType] = None
+    ) -> List[float]:
+        """Generate embedding for a single text.
         
         Args:
-            text (str): The text to generate an embedding for.
+            text: Text to generate embedding for (string, bytes, or list of strings)
+            task_type: Optional task type for optimizing embeddings
+                      Defaults to RETRIEVAL_DOCUMENT
             
         Returns:
-            List[float]: The generated embedding vector.
+            List of floats representing the embedding vector
             
         Raises:
-            EmbeddingError: If embedding generation fails.
+            ValidationError: If text is empty or too long
+            EmbeddingError: If embedding generation fails
         """
-        if not text or not isinstance(text, str):
-            raise ValueError("Input text must be a non-empty string")
-            
-        start_time = time.time()
-        
         try:
-            # Log debug information before generating embedding
-            self.logger.debug(
-                "Generating embedding",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'generate_embedding',
-                    'text_length': len(text),
-                    'text_preview': text[:100],
-                    'model_name': self.model_name
-                }
-            )
+            # Normalize text input
+            normalized_text = self.normalize_text(text)
             
-            # Generate embedding using the model
-            response = self.client.models.embed_content(
-                model=self.model_name,
-                contents=text,
-                config=types.EmbedContentConfig(
-                    output_dimensionality=self.dimensions
-                )
-            )
-            
-            if not response or not response.embeddings:
-                raise EmbeddingError("No embedding in response")
+            if not normalized_text:
+                raise ValidationError("Text cannot be empty")
                 
-            # Extract embedding from response
-            embedding = response.embeddings[0]
-            
-            # Validate dimensions
-            if len(embedding) != self.dimensions:
-                raise EmbeddingError(
-                    f"Unexpected embedding dimensions: {len(embedding)} != {self.dimensions}"
+            # Truncate if needed
+            if len(normalized_text) > self.max_length:
+                self.logger.warning(
+                    "Text exceeds maximum length, truncating",
+                    extra={
+                        'component': 'embedding_generator',
+                        'text_length': len(normalized_text),
+                        'max_length': self.max_length
+                    }
                 )
+                normalized_text = normalized_text[:self.max_length]
             
-            # Log success with timing
+            start_time = time.time()
+            
+            # Generate embedding with task type
+            embedding = self.model.embed_content(
+                normalized_text,
+                task_type=task_type or self.DEFAULT_TASK_TYPE,
+                dimensions=self.dimensions
+            )
+            
             duration = time.time() - start_time
+            
             self.logger.debug(
-                "Generated embedding successfully",
+                "Generated embedding",
                 extra={
-                    'component': 'embedding_system',
-                    'operation': 'generate_embedding',
-                    'duration': duration,
-                    'text_length': len(text),
-                    'embedding_dimensions': len(embedding)
+                    'component': 'embedding_generator',
+                    'text_length': len(normalized_text),
+                    'task_type': task_type or self.DEFAULT_TASK_TYPE,
+                    'duration_seconds': duration
                 }
             )
             
-            return embedding
+            return embedding.values
             
         except Exception as e:
-            self.logger.error(
-                f"Failed to generate embedding: {str(e)}",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'generate_embedding',
-                    'error_type': type(e).__name__,
-                    'text_length': len(text) if text else 0
-                },
-                exc_info=True
+            error_details = handle_exception(
+                e,
+                "Failed to generate embedding",
+                reraise=False
             )
-            raise EmbeddingError(f"Failed to generate embedding: {str(e)}")
+            raise EmbeddingError(
+                f"Embedding generation failed: {error_details['message']}"
+            ) from e
     
-    def generate_embeddings_batch(
+    def generate_batch_embeddings(
         self,
-        texts: List[str],
-        metadata: Optional[List[Dict[str, Any]]] = None
+        texts: List[Union[str, bytes, List[str]]],
+        metadata: Optional[List[Dict[str, Any]]] = None,
+        task_type: Optional[TaskType] = None
     ) -> Dict[str, Any]:
-        """
-        Generate embeddings for a batch of texts.
+        """Generate embeddings for a batch of texts.
         
         Args:
-            texts (List[str]): List of texts to generate embeddings for.
-            metadata (Optional[List[Dict[str, Any]]]): Optional metadata for each text.
+            texts: List of texts to generate embeddings for
+            metadata: Optional list of metadata dictionaries
+            task_type: Optional task type for optimizing embeddings
+                      Defaults to RETRIEVAL_DOCUMENT
             
         Returns:
-            Dict[str, Any]: Dictionary containing:
-                - embeddings: List of generated embeddings
-                - processed_metadata: List of metadata with embedding info
-                - stats: Statistics about the batch processing
+            Dictionary containing:
+            - embeddings: List of embedding vectors
+            - metadata: Enhanced metadata list
+            - model_info: Model information
+            
+        Raises:
+            ValidationError: If input validation fails
+            EmbeddingError: If batch processing fails
         """
-        if not texts:
-            raise ValueError("Input texts list cannot be empty")
-            
-        # Initialize results
-        embeddings = []
-        processed_metadata = []
-        
-        # Initialize statistics
-        stats = {
-            'total_texts': len(texts),
-            'successful_texts': 0,
-            'failed_texts': 0,
-            'total_tokens': 0,
-            'batches': 0,
-            'start_time': datetime.now().isoformat(),
-            'errors': []
-        }
-        
-        # Process texts in batches
-        for i in range(0, len(texts), self.batch_size):
-            batch_start_time = time.time()
-            batch = texts[i:i + self.batch_size]
-            batch_metadata = metadata[i:i + self.batch_size] if metadata else None
-            
-            try:
-                # Log batch processing start
-                self.logger.debug(
-                    f"Processing batch {stats['batches'] + 1}",
-                    extra={
-                        'component': 'embedding_system',
-                        'operation': 'batch_process',
-                        'batch_size': len(batch),
-                        'batch_number': stats['batches'] + 1
-                    }
+        try:
+            if not texts:
+                raise ValidationError("Texts list cannot be empty")
+                
+            if metadata and len(texts) != len(metadata):
+                raise ValidationError(
+                    f"Number of texts ({len(texts)}) must match "
+                    f"number of metadata entries ({len(metadata)})"
                 )
+            
+            # Validate metadata if provided
+            if metadata:
+                for meta in metadata:
+                    self.validate_metadata(meta)
+            
+            start_time = time.time()
+            embeddings = []
+            processed_metadata = []
+            
+            # Process in batches
+            for i in range(0, len(texts), self.batch_size):
+                batch_texts = texts[i:i + self.batch_size]
+                batch_embeddings = []
                 
-                # Generate embeddings for the batch
-                response = self.client.models.embed_content(
-                    model=self.model_name,
-                    contents=batch,
-                    config=types.EmbedContentConfig(
-                        output_dimensionality=self.dimensions
-                    )
-                )
+                for text in batch_texts:
+                    embedding = self.generate_embedding(text, task_type)
+                    batch_embeddings.append(embedding)
                 
-                if not response or not response.embeddings:
-                    raise EmbeddingError("No embeddings in response")
+                # Validate batch embeddings
+                self.validate_embeddings(batch_embeddings)
+                embeddings.extend(batch_embeddings)
                 
-                # Process batch results
-                for j, embedding in enumerate(response.embeddings):
-                    # Validate dimensions
-                    if len(embedding) != self.dimensions:
-                        raise EmbeddingError(
-                            f"Unexpected embedding dimensions for text {i + j}: "
-                            f"{len(embedding)} != {self.dimensions}"
-                        )
-                    
-                    # Add embedding to results
-                    embeddings.append(embedding)
-                    
-                    # Update metadata
-                    if batch_metadata:
-                        text_metadata = batch_metadata[j].copy()
-                        text_metadata.update({
-                            'embedding_generated': datetime.now().isoformat(),
-                            'embedding_dimensions': len(embedding),
-                            'text_length': len(batch[j])
+                # Update metadata
+                if metadata:
+                    batch_metadata = metadata[i:i + self.batch_size]
+                    for j, meta in enumerate(batch_metadata):
+                        meta.update({
+                            'embedding_timestamp': datetime.now().isoformat(),
+                            'embedding_model': self.model_name,
+                            'embedding_dimensions': self.dimensions,
+                            'task_type': task_type or self.DEFAULT_TASK_TYPE,
+                            'text_length': len(self.normalize_text(batch_texts[j])),
+                            'batch_index': i + j
                         })
-                        processed_metadata.append(text_metadata)
-                    
-                    stats['successful_texts'] += 1
-                    stats['total_tokens'] += len(batch[j].split())
-                
-                # Update batch statistics
-                batch_duration = time.time() - batch_start_time
-                stats['batches'] += 1
-                
-                # Log batch completion
-                self.logger.debug(
-                    f"Completed batch {stats['batches']}",
-                    extra={
-                        'component': 'embedding_system',
-                        'operation': 'batch_process',
-                        'batch_duration': batch_duration,
-                        'successful_texts': len(batch),
-                        'batch_number': stats['batches']
-                    }
-                )
-                
-            except Exception as e:
-                # Log batch error
-                error_msg = f"Batch {stats['batches'] + 1} failed: {str(e)}"
-                self.logger.error(
-                    error_msg,
-                    extra={
-                        'component': 'embedding_system',
-                        'operation': 'batch_process',
-                        'batch_number': stats['batches'] + 1,
-                        'error_type': type(e).__name__
-                    },
-                    exc_info=True
-                )
-                
-                # Update error statistics
-                stats['failed_texts'] += len(batch)
-                stats['errors'].append({
-                    'batch': stats['batches'] + 1,
-                    'error': str(e),
-                    'error_type': type(e).__name__
-                })
-                
-                # Add None for failed embeddings
-                embeddings.extend([None] * len(batch))
-                if batch_metadata:
-                    for meta in batch_metadata:
-                        meta_copy = meta.copy()
-                        meta_copy['embedding_error'] = str(e)
-                        processed_metadata.append(meta_copy)
-        
-        # Add completion time to stats
-        stats['end_time'] = datetime.now().isoformat()
-        stats['duration'] = (
-            datetime.fromisoformat(stats['end_time']) -
-            datetime.fromisoformat(stats['start_time'])
-        ).total_seconds()
-        
-        # Log completion
-        self.logger.info(
-            "Batch processing completed",
-            extra={
-                'component': 'embedding_system',
-                'operation': 'batch_process',
-                'total_texts': stats['total_texts'],
-                'successful_texts': stats['successful_texts'],
-                'failed_texts': stats['failed_texts'],
-                'duration': stats['duration']
-            }
-        )
-        
-        return {
-            'embeddings': embeddings,
-            'processed_metadata': processed_metadata if metadata else None,
-            'stats': stats
-        }
+                        processed_metadata.append(meta)
+            
+            duration = time.time() - start_time
+            
+            self.logger.info(
+                "Batch embedding generation complete",
+                extra={
+                    'component': 'embedding_generator',
+                    'text_count': len(texts),
+                    'task_type': task_type or self.DEFAULT_TASK_TYPE,
+                    'duration_seconds': duration
+                }
+            )
+            
+            # Prepare for vector store
+            return self.prepare_for_vector_store(embeddings, metadata)
+            
+        except Exception as e:
+            error_details = handle_exception(
+                e,
+                "Failed to generate batch embeddings",
+                reraise=False
+            )
+            raise EmbeddingError(
+                f"Batch embedding generation failed: {error_details['message']}"
+            ) from e
     
-    def generate_embeddings(
+    def generate_image_embeddings(
         self,
-        text: str,
+        image_data: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+        task_type: Optional[TaskType] = None
+    ) -> Dict[str, Any]:
+        """Generate embeddings for image content.
+        
+        Args:
+            image_data: Dictionary containing:
+                - text_content: Text extracted from image
+                - labels: Detected object labels
+                - vision_analysis: Vision API analysis results
+            metadata: Optional metadata dictionary
+            task_type: Optional task type for optimizing embeddings
+                      Defaults to RETRIEVAL_DOCUMENT
+            
+        Returns:
+            Dictionary containing:
+            - embeddings: List of embedding vectors
+            - metadata: Enhanced metadata
+            - model_info: Model information
+            
+        Raises:
+            ValidationError: If input validation fails
+            EmbeddingError: If embedding generation fails
+        """
+        try:
+            if not image_data:
+                raise ValidationError("Image data cannot be empty")
+            
+            # Validate image data fields
+            self.validate_metadata(image_data, is_document=False)
+            
+            # Validate metadata if provided
+            if metadata:
+                self.validate_metadata(metadata)
+            
+            start_time = time.time()
+            
+            # Combine text content for embedding
+            text_parts = []
+            
+            # Add OCR text if available
+            if 'text_content' in image_data:
+                text_parts.append(str(image_data['text_content']))
+            
+            # Add detected labels
+            if 'labels' in image_data:
+                text_parts.append(
+                    "Image contains: " + ", ".join(str(label) for label in image_data['labels'])
+                )
+            
+            # Add vision analysis summary if available
+            if 'vision_analysis' in image_data:
+                analysis = image_data['vision_analysis']
+                if isinstance(analysis, dict):
+                    for key, value in analysis.items():
+                        if isinstance(value, (str, list)):
+                            text_parts.append(f"{key}: {str(value)}")
+            
+            # Generate embedding for combined text
+            combined_text = " ".join(text_parts)
+            embedding = self.generate_embedding(combined_text, task_type)
+            
+            # Validate the embedding
+            embeddings = [embedding]
+            self.validate_embeddings(embeddings)
+            
+            # Update metadata
+            if metadata:
+                metadata.update({
+                    'embedding_timestamp': datetime.now().isoformat(),
+                    'embedding_model': self.model_name,
+                    'embedding_dimensions': self.dimensions,
+                    'task_type': task_type or self.DEFAULT_TASK_TYPE,
+                    'content_type': 'image',
+                    'text_length': len(combined_text)
+                })
+            
+            duration = time.time() - start_time
+            
+            self.logger.info(
+                "Image embedding generation complete",
+                extra={
+                    'component': 'embedding_generator',
+                    'text_length': len(combined_text),
+                    'task_type': task_type or self.DEFAULT_TASK_TYPE,
+                    'duration_seconds': duration
+                }
+            )
+            
+            # Prepare for vector store
+            return self.prepare_for_vector_store(embeddings, metadata)
+            
+        except Exception as e:
+            error_details = handle_exception(
+                e,
+                "Failed to generate image embedding",
+                reraise=False
+            )
+            raise EmbeddingError(
+                f"Image embedding generation failed: {error_details['message']}"
+            ) from e
+    
+    def validate_embeddings(
+        self,
+        embeddings: List[List[float]],
+        expected_dimensions: Optional[int] = None
+    ) -> bool:
+        """Validates generated embeddings meet requirements.
+        
+        Args:
+            embeddings: List of embedding vectors to validate
+            expected_dimensions: Expected dimensionality of vectors (defaults to self.dimensions)
+            
+        Returns:
+            bool: True if embeddings are valid
+            
+        Raises:
+            ValidationError: If embeddings fail validation
+        """
+        try:
+            if not embeddings:
+                raise ValidationError("Embeddings list cannot be empty")
+            
+            expected_dimensions = expected_dimensions or self.dimensions
+            
+            for i, embedding in enumerate(embeddings):
+                # Check if embedding is a list of floats
+                if not isinstance(embedding, list) or not all(isinstance(x, float) for x in embedding):
+                    raise ValidationError(
+                        f"Embedding {i} is not a list of floats"
+                    )
+                
+                # Validate dimensions
+                if len(embedding) != expected_dimensions:
+                    raise ValidationError(
+                        f"Embedding {i} has incorrect dimensions: "
+                        f"{len(embedding)} != {expected_dimensions}"
+                    )
+                
+                # Check for NaN or Inf values
+                if any(not isinstance(x, float) or math.isnan(x) or math.isinf(x) for x in embedding):
+                    raise ValidationError(
+                        f"Embedding {i} contains invalid values (NaN or Inf)"
+                    )
+            
+            return True
+            
+        except Exception as e:
+            error_details = handle_exception(
+                e,
+                "Failed to validate embeddings",
+                reraise=False
+            )
+            raise ValidationError(
+                f"Embedding validation failed: {error_details['message']}"
+            ) from e
+    
+    def prepare_for_vector_store(
+        self,
+        embeddings: List[List[float]],
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """
-        Generate embeddings for a single text.
+        """Formats embeddings and metadata for vector store storage.
         
         Args:
-            text (str): Text to generate embeddings for.
-            metadata (Optional[Dict[str, Any]]): Optional metadata for the text.
+            embeddings: List of embedding vectors
+            metadata: Associated metadata
             
         Returns:
-            Dict[str, Any]: Dictionary containing:
-                - embedding: Generated embedding vector
-                - metadata: Enhanced metadata with embedding info
-                - model_info: Information about the model used
+            Dictionary formatted for vector store insertion
+            
+        Raises:
+            ValidationError: If preparation fails
         """
-        if not text or not isinstance(text, str):
-            raise ValueError("Input text must be a non-empty string")
-            
         try:
-            # Log embedding generation start
-            self.logger.debug(
-                "Generating embedding for text",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'generate_embedding',
-                    'text_length': len(text)
+            # Validate embeddings first
+            self.validate_embeddings(embeddings)
+            
+            # Generate unique IDs if needed
+            embedding_ids = [
+                f"emb_{i}_{int(time.time())}"
+                for i in range(len(embeddings))
+            ]
+            
+            # Prepare metadata
+            processed_metadata = []
+            for i in range(len(embeddings)):
+                entry_metadata = {
+                    'embedding_id': embedding_ids[i],
+                    'embedding_index': i,
+                    'embedding_timestamp': datetime.now().isoformat(),
+                    'embedding_model': self.model_name,
+                    'embedding_dimensions': self.dimensions
                 }
-            )
-            
-            # Generate embedding
-            result = self.client.generate_embedding(text)
-            
-            if not result or not result.embedding:
-                raise EmbeddingError("No embedding in response")
                 
-            # Validate dimensions
-            if len(result.embedding) != self.dimensions:
-                raise EmbeddingError(
-                    f"Unexpected embedding dimensions: {len(result.embedding)} != {self.dimensions}"
-                )
-            
-            # Process metadata
-            if metadata:
-                metadata = metadata.copy()
-                metadata.update({
-                    'embedding_generated': datetime.now().isoformat(),
-                    'embedding_dimensions': len(result.embedding),
-                    'text_length': len(text)
-                })
-            
-            # Log successful generation
-            self.logger.debug(
-                "Successfully generated embedding",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'generate_embedding',
-                    'embedding_dimensions': len(result.embedding)
-                }
-            )
+                # Add provided metadata if available
+                if metadata:
+                    entry_metadata.update(metadata)
+                
+                processed_metadata.append(entry_metadata)
             
             return {
-                'embedding': result.embedding,
-                'metadata': metadata,
+                'ids': embedding_ids,
+                'embeddings': embeddings,
+                'metadata': processed_metadata,
                 'model_info': {
                     'name': self.model_name,
-                    'task_type': self.task_type,
-                    'dimensions': self.dimensions
+                    'dimensions': self.dimensions,
+                    'timestamp': datetime.now().isoformat()
                 }
             }
             
         except Exception as e:
-            # Log error
-            self.logger.error(
-                f"Embedding generation failed: {str(e)}",
-                extra={
-                    'component': 'embedding_system',
-                    'operation': 'generate_embedding',
-                    'error_type': type(e).__name__,
-                    'text_length': len(text)
-                },
-                exc_info=True
+            error_details = handle_exception(
+                e,
+                "Failed to prepare embeddings for vector store",
+                reraise=False
             )
-            
-            # Update metadata with error
-            if metadata:
-                metadata = metadata.copy()
-                metadata.update({
-                    'embedding_error': str(e),
-                    'error_type': type(e).__name__
-                })
-            
-            raise EmbeddingError(f"Embedding generation failed: {str(e)}") 
+            raise ValidationError(
+                f"Vector store preparation failed: {error_details['message']}"
+            ) from e 
