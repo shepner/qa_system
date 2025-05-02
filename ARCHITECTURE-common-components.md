@@ -176,121 +176,70 @@ custom_log_level = config.get_nested('LOGGING.LEVEL', default="WARNING")
 ## 4. Logging Setup (logging_setup.py)
 
 ### 4.1 Purpose
-Provides centralized logging configuration with support for file and console output, log rotation, and debug level control.
+Provides centralized logging configuration with support for file and console output.
 
 ### 4.2 Interface
 - **Input Configuration**:
   - From `config.LOGGING` section:
     - `LOG_FILE`: Path to the log file (default: "logs/qa_system.log")
-    - `LEVEL`: Logging level (default: "INFO")
-  - From command line:
-    - `--debug`: Flag to enable debug logging (overrides LEVEL setting)
 
 - **Output Configuration**:
-  - File Handler:
-    - Rotating log files with size-based rotation
-    - Backup count: 5 files
-    - Maximum file size: 10MB
-    - Format: `%(asctime)s - %(name)s - %(levelname)s - %(message)s`
-    - Location: Specified by `LOG_FILE` setting
-  
-  - Console Handler:
-    - Enabled by default
-    - Level: Based on `LEVEL` setting or DEBUG flag
-    - Format: `%(levelname)s - %(message)s`
-    - Colors: Enabled for error, warning, and info levels
-
-- **Log Levels** (in order of verbosity):
-  - DEBUG: Detailed debugging information
-  - INFO: General operational information
-  - WARNING: Warning messages for potential issues
-  - ERROR: Error messages for failed operations
-  - CRITICAL: Critical errors requiring immediate attention
+  - Format: `%(asctime)s - %(name)s - %(level) - %(message)s`
+  - Location: Specified by `LOG_FILE` setting
 
 ### 4.3 Usage
+- **Initialize logging** at application startup using configuration values from the `LOGGING` section.
+- **Obtain module-specific loggers** using `logging.getLogger(__name__)` for consistent, contextual logging.
+- **Log messages** at appropriate levels (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) throughout the codebase.
+
+
+Example setup and usage:
 ```python
 from qa_system.config import get_config
 from qa_system.logging_setup import setup_logging
 import logging
 
-# 1. Basic Setup
-# Load configuration and setup logging
-config = get_config()
+# Initialize logging from config
+env_config = get_config()
 setup_logging(
-    LOG_FILE=config.get_nested('LOGGING.LOG_FILE'),
-    LEVEL=config.get_nested('LOGGING.LEVEL', default="INFO")
+    LOG_FILE=env_config.get_nested('LOGGING.LOG_FILE'),
+    LEVEL=env_config.get_nested('LOGGING.LEVEL', default="DEBUG")
 )
 
-# Get module-specific logger
+# Get a logger for your module
 logger = logging.getLogger(__name__)
 
-# 2. Basic Logging Examples
-# Different log levels
-logger.debug("Detailed debugging information")
-logger.info("General operational information")
-logger.warning("Warning about potential issues")
-logger.error("Error occurred during operation")
-logger.critical("Critical error requiring immediate attention")
+# Log messages at various levels
+logger.info("System started")
+logger.warning("Low disk space")
+logger.error("Failed to process file")
 
-# 3. Structured Logging with Context
 # Log with extra context
-logger.info("Processing document", extra={
-    'document_path': '/path/to/doc.pdf',
-    'document_size': '1.2MB',
-    'document_type': 'PDF'
-})
+# (If you want extra fields to appear in the log output, include them in the message string)
+doc_path = "/path/to/doc.pdf"
+logger.info("Processing document: document_path=%s, document_type=%s", doc_path, "PDF")
 
-# 4. Error Handling with Stack Traces
+# Note: The 'extra' parameter can be used to add custom fields to the log record, but these will only appear in the output if your log formatter includes them (e.g., %(document_path)s). For most use cases, include context directly in the message as shown above.
+
+# Log exceptions with stack trace
 try:
-    # Some operation that might fail
-    process_document("/path/to/doc.pdf")
+    process_document(doc_path)
 except Exception as e:
-    logger.exception("Failed to process document", exc_info=True)
+    logger.exception("Error processing document")
 
-# 5. Performance Logging
-import time
-
-def log_performance(func):
-    """Decorator to log function execution time"""
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        try:
-            result = func(*args, **kwargs)
-            duration = time.time() - start_time
-            logger.debug(f"{func.__name__} completed in {duration:.2f} seconds")
-            return result
-        except Exception as e:
-            duration = time.time() - start_time
-            logger.error(f"{func.__name__} failed after {duration:.2f} seconds", exc_info=True)
-            raise
-    return wrapper
-
-@log_performance
-def process_document(path: str):
-    logger.info(f"Starting document processing: {path}")
-    # Document processing logic here
-
-# 6. Configuration Changes at Runtime
-def enable_debug_logging():
-    """Temporarily enable debug logging"""
-    logging.getLogger().setLevel(logging.DEBUG)
-    logger.debug("Debug logging enabled")
-
-def reset_logging_level():
-    """Reset to configured logging level"""
-    config = get_config()
-    level = config.get_nested('LOGGING.LEVEL', default="INFO")
-    logging.getLogger().setLevel(level)
-    logger.info(f"Logging level reset to {level}")
+# Change log level at runtime
+logging.getLogger().setLevel(logging.DEBUG)
+logger.debug("Debug logging enabled")
 ```
 
 Example log output:
 ```
-2024-03-20 15:30:45 - qa_system.processor - INFO - Starting document processing: /path/to/doc.pdf
-2024-03-20 15:30:45 - qa_system.processor - DEBUG - Reading document content
-2024-03-20 15:30:46 - qa_system.processor - INFO - Processing document: size=1.2MB, type=PDF
-2024-03-20 15:30:47 - qa_system.processor - WARNING - Document contains unsupported elements
-2024-03-20 15:30:47 - qa_system.processor - DEBUG - process_document completed in 2.34 seconds
+2024-03-20 15:30:45 - qa_system.processor - INFO - System started
+2024-03-20 15:30:45 - qa_system.processor - WARNING - Low disk space
+2024-03-20 15:30:46 - qa_system.processor - INFO - Processing document: document_path=/path/to/doc.pdf, document_type=PDF
+2024-03-20 15:30:47 - qa_system.processor - ERROR - Error processing document
+Traceback (most recent call last):
+  ...
 ```
 
 ## 5. Vector Database
