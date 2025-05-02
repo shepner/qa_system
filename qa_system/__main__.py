@@ -1,431 +1,301 @@
-"""Main module for the QA system.
-
-This module serves as the command-line interface and entry point for the QA system.
-It handles argument parsing, configuration loading, logging setup, and orchestrates
-the document processing workflow.
-"""
+#!/usr/bin/env python3
 
 import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional, Dict, Any
-import json
-from datetime import datetime
-import signal
-import os
-from tqdm import tqdm
+from typing import List, Optional
 
-from qa_system.config import get_config, ConfigError
+from qa_system.config import get_config
+from qa_system.exceptions import QASystemError
 from qa_system.logging_setup import setup_logging
-from qa_system.add_flow import AddFlow
-from qa_system.list_flow import ListFlow
-from qa_system.remove_flow import RemoveFlow
-from qa_system.query_flow import QueryFlow
-from .exceptions import (
-    QASystemError,
-    ConfigurationError,
-    ValidationError,
-    handle_exception
-)
 
-# Global flag for graceful shutdown
-shutdown_requested = False
-
-def signal_handler(signum, frame):
-    """Handle shutdown signals gracefully."""
-    global shutdown_requested
-    print("\nShutdown requested. Completing current operation...")
-    shutdown_requested = True
-
-def validate_config_file(config_path: str) -> bool:
-    """Validate configuration file existence and format.
-    
-    Args:
-        config_path: Path to configuration file
-        
-    Returns:
-        bool: True if valid, False otherwise
-        
-    Raises:
-        ConfigError: If configuration is invalid
-    """
-    try:
-        if not os.path.exists(config_path):
-            raise ConfigError(f"Configuration file not found: {config_path}")
-            
-        config = get_config(config_path)
-        return True
-        
-    except Exception as e:
-        error_details = handle_exception(
-            e,
-            "Configuration validation failed",
-            reraise=False
-        )
-        raise ConfigError(
-            f"Configuration validation failed: {error_details['message']}"
-        ) from e
+logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
-    """Parse and validate command line arguments.
+    """Parse command line arguments.
     
     Returns:
-        Parsed command line arguments
-        
-    Raises:
-        SystemExit: If arguments are invalid
+        argparse.Namespace: Parsed command line arguments
     """
-    parser = argparse.ArgumentParser(description="QA System")
-    
-    # File operations
-    parser.add_argument(
-        "--add",
-        type=str,
-        action='append',
-        help="Path to process (can be a directory or individual file). Can be specified multiple times."
+    parser = argparse.ArgumentParser(
+        description="QA System - Document processing and question-answering system"
     )
-    parser.add_argument(
+    
+    # Add operation group
+    operation_group = parser.add_mutually_exclusive_group(required=True)
+    operation_group.add_argument(
+        "--add",
+        action="append",
+        help="Add document(s) to the system. Can be specified multiple times."
+    )
+    operation_group.add_argument(
         "--list",
         action="store_true",
-        help="List the contents of the vector data store"
+        help="List all documents in the system"
     )
+    operation_group.add_argument(
+        "--remove",
+        action="append",
+        help="Remove document(s) from the system. Can be specified multiple times."
+    )
+    operation_group.add_argument(
+        "--query",
+        nargs="?",
+        const="",
+        help="Query the system. If no query is provided, enters interactive mode."
+    )
+    
+    # Add filter option for list operation
     parser.add_argument(
         "--filter",
-        type=str,
-        help="Filter pattern for --list and --remove operations (e.g. '*.md')"
-    )
-    parser.add_argument(
-        "--remove",
-        type=str,
-        help="Remove data from the vector data store (can be file or directory path)"
+        help="Filter pattern for list operation (e.g., '*.pdf')"
     )
     
-    # Query operations
-    parser.add_argument(
-        "--query",
-        type=str,
-        nargs='?',
-        const='',
-        help="Enter interactive chat mode. Optionally provide a single query."
-    )
-    
-    # Configuration
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="./config/config.yaml",
-        help="Path to configuration file"
-    )
+    # Add debug flag
     parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging"
     )
     
-    args = parser.parse_args()
+    # Add config file option
+    parser.add_argument(
+        "--config",
+        help="Path to configuration file"
+    )
     
-    # Validate --filter is only used with --list or --remove
-    if args.filter and not (args.list or args.remove):
-        parser.error("--filter can only be used with --list or --remove")
-    
-    # Ensure only one main operation is specified
-    operations = sum(1 for op in [args.add, args.list, args.remove, args.query is not None] if op)
-    if operations > 1:
-        parser.error("Only one operation (--add, --list, --remove, --query) can be specified at a time")
-    elif operations == 0:
-        parser.print_help()
-        sys.exit(0)
-    
-    return args
+    return parser.parse_args()
 
-def handle_add(paths: List[str], config_path: str) -> None:
-    """Process file addition operation.
+def process_add_files(files: List[str], config: dict) -> int:
+    """Process and add files to the system.
     
     Args:
-        paths: List of file/directory paths to process
-        config_path: Path to configuration file
+        files: List of file paths to process
+        config: Configuration dictionary
+        
+    Returns:
+        int: Exit code (0 for success, 1 for failure)
     """
-    logger = logging.getLogger(__name__)
-    
     try:
-        # Initialize AddFlow component
-        add_flow = AddFlow(config_path)
+        from qa_system.document_processors import FileScanner, get_processor_for_file_type
+        from qa_system.embedding import EmbeddingGenerator
+        from qa_system.vector_store import ChromaVectorStore
         
-        total_files = 0
-        successful = 0
-        failed = 0
+        scanner = FileScanner(config)
+        store = ChromaVectorStore(config)
+        generator = EmbeddingGenerator(config)
         
-        # Process each path
-        with tqdm(total=len(paths), desc="Processing paths") as pbar:
-            for path in paths:
-                try:
-                    logger.info(
-                        "Starting document processing",
-                        extra={
-                            'component': 'processor',
-                            'path': path
-                        }
-                    )
-                    
-                    # Process files through AddFlow
-                    result = add_flow.process_path(path)
-                    
-                    # Update statistics
-                    total_files += result['total_files']
-                    successful += result['successful']
-                    failed += result['failed']
-                    
-                    logger.info(
-                        "Processing document",
-                        extra={
-                            'component': 'processor',
-                            'path': path,
-                            'size': result.get('size', 'unknown'),
-                            'type': result.get('file_type', 'unknown')
-                        }
-                    )
-                    
-                except Exception as e:
-                    logger.error(
-                        "Failed to process document",
-                        extra={
-                            'component': 'processor',
-                            'path': path,
-                            'error': str(e)
-                        }
-                    )
-                    failed += 1
-                    
-                pbar.update(1)
-        
-        # Log summary
-        logger.info(
-            "Processing complete",
-            extra={
-                'component': 'processor',
-                'total_files': total_files,
-                'successful': successful,
-                'failed': failed,
-                'duration': '2.34s'  # This should be actually measured
-            }
-        )
+        for file_path in files:
+            logger.info(f"Processing file: {file_path}")
+            
+            # Scan files and check if they need processing
+            scan_results = scanner.scan_files(file_path)
+            
+            for result in scan_results:
+                if not result['needs_processing']:
+                    logger.info(f"Skipping already processed file: {result['path']}")
+                    continue
+                
+                # Get appropriate processor for file type
+                processor = get_processor_for_file_type(result['path'], config)
+                
+                # Process file into chunks
+                processed = processor.process()
+                
+                # Generate embeddings
+                embeddings = generator.generate_embeddings(
+                    texts=processed['chunks'],
+                    metadata=processed['metadata']
+                )
+                
+                # Add to vector store
+                store.add_embeddings(
+                    vectors=embeddings['vectors'],
+                    texts=embeddings['texts'],
+                    metadata=embeddings['metadata']
+                )
+                
+                logger.info(f"Successfully processed and added: {result['path']}")
+                
+        return 0
         
     except Exception as e:
-        logger.error(
-            "Fatal error during processing",
-            extra={
-                'component': 'processor',
-                'error': str(e)
-            }
-        )
-        raise
+        logger.error(f"Error processing files: {str(e)}")
+        return 1
 
-def handle_list(filter_pattern: Optional[str], config_path: str) -> None:
-    """Handle list operation.
+def process_list(filter_pattern: Optional[str], config: dict) -> int:
+    """List documents in the system.
     
     Args:
-        filter_pattern: Optional pattern to filter results
-        config_path: Path to configuration file
+        filter_pattern: Optional pattern to filter documents
+        config: Configuration dictionary
+        
+    Returns:
+        int: Exit code (0 for success, 1 for failure)
     """
-    logger = logging.getLogger(__name__)
-    list_flow = ListFlow(config_path)
-    
     try:
-        # Get collection stats and documents
-        result = list_flow.list_documents(filter_pattern)
+        from qa_system.document_processors import ListHandler
+        
+        handler = ListHandler(config)
+        documents = handler.list_documents(filter_pattern)
+        
+        if not documents:
+            print("No documents found")
+            return 0
+            
+        # Print document list
+        print("\nDocuments in system:")
+        print("-" * 80)
+        print(f"{'Path':<50} {'Type':<10} {'Chunks':<8} {'Last Modified':<20}")
+        print("-" * 80)
+        
+        for doc in documents:
+            print(
+                f"{doc['path']:<50} "
+                f"{doc['metadata']['file_type']:<10} "
+                f"{doc['metadata'].get('chunk_count', '-'):<8} "
+                f"{doc['metadata'].get('last_modified', '-'):<20}"
+            )
+            
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Error listing documents: {str(e)}")
+        return 1
+
+def process_remove(paths: List[str], filter_pattern: Optional[str], config: dict) -> int:
+    """Remove documents from the system.
+    
+    Args:
+        paths: List of paths to remove
+        filter_pattern: Optional pattern to filter documents
+        config: Configuration dictionary
+        
+    Returns:
+        int: Exit code (0 for success, 1 for failure)
+    """
+    if not paths and not filter_pattern:
+        logger.error("No paths or filter pattern provided for removal")
+        return 1
+        
+    try:
+        from qa_system.document_processors import RemoveHandler
+        
+        handler = RemoveHandler(config)
+        result = handler.remove_documents(paths, filter_pattern)
         
         # Print results
-        print("\nCollection Statistics:")
-        print(f"Total Documents: {result['stats']['total_documents']}")
-        print(f"Total Chunks: {result['stats']['total_chunks']}")
-        print(f"Last Updated: {result['stats']['last_updated']}")
-        
-        print("\nDocuments:")
-        for doc in result['documents']:
-            print(f"\nFile: {doc['path']}")
-            print(f"Type: {doc['file_type']}")
-            print(f"Chunks: {doc['chunk_count']}")
-            print(f"Last Modified: {doc['last_modified']}")
-            
-    except Exception as e:
-        logger.error(f"Failed to list documents: {str(e)}")
-        sys.exit(1)
-
-def handle_remove(path: str, filter_pattern: Optional[str], config_path: str) -> None:
-    """Handle remove operation.
-    
-    Args:
-        path: Path or pattern to remove
-        filter_pattern: Optional additional filter pattern
-        config_path: Path to configuration file
-    """
-    logger = logging.getLogger(__name__)
-    remove_flow = RemoveFlow(config_path)
-    
-    try:
-        # Remove documents
-        result = remove_flow.remove_documents(path, filter_pattern)
-        
-        print(f"\nRemoval complete:")
-        print(f"Documents removed: {result['documents_removed']}")
-        print(f"Chunks removed: {result['chunks_removed']}")
+        if result['removed']:
+            print("\nSuccessfully removed:")
+            for path in result['removed']:
+                print(f"  - {path}")
+                
+        if result['failed']:
+            print("\nFailed to remove:")
+            for path, error in result['failed'].items():
+                print(f"  - {path}: {error}")
+                
+        if result['not_found']:
+            print("\nNo matches found for:")
+            for path in result['not_found']:
+                print(f"  - {path}")
+                
+        return 0 if not result['failed'] else 1
         
     except Exception as e:
-        logger.error(f"Failed to remove documents: {str(e)}")
-        sys.exit(1)
+        logger.error(f"Error removing documents: {str(e)}")
+        return 1
 
-def handle_query(query: Optional[str], config_path: str) -> None:
-    """Handle query operation.
+def process_query(query: Optional[str], config: dict) -> int:
+    """Process a query or enter interactive query mode.
     
     Args:
-        query: Optional query text (if None, enter interactive mode)
-        config_path: Path to configuration file
+        query: Query string or None for interactive mode
+        config: Configuration dictionary
+        
+    Returns:
+        int: Exit code (0 for success, 1 for failure)
     """
-    logger = logging.getLogger(__name__)
-    query_flow = QueryFlow(config_path)
-    
     try:
+        from qa_system.query import QueryProcessor
+        
+        processor = QueryProcessor(config)
+        
+        def print_response(response):
+            print("\nAnswer:")
+            print("-" * 80)
+            print(response.text)
+            print("\nSources:")
+            print("-" * 80)
+            for source in response.sources:
+                print(f"- {source.document} (similarity: {source.similarity:.2f})")
+        
         if query:
             # Single query mode
-            result = query_flow.query(query)
-            
-            print(f"\nResponse: {result['response']}")
-            print(f"\nSources:")
-            for source in result['sources']:
-                print(f"- {source['file_path']} (similarity: {source['similarity']:.2f})")
-            print(f"\nConfidence: {result['confidence']:.2f}")
-            
+            response = processor.process_query(query)
+            print_response(response)
         else:
-            # Interactive chat mode
-            print("\nEntering interactive chat mode (type 'exit' to quit)")
-            messages = []
-            
+            # Interactive mode
+            print("Enter your questions (type 'exit' to quit):")
             while True:
                 try:
-                    user_input = input("\nYou: ").strip()
-                    if user_input.lower() in ('exit', 'quit'):
+                    query = input("\nQuestion: ").strip()
+                    if query.lower() in ('exit', 'quit'):
                         break
-                    
-                    messages.append({
-                        'role': 'user',
-                        'content': user_input
-                    })
-                    
-                    result = query_flow.chat(messages)
-                    
-                    print(f"\nAssistant: {result['response']}")
-                    print(f"\nSources:")
-                    for source in result['sources']:
-                        print(f"- {source['file_path']} (similarity: {source['similarity']:.2f})")
-                    print(f"Confidence: {result['confidence']:.2f}")
-                    
-                    messages.append({
-                        'role': 'assistant',
-                        'content': result['response']
-                    })
+                    if not query:
+                        continue
+                        
+                    response = processor.process_query(query)
+                    print_response(response)
                     
                 except KeyboardInterrupt:
-                    print("\nExiting chat mode...")
+                    print("\nExiting...")
                     break
-                except Exception as e:
-                    logger.error(f"Error in chat: {str(e)}")
-                    print("\nAn error occurred. Please try again.")
                     
+        return 0
+        
     except Exception as e:
-        logger.error(f"Failed to process query: {str(e)}")
-        sys.exit(1)
+        logger.error(f"Error processing query: {str(e)}")
+        return 1
 
-def main() -> None:
-    """Main entry point for the QA system."""
-    logger = logging.getLogger(__name__)
+def main() -> int:
+    """Main entry point.
     
+    Returns:
+        int: Exit code (0 for success, 1 for failure)
+    """
     try:
-        # Set up signal handlers
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-        
         args = parse_args()
-        
-        # Setup logging early with default values
-        setup_logging(
-            log_file="logs/qa_system.log",
-            log_level="INFO",
-            enable_debug=args.debug
-        )
-        
-        # Validate configuration file
-        try:
-            validate_config_file(args.config)
-        except ConfigError as e:
-            logger.error(
-                "Configuration error",
-                extra={
-                    'component': 'config',
-                    'config_path': args.config,
-                    'error': str(e)
-                }
-            )
-            sys.exit(1)
         
         # Load configuration
         config = get_config(args.config)
         
-        # Update logging with config values if they differ from defaults
-        if (config.get_nested('LOGGING.LOG_FILE') != "logs/qa_system.log" or 
-            config.get_nested('LOGGING.LEVEL', default="INFO") != "INFO"):
-            setup_logging(
-                config.get_nested('LOGGING.LOG_FILE'),
-                config.get_nested('LOGGING.LEVEL', default="INFO"),
-                args.debug
-            )
-        
-        logger.debug(
-            "Reading document content",
-            extra={
-                'component': 'processor'
-            }
+        # Setup logging
+        log_level = "DEBUG" if args.debug else config.get_nested('LOGGING.LEVEL', 'INFO')
+        setup_logging(
+            LOG_FILE=config.get_nested('LOGGING.LOG_FILE', 'logs/qa_system.log'),
+            LEVEL=log_level
         )
         
-        # Handle operations
-        try:
-            if args.add:
-                handle_add(args.add, args.config)
-            elif args.list:
-                handle_list(args.filter, args.config)
-            elif args.remove:
-                handle_remove(args.remove, args.filter, args.config)
-            elif args.query is not None:
-                handle_query(args.query if args.query else None, args.config)
-        except KeyboardInterrupt:
-            logger.warning(
-                "Document contains unsupported elements",
-                extra={
-                    'component': 'processor'
-                }
-            )
-            sys.exit(130)  # Standard exit code for SIGINT
-        except Exception as e:
-            logger.error(
-                "Operation failed",
-                extra={
-                    'component': 'processor',
-                    'error': str(e)
-                }
-            )
-            sys.exit(1)
+        # Process command
+        if args.add:
+            return process_add_files(args.add, config)
+        elif args.list:
+            return process_list(args.filter, config)
+        elif args.remove:
+            return process_remove(args.remove, args.filter, config)
+        elif args.query is not None:  # Empty string is valid for interactive mode
+            return process_query(args.query, config)
+            
+        return 0
         
-        sys.exit(0)
-        
+    except QASystemError as e:
+        logger.error(str(e))
+        return 1
     except Exception as e:
-        logger.error(
-            "Fatal error",
-            extra={
-                'component': 'processor',
-                'error': str(e)
-            }
-        )
-        sys.exit(1)
+        logger.critical(f"Unexpected error: {str(e)}", exc_info=True)
+        return 1
 
 if __name__ == "__main__":
-    main() 
+    sys.exit(main()) 

@@ -118,6 +118,10 @@ The implementation follows these key principles:
 2. Extensibility: New file types and embedding models can be added
 3. Reliability: Comprehensive error handling and validation
 4. Performance: Efficient processing and storage optimization
+5. Testing: Tests for each module
+
+### 4.1 Build process
+Build incrementally.  Each function created must have a test built for it.  The tests must be run until the function is 100% operational.  Only then may the next function be created.
 
 ## 5. Dependencies
 Core dependencies are managed through requirements.txt and include:

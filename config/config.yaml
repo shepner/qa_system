@@ -1,197 +1,43 @@
-# embed_files System Configuration
+# QA System Configuration
 
 # Logging Configuration
 LOGGING:
   LEVEL: "INFO"
   LOG_FILE: "logs/qa_system.log"
-  DEBUG: false
 
 # Security & API Configuration
-# Note: These values are loaded from environment variables
 SECURITY:
-  GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}  # Loaded from .env
-  GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}  # Loaded from .env
-  GOOGLE_VISION_API_KEY: ${GOOGLE_VISION_API_KEY}  # Loaded from .env
-  GOOGLE_CLOUD_REGION: ${GOOGLE_CLOUD_REGION}  # Loaded from .env
+  GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
+  GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
+  GOOGLE_VISION_API_KEY: ${GOOGLE_VISION_API_KEY}
 
-# Document Processing
+# File Scanner Configuration
 FILE_SCANNER:
-  # Default path for documents to be processed and indexed
   DOCUMENT_PATH: "./docs"
-
-  # List of allowed file extensions for document processing
-  # Only files with these extensions will be processed
-  # Extensions should be specified without the dot
   ALLOWED_EXTENSIONS:
     - "txt"
     - "md"
-    - "csv"
     - "pdf"
-    - "jpg"
-    - "jpeg"
-    - "png"
-    - "gif"
-    - "bmp"
-    - "webp"
-
-  # Patterns to exclude from processing
   EXCLUDE_PATTERNS:
     - ".*"
     - "__pycache__"
     - "*.pyc"
-    - "node_modules"
-    - ".git"
-    - ".env"
-
   HASH_ALGORITHM: "sha256"
-  SKIP_EXISTING: true  # Whether to skip files already in vector db
+  SKIP_EXISTING: true
 
-# File Matcher Configuration
-DATA_REMOVER:
-  # Enable recursive matching for directory patterns
-  RECURSIVE: true
-  # Case sensitivity in matching
-  CASE_SENSITIVE: false
-
-  # Whether to require confirmation before removing files
-  REQUIRE_CONFIRMATION: true
-
-# Document Processing
+# Document Processing Configuration
 DOCUMENT_PROCESSING:
-  # Maximum size of each text chunk when splitting documents
-  # Documents are split into smaller chunks for better processing and retrieval
-  # This value is set to match EMBEDDING_MODEL.MAX_LENGTH (3072 tokens)
-  # because chunks larger than MAX_LENGTH would get truncated during embedding
-  # Note: Since this is in characters and MAX_LENGTH is in tokens,
-  # we use the same value as a conservative estimate (1 token ≈ 1 character)
-  # Range: 150-3072, Default: 3072 characters
   MAX_CHUNK_SIZE: 3072
-
-  # Minimum chunk size to prevent tiny chunks
-  # Should be 10-20% of MAX_CHUNK_SIZE to ensure meaningful chunks
-  # Current MAX_CHUNK_SIZE is 3072, so this should be 307-614 characters
-  # Must be larger than CHUNK_OVERLAP to ensure valid chunking
-  # Range: 307-614, Default: 400 characters
-  MIN_CHUNK_SIZE: 1024      
-
-  # Number of characters to overlap between consecutive chunks
-  # Helps maintain context across chunk boundaries
-  # Example: With size 1000 and overlap 200:
-  #   Chunk 1: [0-1000], Chunk 2: [800-1800], etc.
-  # Must be smaller than MIN_CHUNK_SIZE to ensure valid chunking
-  # Recommended: 10-20% of MAX_CHUNK_SIZE and 50-75% of MIN_CHUNK_SIZE
-  # Range: 0-MIN_CHUNK_SIZE, Default: 300 characters
+  MIN_CHUNK_SIZE: 1024
   CHUNK_OVERLAP: 768
-
-  # Number of parallel processing tasks for document indexing
-  # Higher values speed up processing but use more system resources
-  # Should be set based on available CPU cores
-  # For 4-core CPU: 4 is optimal
-  # For 8-core CPU: 6-8 is optimal
-  # Range: 1-16, Default: 4
   CONCURRENT_TASKS: 6
-
-  # Number of documents to process in each batch
-  # Affects memory usage and processing efficiency
-  # Larger batches are more efficient but use more memory
-  # Smaller batches use less memory but take longer
-  # Range: 1-100, Default: 10
   BATCH_SIZE: 50
+  PRESERVE_SENTENCES: true
 
-  # Sentence preservation settings
-  # Controls how text is chunked to maintain sentence integrity
-  PRESERVE_SENTENCES: true  # Ensure chunks don't break sentences
-
-  # Header pattern recognition settings for PDF processing
-  # Controls how headers are identified and processed in PDFs
-  PDF_HEADER_RECOGNITION:
-    ENABLED: true         # Enable header pattern recognition
-    MIN_FONT_SIZE: 12     # Minimum font size to consider as header
-    PATTERNS:             # Regular expressions for header detection
-      - '^[A-Z][^.]*$'   # Uppercase starting lines without periods
-      - '^[\\d\\.]+\\s.*$'  # Numbered sections (e.g., "1.2 Section Title")
-      - '^Chapter\\s+\\d+'  # Chapter headings
-    MAX_HEADER_LENGTH: 100  # Maximum length for a header line
-
-  # Vision API Configuration
-  # Settings for processing images using Google Cloud Vision API
-  # For more information, see: https://cloud.google.com/vision/docs
-  VISION_API:
-    # Enable/disable Vision API processing for images
-    ENABLED: true
-    # List of Vision API features to enable
-    # Available features:
-    #   - DOCUMENT_TEXT_DETECTION: Extract text (OCR)
-    #   - IMAGE_PROPERTIES: Extract image properties
-    #   - LABEL_DETECTION: Detect and extract labels
-    FEATURES:
-      - DOCUMENT_TEXT_DETECTION
-      - IMAGE_PROPERTIES
-      - LABEL_DETECTION
-    # Maximum number of results to return per feature
-    # Higher values provide more comprehensive analysis
-    # but increase API usage and cost
-    # Range: 1-100, Default: 50
-    MAX_RESULTS: 50
-
-# Embedding Model Configuration
-EMBEDDING_MODEL:
-  # Model name for Gemini embeddings
-  # Capabilities:
-  #   - High quality embeddings for text similarity
-  #   - Supports multiple languages
-  #   - Optimized for semantic search
-  # Rate limits (Free Tier):
-  #   - 60 requests per minute (RPM)
-  #   - 1000 requests per day (RPD)
-  # Source: 'https://ai.google.dev/docs/rate_limits'
-  MODEL_NAME: "text-embedding-004"
-  
-  # Batch size for processing multiple texts at once
-  # Higher values are more efficient but use more memory
-  # Can be higher now due to increased rate limits
-  # Recommended: 10-15 for optimal throughput while staying within rate limits
-  # Range: 1-20, Default: 10
-  BATCH_SIZE: 15
-  
-  # Maximum length of text to embed (in tokens)
-  # Texts longer than this will be truncated
-  # For text-embedding-004: max 3072 tokens
-  # Note: Actual character count varies by text content
-  MAX_LENGTH: 3072
-  
-  # Output embedding dimensions
-  # text-embedding-004 supports flexible dimensions:
-  # Options: 768, 1024
-  # Choose based on your needs:
-  # - 1024: Higher quality but more storage/compute intensive
-  # - 768: Good balance of quality and resource usage
-  # Must match VECTOR_STORE.EMBEDDINGS.DIMENSION
-  DIMENSIONS: 768
-
-# Vector Database Configuration
+# Vector Store Configuration
 VECTOR_STORE:
-  # Vector store implementation to use
   TYPE: "chroma"
-
-  # Directory where vector store data will be persisted
   PERSIST_DIRECTORY: "./data/vector_store"
-
-  # Name of the collection in the vector store
-  # Multiple collections can be used to separate different types of documents
   COLLECTION_NAME: "qa_documents"
-
-  # Distance metric used to calculate similarity between vectors
-  # Options:
-  #   "cosine" - Measures cosine similarity between vectors (most common)
-  #   "euclidean" - Measures straight-line distance between vectors
-  #   "dot" - Measures dot product between vectors
-  # Default: "cosine"
   DISTANCE_METRIC: "cosine"
-
-  # Number of most similar documents to retrieve initially
-  # This is the first-pass retrieval before applying relevance scoring
-  # Higher values cast a wider net but increase processing time
-  # Lower values are faster but might miss relevant documents
-  # Range: 1-100, Default: 40
   TOP_K: 40

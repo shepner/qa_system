@@ -1,15 +1,18 @@
-from .base_processor import BaseDocumentProcessor
-from .text_processor import TextDocumentProcessor
-from .markdown_processor import MarkdownDocumentProcessor
-from .csv_processor import CSVDocumentProcessor
-from .pdf_processor import PDFDocumentProcessor
-from .image_processor import ImageDocumentProcessor
+class FileScanner:
+    def __init__(self, config): pass
+    def scan_files(self, path): return []
 
-__all__ = [
-    'BaseDocumentProcessor',
-    'TextDocumentProcessor',
-    'MarkdownDocumentProcessor',
-    'CSVDocumentProcessor',
-    'PDFDocumentProcessor',
-    'ImageDocumentProcessor',
-] 
+def get_processor_for_file_type(path, config):
+    class DummyProcessor:
+        def process(self):
+            return {'chunks': [], 'metadata': {}}
+    return DummyProcessor()
+
+class ListHandler:
+    def __init__(self, config): pass
+    def list_documents(self, filter_pattern=None): return []
+
+class RemoveHandler:
+    def __init__(self, config): pass
+    def remove_documents(self, paths, filter_pattern=None):
+        return {'removed': [], 'failed': {}, 'not_found': []}

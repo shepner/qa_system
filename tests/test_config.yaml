@@ -1,0 +1,36 @@
+# Test Configuration
+
+LOGGING:
+  LEVEL: "INFO"
+  LOG_FILE: "logs/test.log"
+
+SECURITY:
+  GOOGLE_APPLICATION_CREDENTIALS: "test_credentials.json"
+  GOOGLE_CLOUD_PROJECT: "test-project"
+  GOOGLE_VISION_API_KEY: "test-key"
+
+FILE_SCANNER:
+  DOCUMENT_PATH: "./test_docs"
+  ALLOWED_EXTENSIONS:
+    - "txt"
+    - "md"
+  EXCLUDE_PATTERNS:
+    - ".*"
+    - "__pycache__"
+  HASH_ALGORITHM: "sha256"
+  SKIP_EXISTING: true
+
+DOCUMENT_PROCESSING:
+  MAX_CHUNK_SIZE: 1000
+  MIN_CHUNK_SIZE: 200
+  CHUNK_OVERLAP: 100
+  CONCURRENT_TASKS: 2
+  BATCH_SIZE: 10
+  PRESERVE_SENTENCES: true
+
+VECTOR_STORE:
+  TYPE: "chroma"
+  PERSIST_DIRECTORY: "./test_data/vector_store"
+  COLLECTION_NAME: "test_documents"
+  DISTANCE_METRIC: "cosine"
+  TOP_K: 5 
