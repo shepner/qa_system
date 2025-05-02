@@ -1,9 +1,19 @@
 from qa_system.file_scanner import FileScanner
 import logging
+from .text_processor import TextDocumentProcessor
+from .markdown_processor import MarkdownDocumentProcessor
+from .pdf_processor import PDFDocumentProcessor
 
 def get_processor_for_file_type(path, config):
     logger = logging.getLogger(__name__)
     logger.debug(f"Called get_processor_for_file_type(path={path}, config={config})")
+    ext = str(path).lower().rsplit('.', 1)[-1] if '.' in str(path) else ''
+    if ext == 'txt':
+        return TextDocumentProcessor(config)
+    if ext == 'md':
+        return MarkdownDocumentProcessor(config)
+    if ext == 'pdf':
+        return PDFDocumentProcessor(config)
     class DummyProcessor:
         def process(self):
             logger.debug("Called DummyProcessor.process()")
