@@ -3,11 +3,14 @@
 import os
 from pathlib import Path
 import yaml
+import logging
 
 class Config:
     """Configuration class that provides access to configuration values."""
     
     def __init__(self, config_data: dict):
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.debug(f"Called Config.__init__(config_data={config_data})")
         self._config = config_data
         
     def get_nested(self, path: str, default=None):
@@ -20,6 +23,7 @@ class Config:
         Returns:
             Configuration value or default if not found
         """
+        self.logger.debug(f"Called Config.get_nested(path={path}, default={default})")
         current = self._config
         for key in path.split('.'):
             if isinstance(current, dict) and key in current:
@@ -41,6 +45,8 @@ def get_config(config_path: str = "./config/config.yaml") -> Config:
         FileNotFoundError: If configuration file doesn't exist
         yaml.YAMLError: If configuration file is invalid
     """
+    logger = logging.getLogger(__name__)
+    logger.debug(f"Called get_config(config_path={config_path})")
     config_path = Path(config_path) if config_path else Path("./config/config.yaml")
     
     if not config_path.exists():

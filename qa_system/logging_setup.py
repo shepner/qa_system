@@ -12,6 +12,9 @@ def setup_logging(LOG_FILE: str = "logs/qa_system.log", LEVEL: str = "INFO") -> 
         LOG_FILE: Path to log file
         LEVEL: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     """
+    logger = logging.getLogger(__name__)
+    logger.debug(f"Called setup_logging(LOG_FILE={LOG_FILE}, LEVEL={LEVEL})")
+    
     # Create logs directory if it doesn't exist
     log_dir = os.path.dirname(LOG_FILE)
     if log_dir:

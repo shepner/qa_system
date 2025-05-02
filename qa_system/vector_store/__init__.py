@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 class ChromaVectorStore:
     def __init__(self, config):
+        logger.debug(f"Called ChromaVectorStore.__init__(config={config})")
         try:
             vector_config = config.get_nested('VECTOR_STORE')
             self.persist_directory = vector_config.get('PERSIST_DIRECTORY', './data/vector_store')
@@ -26,6 +27,7 @@ class ChromaVectorStore:
             raise ConnectionError(f"Failed to initialize vector store: {e}")
 
     def add_embeddings(self, embeddings: List[List[float]], texts: List[str], metadatas: List[Dict[str, Any]]):
+        logger.debug(f"Called ChromaVectorStore.add_embeddings(embeddings=<len {len(embeddings)}>, texts=<len {len(texts)}>, metadatas=<len {len(metadatas)}>)")
         try:
             ids = [meta.get('id') or meta.get('path') or str(i) for i, meta in enumerate(metadatas)]
             self.collection.add(
@@ -40,6 +42,7 @@ class ChromaVectorStore:
             raise VectorStoreError(f"Failed to add embeddings: {e}")
 
     def query(self, query_vector: List[float], top_k: Optional[int] = None, filter_criteria: Optional[Dict[str, Any]] = None):
+        logger.debug(f"Called ChromaVectorStore.query(query_vector=<len {len(query_vector)}>, top_k={top_k}, filter_criteria={filter_criteria})")
         try:
             k = top_k or self.top_k
             query_args = {
@@ -56,6 +59,7 @@ class ChromaVectorStore:
             raise QueryError(f"Query failed: {e}")
 
     def delete(self, filter_criteria: Dict[str, Any], require_confirmation: bool = False):
+        logger.debug(f"Called ChromaVectorStore.delete(filter_criteria={filter_criteria}, require_confirmation={require_confirmation})")
         try:
             # ChromaDB supports deletion by ids or metadata filter
             if require_confirmation:

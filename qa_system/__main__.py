@@ -18,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     Returns:
         argparse.Namespace: Parsed command line arguments
     """
+    logger.debug("Called parse_args()")
     parser = argparse.ArgumentParser(
         description="QA System - Document processing and question-answering system"
     )
@@ -77,6 +78,7 @@ def process_add_files(files: List[str], config: dict) -> int:
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
+    logger.debug(f"Called process_add_files(files={files}, config={config})")
     try:
         from qa_system.document_processors import FileScanner, get_processor_for_file_type
         from qa_system.embedding import EmbeddingGenerator
@@ -134,6 +136,7 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
+    logger.debug(f"Called process_list(filter_pattern={filter_pattern}, config={config})")
     try:
         from qa_system.document_processors import ListHandler
         
@@ -175,6 +178,7 @@ def process_remove(paths: List[str], filter_pattern: Optional[str], config: dict
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
+    logger.debug(f"Called process_remove(paths={paths}, filter_pattern={filter_pattern}, config={config})")
     if not paths and not filter_pattern:
         logger.error("No paths or filter pattern provided for removal")
         return 1
@@ -217,6 +221,7 @@ def process_query(query: Optional[str], config: dict) -> int:
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
+    logger.debug(f"Called process_query(query={query}, config={config})")
     try:
         from qa_system.query import QueryProcessor
         
@@ -265,6 +270,7 @@ def main() -> int:
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
+    logger.debug("Called main()")
     try:
         args = parse_args()
         

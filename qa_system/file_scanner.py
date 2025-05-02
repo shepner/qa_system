@@ -13,6 +13,7 @@ class FileScanner:
     Scans directories for files to be embedded, applying inclusion/exclusion rules and hashing.
     """
     def __init__(self, config: Any):
+        logger.debug(f"Called FileScanner.__init__(config={config})")
         self.config = config.get_nested('FILE_SCANNER') if hasattr(config, 'get_nested') else config.get('FILE_SCANNER', {})
         self.document_path = Path(self.config.get('DOCUMENT_PATH', './docs'))
         self.allowed_extensions = set(self.config.get('ALLOWED_EXTENSIONS', []))
@@ -30,6 +31,7 @@ class FileScanner:
         Raises:
             ValidationError: If the path is invalid or inaccessible.
         """
+        logger.debug(f"Called FileScanner.scan_files(path={path})")
         root = Path(path) if path else self.document_path
         if not root.exists() or not root.is_dir():
             logger.error(f"Scan path does not exist or is not a directory: {root}")
@@ -52,9 +54,11 @@ class FileScanner:
         return found_files
 
     def _is_allowed(self, file_path: Path) -> bool:
+        logger.debug(f"Called FileScanner._is_allowed(file_path={file_path})")
         return file_path.suffix.lstrip('.').lower() in self.allowed_extensions
 
     def _is_excluded(self, file_path: Path) -> bool:
+        logger.debug(f"Called FileScanner._is_excluded(file_path={file_path})")
         rel_path = str(file_path.relative_to(self.document_path))
         # Check all parts of the relative path for exclusion
         parts = rel_path.split(os.sep)
@@ -68,6 +72,7 @@ class FileScanner:
         return False
 
     def _compute_hash(self, file_path: Path) -> str:
+        logger.debug(f"Called FileScanner._compute_hash(file_path={file_path})")
         hash_func = getattr(hashlib, self.hash_algorithm, None)
         if not hash_func:
             logger.error(f"Unsupported hash algorithm: {self.hash_algorithm}")

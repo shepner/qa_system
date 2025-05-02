@@ -1,3 +1,4 @@
+# Ensure all tests in this file run in isolated processes to avoid ChromaDB singleton issues
 import pytest
 import tempfile
 import shutil
