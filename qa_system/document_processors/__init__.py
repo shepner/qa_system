@@ -1,6 +1,4 @@
-class FileScanner:
-    def __init__(self, config): pass
-    def scan_files(self, path): return []
+from qa_system.file_scanner import FileScanner
 
 def get_processor_for_file_type(path, config):
     class DummyProcessor:

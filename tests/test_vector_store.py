@@ -5,6 +5,9 @@ from qa_system.vector_store import ChromaVectorStore
 from qa_system.exceptions import VectorStoreError, ConnectionError, QueryError
 from types import SimpleNamespace
 
+# Mark all tests in this file to run in a forked process
+pytestmark = pytest.mark.forked
+
 @pytest.fixture
 def temp_vector_config(tmp_path):
     # Provide a minimal config object with get_nested
