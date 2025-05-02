@@ -9,12 +9,13 @@ This directory contains automated tests for the QA System project. The tests are
 - [Test Structure](#test-structure)
 - [Example Commands](#example-commands)
 - [Troubleshooting](#troubleshooting)
+- [ChromaVectorStore Tests](#chroma-vector-store-tests)
 
 ## Overview
 The test suite uses [pytest](https://docs.pytest.org/) as the primary test runner. Tests are written in Python and are located in this `tests/` directory. Each test file targets a specific module or feature of the QA System.
 
 ## Requirements
-- Python 3.8+
+- Python 3.13+
 - All project dependencies installed (see `requirements.txt` or your environment setup)
 - [pytest](https://docs.pytest.org/) installed in your environment
 
@@ -93,6 +94,27 @@ pytest --cov=qa_system
 ## Additional Resources
 - [pytest documentation](https://docs.pytest.org/)
 - [Python unittest documentation](https://docs.python.org/3/library/unittest.html)
+
+## ChromaVectorStore Tests
+
+The tests for the vector store (ChromaVectorStore) cover:
+- Initialization with configuration
+- Adding embeddings and metadata
+- Querying for similar vectors
+- Deleting documents by metadata filter
+- Error handling for connection, query, and validation errors
+
+To run all tests (including vector store):
+
+```
+pytest
+```
+
+To run only the vector store tests:
+
+```
+pytest tests/test_vector_store.py
+```
 
 ---
 

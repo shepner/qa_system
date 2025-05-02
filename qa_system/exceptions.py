@@ -26,4 +26,20 @@ class EmbeddingError(QASystemError):
 
 class APIError(QASystemError):
     """Raised when external API calls fail."""
+    pass
+
+class VectorStoreError(QASystemError):
+    """Base exception for vector store operations."""
+    pass
+
+class ConnectionError(VectorStoreError):
+    """Database connection errors."""
+    pass
+
+class QueryError(VectorStoreError):
+    """Query execution errors."""
+    pass
+
+class ValidationError(VectorStoreError):
+    """Data validation errors."""
     pass 
