@@ -25,8 +25,8 @@ def test_pdf_processor_basic(tmp_path):
     # Create a simple PDF file with 2 pages
     pdf_path = tmp_path / 'sample.pdf'
     writer = PyPDF2.PdfWriter()
-    writer.add_page(PyPDF2.pdf.PageObject.create_blank_page(None, 72, 72))
-    writer.add_page(PyPDF2.pdf.PageObject.create_blank_page(None, 72, 72))
+    writer.add_blank_page(width=72, height=72)
+    writer.add_blank_page(width=72, height=72)
     # Add text to each page
     # PyPDF2 can't add text directly, so we use a workaround: create a PDF with text using reportlab if available
     try:
@@ -59,7 +59,7 @@ def test_pdf_processor_metadata_override(tmp_path):
     # Create a simple PDF file
     pdf_path = tmp_path / 'meta.pdf'
     writer = PyPDF2.PdfWriter()
-    writer.add_page(PyPDF2.pdf.PageObject.create_blank_page(None, 72, 72))
+    writer.add_blank_page(width=72, height=72)
     with open(pdf_path, 'wb') as f:
         writer.write(f)
     proc = PDFDocumentProcessor(DummyConfig())

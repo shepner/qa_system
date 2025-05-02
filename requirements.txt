@@ -19,7 +19,6 @@ uvloop
 chromadb
 oauthlib
 pydantic
-yaml
 py
 asgiref
 rsa
@@ -45,9 +44,9 @@ click
 mmh3
 zipp
 httptools
-dateutil
+python-dateutil
 attr
-grpc
+grpcio
 deprecated
 coloredlogs
 pyasn1_modules
@@ -69,7 +68,7 @@ websockets
 onnxruntime
 sniffio
 watchfiles
-markdown_it
+markdown-it-py
 tqdm
 pydantic_core
 annotated_types
@@ -84,5 +83,6 @@ h11
 pytest_mock
 six
 rich
-chromadb_rust_bindings
-jsonschema 
+jsonschema
+PyPDF2
+reportlab 

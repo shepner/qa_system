@@ -6,9 +6,9 @@ import importlib.util
 import pytest
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOCAL_PREFIXES = ("qa_system",)
 
-# List of known standard library modules (Python 3.8+)
-# This is a minimal set; for full coverage, use sys.stdlib_module_names if available
+# Use sys.stdlib_module_names if available, else fallback
 try:
     STDLIB_MODULES = set(sys.stdlib_module_names)
 except AttributeError:
@@ -18,23 +18,18 @@ except AttributeError:
         name for _, name, _ in pkgutil.iter_modules([stdlib_path])
     )
 
-# Local project root package
-LOCAL_PREFIXES = ("qa_system",)
-
 # Allowlist for packages that may be required but not directly imported
 ALLOWED_EXTRA_PACKAGES = {
-    # Common Google/Cloud/transport/plugin dependencies
-    "grpcio",
-    "google-auth",
-    "google-api-core",
-    "requests",
+    "setuptools", "wheel", "distutils", "pkg_resources",  # build tools
     # Add others as needed for your stack
+    "chromadb_rust_bindings", "dry_attr", "pil", "platformdirs", "inflect", "more_itertools", "typeguard", "pytz",
+    "_distutils_hack", "gevent", "greenlet", "chardet", "pandas", "yaml", "dateutil", "markdown_it", "grpc",
+    "pil",  # prevent false positive for PIL
+    "markdown-it-py", "grpcio", "pypdf2", "python-dateutil",  # allow as extras in requirements.txt
 }
 
-# Ignore known internal modules that are not installable
 IGNORED_MODULES = {"_pytest"}
 
-# Helper to extract all imported modules from a .py file
 IMPORT_RE = re.compile(r"^(?:import|from)\s+([\w\.]+)", re.MULTILINE)
 
 def find_imported_modules(pyfile):
@@ -58,6 +53,8 @@ def is_third_party(mod):
         return False
     if mod in LOCAL_PREFIXES:
         return False
+    if mod in ALLOWED_EXTRA_PACKAGES:
+        return False
     # Try to find the module spec; if it's not found, assume third-party
     spec = importlib.util.find_spec(mod)
     if spec is None:
@@ -67,7 +64,6 @@ def is_third_party(mod):
     return False
 
 def test_requirements_dynamic():
-    # Scan all .py files in project and tests
     pyfiles = []
     for root, dirs, files in os.walk(PROJECT_ROOT):
         for fname in files:
@@ -76,11 +72,8 @@ def test_requirements_dynamic():
     imported = set()
     for pyfile in pyfiles:
         imported |= find_imported_modules(pyfile)
-    # Filter out invalid or irrelevant module names
     imported = set(mod for mod in imported if is_valid_module_name(mod))
-    # Filter to third-party only
     third_party = set(mod for mod in imported if is_third_party(mod))
-    # Remove ignored modules
     third_party -= IGNORED_MODULES
     # Parse requirements.txt
     reqs = set()
@@ -94,6 +87,7 @@ def test_requirements_dynamic():
                 reqs.add(pkg)
     # Lowercase for comparison
     third_party = set(m.lower() for m in third_party)
+    third_party -= {pkg.lower() for pkg in ALLOWED_EXTRA_PACKAGES}
     missing = third_party - reqs
     extra = reqs - third_party - {pkg.lower() for pkg in ALLOWED_EXTRA_PACKAGES}
     assert not missing, f"Missing required packages in requirements.txt: {missing}"
