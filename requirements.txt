@@ -84,5 +84,6 @@ pytest_mock
 six
 rich
 jsonschema
-PyPDF2
-reportlab 
+pypdf>=3.17.0
+reportlab
+coverage>=7.8.0 

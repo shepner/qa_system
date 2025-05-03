@@ -1,10 +1,12 @@
 import pytest
 from pathlib import Path
+import sys
+from unittest.mock import patch
 
 try:
-    import PyPDF2
+    import pypdf
 except ImportError:
-    PyPDF2 = None
+    pypdf = None
 
 from qa_system.document_processors.pdf_processor import PDFDocumentProcessor
 
@@ -20,15 +22,15 @@ class DummyConfig:
             return True
         return default
 
-@pytest.mark.skipif(PyPDF2 is None, reason="PyPDF2 not installed")
+@pytest.mark.skipif(pypdf is None, reason="pypdf not installed")
 def test_pdf_processor_basic(tmp_path):
     # Create a simple PDF file with 2 pages
     pdf_path = tmp_path / 'sample.pdf'
-    writer = PyPDF2.PdfWriter()
+    writer = pypdf.PdfWriter()
+    # Add blank pages
     writer.add_blank_page(width=72, height=72)
     writer.add_blank_page(width=72, height=72)
-    # Add text to each page
-    # PyPDF2 can't add text directly, so we use a workaround: create a PDF with text using reportlab if available
+    # Add text to each page using reportlab
     try:
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import letter
@@ -54,11 +56,11 @@ def test_pdf_processor_basic(tmp_path):
     assert all(isinstance(chunk, str) for chunk in result['chunks'])
     assert sum(len(chunk) for chunk in result['chunks']) == result['metadata']['total_tokens']
 
-@pytest.mark.skipif(PyPDF2 is None, reason="PyPDF2 not installed")
+@pytest.mark.skipif(pypdf is None, reason="pypdf not installed")
 def test_pdf_processor_metadata_override(tmp_path):
     # Create a simple PDF file
     pdf_path = tmp_path / 'meta.pdf'
-    writer = PyPDF2.PdfWriter()
+    writer = pypdf.PdfWriter()
     writer.add_blank_page(width=72, height=72)
     with open(pdf_path, 'wb') as f:
         writer.write(f)
@@ -66,4 +68,35 @@ def test_pdf_processor_metadata_override(tmp_path):
     custom_meta = {'custom': 'value'}
     result = proc.process(str(pdf_path), metadata=custom_meta)
     assert result['metadata']['custom'] == 'value'
-    assert result['metadata']['filename_full'] == 'meta.pdf' 
+    assert result['metadata']['filename_full'] == 'meta.pdf'
+
+def test_pdf_processor_import_error():
+    # Simulate pypdf not being installed
+    with patch.dict('sys.modules', {'pypdf': None}):
+        proc = PDFDocumentProcessor(DummyConfig())
+        with pytest.raises(ImportError) as exc_info:
+            proc.process('test.pdf')
+        assert "pypdf is required for PDF processing" in str(exc_info.value)
+
+@pytest.mark.skipif(pypdf is None, reason="pypdf not installed")
+def test_pdf_processor_file_error(tmp_path):
+    # Test with a non-existent file
+    proc = PDFDocumentProcessor(DummyConfig())
+    with pytest.raises(FileNotFoundError):
+        proc.process(str(tmp_path / 'nonexistent.pdf'))
+
+@pytest.mark.skipif(pypdf is None, reason="pypdf not installed")
+def test_pdf_processor_corrupted_file(tmp_path):
+    # Create a corrupted PDF file
+    pdf_path = tmp_path / 'corrupted.pdf'
+    with open(pdf_path, 'wb') as f:
+        f.write(b'This is not a valid PDF file')
+    proc = PDFDocumentProcessor(DummyConfig())
+    with pytest.raises(Exception) as exc_info:
+        proc.process(str(pdf_path))
+    assert any(msg in str(exc_info.value) for msg in [
+        "Error processing PDF file",
+        "EOF marker not found",
+        "Stream has ended unexpectedly",
+        "invalid pdf header"
+    ]) 

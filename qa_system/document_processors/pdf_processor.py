@@ -8,16 +8,16 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
     def process(self, file_path, metadata=None):
         self.logger.debug(f"Processing PDF file: {file_path}")
         try:
-            import PyPDF2
+            import pypdf
         except ImportError:
-            raise ImportError("PyPDF2 is required for PDF processing. Please install it with 'pip install PyPDF2'.")
+            raise ImportError("pypdf is required for PDF processing. Please install it with 'pip install pypdf'.")
         if metadata is None:
             metadata = self.extract_metadata(file_path)
         else:
             extracted = self.extract_metadata(file_path)
             metadata = {**extracted, **metadata}
         with open(file_path, 'rb') as f:
-            reader = PyPDF2.PdfReader(f)
+            reader = pypdf.PdfReader(f)
             all_chunks = []
             page_texts = []
             for i, page in enumerate(reader.pages):
