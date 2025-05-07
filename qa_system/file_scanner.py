@@ -25,7 +25,7 @@ class FileScanner:
         """
         Scan for files to process, applying extension and exclusion rules.
         Args:
-            path: Optional override for root directory to scan.
+            path: Optional override for root directory or file to scan.
         Returns:
             List of dicts with file metadata (path, hash, size, etc.)
         Raises:
@@ -33,23 +33,40 @@ class FileScanner:
         """
         logger.debug(f"Called FileScanner.scan_files(path={path})")
         root = Path(path) if path else self.document_path
-        if not root.exists() or not root.is_dir():
-            logger.error(f"Scan path does not exist or is not a directory: {root}")
-            raise ValidationError(f"Scan path does not exist or is not a directory: {root}")
         found_files = []
-        for file_path in root.rglob('*'):
-            if not file_path.is_file():
-                continue
-            if not self._is_allowed(file_path):
-                continue
-            if self._is_excluded(file_path):
-                continue
+        if not root.exists():
+            logger.error(f"Scan path does not exist: {root}")
+            raise ValidationError(f"Scan path does not exist: {root}")
+        if root.is_file():
+            if not self._is_allowed(root):
+                logger.info(f"File not allowed by extension: {root}")
+                return []
+            if self._is_excluded(root):
+                logger.info(f"File excluded by pattern: {root}")
+                return []
             file_info = {
-                'path': str(file_path.resolve()),
-                'size': file_path.stat().st_size,
-                'hash': self._compute_hash(file_path),
+                'path': str(root.resolve()),
+                'size': root.stat().st_size,
+                'hash': self._compute_hash(root),
             }
             found_files.append(file_info)
+        elif root.is_dir():
+            for file_path in root.rglob('*'):
+                if not file_path.is_file():
+                    continue
+                if not self._is_allowed(file_path):
+                    continue
+                if self._is_excluded(file_path):
+                    continue
+                file_info = {
+                    'path': str(file_path.resolve()),
+                    'size': file_path.stat().st_size,
+                    'hash': self._compute_hash(file_path),
+                }
+                found_files.append(file_info)
+        else:
+            logger.error(f"Scan path is neither a file nor a directory: {root}")
+            raise ValidationError(f"Scan path is neither a file nor a directory: {root}")
         logger.info(f"Scanned {root}: found {len(found_files)} files for processing.")
         return found_files
 

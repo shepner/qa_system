@@ -10,6 +10,11 @@ from qa_system.config import get_config
 from qa_system.exceptions import QASystemError
 from qa_system.logging_setup import setup_logging
 
+logging.basicConfig(
+    level=logging.DEBUG,  # Default to INFO; can be overridden by setup_logging()
+    format="%(levelname)s - %(message)s"
+)
+
 logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
@@ -93,6 +98,10 @@ def process_add_files(files: List[str], config: dict) -> int:
             
             # Scan files and check if they need processing
             scan_results = scanner.scan_files(file_path)
+            
+            # Patch: Add needs_processing to each result
+            for result in scan_results:
+                result['needs_processing'] = not store.has_file(result['hash'])
             
             for result in scan_results:
                 if not result['needs_processing']:

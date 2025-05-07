@@ -128,7 +128,7 @@ sequenceDiagram
 - **Key Functions**:
   - `should_process_file`: Validates files against configured patterns
   - `calculate_checksum`: Generates cryptographic hashes using configured algorithm
-  - `scan_files`: Processes individual files or recursively discovers files in directories
+  - `scan_files`: Processes individual files or recursively discovers files in directories. If a file path is provided, only that file is processed (if allowed and not excluded). If a directory is provided, all files in it are processed recursively.
   - `check_existing_files`: Queries Vector DB to identify which files need processing based on checksums
 - **Logging Integration**:
   - Uses module-level logger for operation tracking
@@ -151,6 +151,7 @@ files = scanner.scan_files("/path/to/directory")
 
 # Process a single file
 files = scanner.scan_files("/path/to/specific_file.md")
+# Returns a list with a single file if allowed and not excluded
 
 # Process multiple inputs
 files = scanner.scan_files(["/path/to/file1.md", "/path/to/directory", "/path/to/file2.pdf"])

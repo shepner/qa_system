@@ -70,3 +70,14 @@ class ChromaVectorStore:
         except Exception as e:
             logger.error(f"Failed to delete documents: {e}")
             raise VectorStoreError(f"Failed to delete documents: {e}")
+
+    def has_file(self, file_hash: str) -> bool:
+        """Check if a file with the given hash exists in the collection."""
+        try:
+            # Query for any document with this hash in metadata
+            results = self.collection.get(where={"hash": file_hash}, limit=1)
+            # Chroma returns a dict with 'ids' key
+            return bool(results and results.get('ids'))
+        except Exception as e:
+            logger.error(f"Failed to check file existence in vector store: {e}")
+            return False
