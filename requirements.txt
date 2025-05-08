@@ -16,7 +16,7 @@ orjson
 jsonschema_specifications
 xdist
 uvloop
-chromadb
+chromadb>=1.0.8
 oauthlib
 pydantic
 py
@@ -86,4 +86,5 @@ rich
 jsonschema
 pypdf>=3.17.0
 reportlab
-coverage>=7.8.0 
+coverage>=7.8.0
+google-genai>=1.13.0 
