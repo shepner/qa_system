@@ -2,9 +2,12 @@
 # Reference: https://ai.google.dev/gemini-api/docs/text-generation
 
 from google import genai
+from dotenv import load_dotenv
+import os
 
-# Replace with your actual Gemini API key
-GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
+# Load environment variables from .env file
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
