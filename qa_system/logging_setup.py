@@ -20,8 +20,8 @@ def setup_logging(LOG_FILE: str = "logs/qa_system.log", LEVEL: str = "INFO") -> 
     if log_dir:
         Path(log_dir).mkdir(parents=True, exist_ok=True)
     
-    # Convert string level to logging level
-    numeric_level = getattr(logging, LEVEL.upper(), logging.INFO)
+    # Force DEBUG level for all logging
+    numeric_level = logging.DEBUG
     
     # Configure root logger
     logging.root.setLevel(numeric_level)
@@ -57,4 +57,4 @@ def setup_logging(LOG_FILE: str = "logs/qa_system.log", LEVEL: str = "INFO") -> 
     
     # Create logger for this module
     logger = logging.getLogger(__name__)
-    logger.debug("Logging setup complete") 
+    logger.debug("Logging setup complete (forced DEBUG level)") 

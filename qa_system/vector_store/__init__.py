@@ -1,8 +1,8 @@
 import chromadb
-from chromadb.config import Settings
 from qa_system.exceptions import VectorStoreError, ConnectionError, QueryError, ValidationError
 import logging
 from typing import List, Dict, Any, Optional
+import fnmatch
 
 logger = logging.getLogger(__name__)
 
@@ -15,13 +15,12 @@ class ChromaVectorStore:
             self.collection_name = vector_config.get('COLLECTION_NAME', 'qa_documents')
             self.distance_metric = vector_config.get('DISTANCE_METRIC', 'cosine')
             self.top_k = vector_config.get('TOP_K', 40)
-            self.client = chromadb.Client(Settings(
-                persist_directory=self.persist_directory
-            ))
-            self.collection = self.client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"hnsw:space": self.distance_metric}
-            )
+            self.client = chromadb.PersistentClient(path=self.persist_directory)
+            # Try to get or create the collection
+            try:
+                self.collection = self.client.get_collection(name=self.collection_name)
+            except Exception:
+                self.collection = self.client.create_collection(name=self.collection_name, metadata={"hnsw:space": self.distance_metric})
         except Exception as e:
             logger.error(f"Failed to initialize ChromaVectorStore: {e}")
             raise ConnectionError(f"Failed to initialize vector store: {e}")
@@ -84,10 +83,27 @@ class ChromaVectorStore:
     def has_file(self, file_hash: str) -> bool:
         """Check if a file with the given hash exists in the collection."""
         try:
-            # Query for any document with this hash in metadata
+            logger.debug(f"Querying vector store for hash: {file_hash}")
             results = self.collection.get(where={"hash": file_hash}, limit=1)
-            # Chroma returns a dict with 'ids' key
+            logger.debug(f"Vector store query result for hash {file_hash}: {results}")
             return bool(results and results.get('ids'))
         except Exception as e:
             logger.error(f"Failed to check file existence in vector store: {e}")
             return False
+
+    def list_documents(self, pattern: Optional[str] = None) -> list[dict]:
+        """List all document metadata in the collection, optionally filtered by pattern (glob on path)."""
+        try:
+            logger.debug(f"Listing documents in collection '{self.collection_name}' with pattern: {pattern}")
+            # ChromaDB get() with no filter returns all
+            results = self.collection.get()
+            metadatas = results.get('metadatas', [])
+            if pattern:
+                filtered = [m for m in metadatas if 'path' in m and fnmatch.fnmatch(m['path'], pattern)]
+                logger.debug(f"Filtered {len(filtered)} documents matching pattern '{pattern}' out of {len(metadatas)} total.")
+                return filtered
+            logger.debug(f"Returning {len(metadatas)} document metadatas.")
+            return metadatas
+        except Exception as e:
+            logger.error(f"Failed to list documents: {e}")
+            raise VectorStoreError(f"Failed to list documents: {e}")

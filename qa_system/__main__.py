@@ -9,6 +9,7 @@ from typing import List, Optional
 from qa_system.config import get_config
 from qa_system.exceptions import QASystemError
 from qa_system.logging_setup import setup_logging
+from qa_system.list import get_list_module
 
 logging.basicConfig(
     level=logging.DEBUG,  # Default to INFO; can be overridden by setup_logging()
@@ -37,8 +38,9 @@ def parse_args() -> argparse.Namespace:
     )
     operation_group.add_argument(
         "--list",
-        action="store_true",
-        help="List all documents in the system"
+        nargs="?",
+        const="*",
+        help="List documents in the system (optionally filter by glob pattern)"
     )
     operation_group.add_argument(
         "--remove",
@@ -99,15 +101,17 @@ def process_add_files(files: List[str], config: dict) -> int:
             # Scan files and check if they need processing
             scan_results = scanner.scan_files(file_path)
             
-            # Patch: Add needs_processing to each result
             for result in scan_results:
-                result['needs_processing'] = not store.has_file(result['hash'])
+                logger.debug(f"Checking if file hash exists in vector DB: {result['hash']} for {result['path']}")
+                hash_exists = store.has_file(result['hash'])
+                logger.info(f"Hash check for {result['path']} (hash={result['hash']}): {'FOUND' if hash_exists else 'NOT FOUND'} in vector DB")
+                result['needs_processing'] = not hash_exists
             
             for result in scan_results:
                 if not result['needs_processing']:
-                    logger.info(f"Skipping already processed file: {result['path']}")
+                    logger.info(f"Skipping file (already exists in vector DB by hash): {result['path']} (hash={result['hash']})")
                     continue
-                
+                logger.info(f"File needs processing (not found in vector DB): {result['path']} (hash={result['hash']})")
                 # Get appropriate processor for file type
                 processor = get_processor_for_file_type(result['path'], config)
                 
@@ -119,6 +123,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                 for idx, chunk in enumerate(processed['chunks']):
                     meta = dict(processed['metadata'])
                     meta['id'] = f"{meta['path']}:{idx}"
+                    meta['hash'] = result['hash']  # Ensure hash is present in every chunk's metadata
                     chunk_metadatas.append(meta)
                 
                 # Generate embeddings
@@ -128,6 +133,8 @@ def process_add_files(files: List[str], config: dict) -> int:
                 )
                 # Overwrite embeddings['metadata'] with chunk_metadatas
                 embeddings['metadata'] = chunk_metadatas
+                
+                logger.debug(f"Chunk metadatas being added: {chunk_metadatas}")
                 
                 # Add to vector store
                 store.add_embeddings(
@@ -305,8 +312,17 @@ def main() -> int:
         # Process command
         if args.add:
             return process_add_files(args.add, config)
-        elif args.list:
-            return process_list(args.filter, config)
+        elif args.list is not None:
+            list_module = get_list_module(config)
+            pattern = args.list if args.list != '*' else None
+            docs = list_module.list_documents(pattern=pattern)
+            print(f"\nDocuments in vector store ({len(docs)} found):")
+            for doc in docs:
+                print(f"- {doc.get('path', '[no path]')} (hash={doc.get('hash', '[no hash]')})")
+            stats = list_module.get_collection_stats()
+            print(f"\nTotal documents: {stats['total_documents']}")
+            print(f"Document types: {stats['document_types']}")
+            return
         elif args.remove:
             return process_remove(args.remove, args.filter, config)
         elif args.query is not None:  # Empty string is valid for interactive mode
