@@ -30,6 +30,16 @@ class ChromaVectorStore:
         logger.debug(f"Called ChromaVectorStore.add_embeddings(embeddings=<len {len(embeddings)}>, texts=<len {len(texts)}>, metadatas=<len {len(metadatas)}>)")
         try:
             ids = [meta.get('id') or meta.get('path') or str(i) for i, meta in enumerate(metadatas)]
+            logger.debug(f"Embedding IDs to add: {ids}")
+            # Check for duplicate IDs
+            seen = set()
+            duplicates = set()
+            for id_ in ids:
+                if id_ in seen:
+                    duplicates.add(id_)
+                seen.add(id_)
+            if duplicates:
+                logger.warning(f"Duplicate IDs detected in embeddings: {duplicates}")
             self.collection.add(
                 embeddings=embeddings,
                 documents=texts,

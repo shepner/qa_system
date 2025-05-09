@@ -112,19 +112,28 @@ def process_add_files(files: List[str], config: dict) -> int:
                 processor = get_processor_for_file_type(result['path'], config)
                 
                 # Process file into chunks
-                processed = processor.process()
+                processed = processor.process(result['path'])
+                
+                # Assign unique IDs to each chunk's metadata
+                chunk_metadatas = []
+                for idx, chunk in enumerate(processed['chunks']):
+                    meta = dict(processed['metadata'])
+                    meta['id'] = f"{meta['path']}:{idx}"
+                    chunk_metadatas.append(meta)
                 
                 # Generate embeddings
                 embeddings = generator.generate_embeddings(
                     texts=processed['chunks'],
                     metadata=processed['metadata']
                 )
+                # Overwrite embeddings['metadata'] with chunk_metadatas
+                embeddings['metadata'] = chunk_metadatas
                 
                 # Add to vector store
                 store.add_embeddings(
-                    vectors=embeddings['vectors'],
+                    embeddings=embeddings['vectors'],
                     texts=embeddings['texts'],
-                    metadata=embeddings['metadata']
+                    metadatas=embeddings['metadata']
                 )
                 
                 logger.info(f"Successfully processed and added: {result['path']}")
