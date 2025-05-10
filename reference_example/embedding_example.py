@@ -10,7 +10,6 @@ import os
 # https://aistudio.google.com/app/apikey
 #
 # GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
-# GEMINI_API_KEY = "AIzaSyCabaqOzJ_WVkIv0zM7P41_o8oxbbC1lSs"
 # Load environment variables from .env file
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
