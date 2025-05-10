@@ -14,6 +14,9 @@ from qa_system.__main__ import (
 )
 from qa_system.config import Config
 from qa_system.exceptions import QASystemError
+from qa_system.query import QueryProcessor
+from qa_system.embedding import EmbeddingGenerator
+from qa_system.vector_store import ChromaVectorStore
 
 # Test data
 TEST_CONFIG = Config({
@@ -355,4 +358,60 @@ class TestMain:
                 result = main()
                 
                 assert result == 1
-                mock_logger.critical.assert_called_once() 
+                mock_logger.critical.assert_called_once()
+
+class DummyConfig:
+    def get_nested(self, key, default=None):
+        if key == 'EMBEDDING_MODEL.MODEL_NAME':
+            return 'gemini-embedding-exp-03-07'
+        if key == 'EMBEDDING_MODEL.BATCH_SIZE':
+            return 1
+        if key == 'EMBEDDING_MODEL.MAX_LENGTH':
+            return 3072
+        if key == 'EMBEDDING_MODEL.DIMENSIONS':
+            return 3
+        if key == 'VECTOR_STORE.PERSIST_DIRECTORY':
+            return '.'
+        if key == 'VECTOR_STORE.COLLECTION_NAME':
+            return 'qa_documents'
+        if key == 'VECTOR_STORE.DISTANCE_METRIC':
+            return 'cosine'
+        if key == 'VECTOR_STORE.TOP_K':
+            return 2
+        return default
+
+class DummyEmbeddingGenerator:
+    def __init__(self, config):
+        pass
+    def generate_embeddings(self, texts, metadata):
+        return {'vectors': [[0.1, 0.2, 0.3]], 'texts': texts, 'metadata': [metadata] * len(texts)}
+
+class DummyVectorStore:
+    def __init__(self, config):
+        pass
+    def query(self, query_vector, top_k=None, filter_criteria=None):
+        return {
+            'ids': [['doc1', 'doc2']],
+            'documents': [['This is a relevant chunk.', 'Another chunk.']],
+            'metadatas': [[{'path': 'doc1.txt'}, {'path': 'doc2.txt'}]],
+            'distances': [[0.1, 0.2]]
+        }
+
+@pytest.mark.integration
+def test_query_processor_integration():
+    processor = QueryProcessor(
+        DummyConfig(),
+        embedding_generator=DummyEmbeddingGenerator(DummyConfig()),
+        vector_store=DummyVectorStore(DummyConfig())
+    )
+    response = processor.process_query("What is relevant?")
+    assert response.success is True
+    assert response.text == "This is a relevant chunk."
+    assert isinstance(response.sources, list)
+    assert len(response.sources) == 2
+    assert response.sources[0].document == 'doc1.txt'
+    assert response.sources[0].similarity == pytest.approx(0.9)
+    assert response.sources[1].document == 'doc2.txt'
+    assert response.sources[1].similarity == pytest.approx(0.8)
+    assert response.confidence == pytest.approx(0.9)
+    assert response.error is None 

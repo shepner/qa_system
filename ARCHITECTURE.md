@@ -121,7 +121,15 @@ The implementation follows these key principles:
 5. Testing: Tests for each module
 
 ### 4.1 Build process
-Build incrementally.  Each function created must have a test built for it.  The tests must be run until the function is 100% operational.  Only then may the next function be created.
+
+Phase 1 - Write the architecture documents for each part (module) of the the application.  Keep the documents somewhat short - The longer they are, the less likely there will be success.  Tie the documents together with a core architecture document.
+
+Phase 2 - Create simple working examples of key functionality.  This will greatly improve outcomes later on.
+
+Phase 3 - Build the core structure and common services of the application using the architecture as a guide
+
+Phase 4 - Prioritize each archecture document based upon core importance.  For each architecture document, build the module as described along with the associated tests.  Use the associated reference example for this.
+
 
 ## 5. Dependencies
 Core dependencies are managed through requirements.txt and include:
