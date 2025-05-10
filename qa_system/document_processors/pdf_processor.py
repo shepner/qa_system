@@ -18,7 +18,20 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
             extracted = self.extract_metadata(file_path)
             metadata = {**extracted, **metadata}
         with open(file_path, 'rb') as f:
-            reader = pypdf.PdfReader(f)
+            try:
+                reader = pypdf.PdfReader(f)
+            except Exception as e:
+                # Handle cryptography errors for encrypted PDFs
+                if 'cryptography' in str(e) and 'AES' in str(e):
+                    self.logger.warning(f"File {file_path} is encrypted (AES) and cannot be processed: {e}. Skipping.")
+                    metadata['skipped'] = True
+                    metadata['skip_reason'] = 'encrypted-pdf-unsupported-crypto'
+                    return {
+                        'metadata': metadata,
+                        'chunks': [],
+                        'page_texts': []
+                    }
+                raise
             if reader.is_encrypted:
                 self.logger.warning(f"File {file_path} is password-protected and will be skipped.")
                 metadata['skipped'] = True
