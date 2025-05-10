@@ -42,4 +42,15 @@ class QueryError(VectorStoreError):
 
 class ValidationError(VectorStoreError):
     """Data validation errors."""
-    pass 
+    pass
+
+class DocumentNotFoundError(VectorStoreError):
+    """Raised when a document is not found in the vector store."""
+    pass
+
+class RemovalError(VectorStoreError):
+    """Raised when a removal operation fails."""
+    def __init__(self, message, requires_cleanup=False, document_id=None):
+        super().__init__(message)
+        self.requires_cleanup = requires_cleanup
+        self.document_id = document_id 

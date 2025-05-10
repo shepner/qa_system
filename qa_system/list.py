@@ -12,9 +12,11 @@ class ListModule:
         logger.debug(f"Initialized ListModule with config: {self.config}")
 
     def list_documents(self, pattern: Optional[str] = None) -> List[Dict]:
-        """Return list of document metadata, optionally filtered by glob pattern."""
+        """Return list of document metadata, optionally filtered by glob pattern. Also print full metadata for each document."""
         docs = self.store.list_documents(pattern=pattern)
         logger.info(f"Listing {len(docs)} documents (pattern={pattern})")
+        for i, doc in enumerate(docs, 1):
+            print(f"Document {i} metadata: {doc}")
         return docs
 
     def get_collection_stats(self) -> Dict:

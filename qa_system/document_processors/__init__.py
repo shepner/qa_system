@@ -27,11 +27,3 @@ class ListHandler:
     def list_documents(self, filter_pattern=None):
         self.logger.debug(f"Called ListHandler.list_documents(filter_pattern={filter_pattern})")
         return []
-
-class RemoveHandler:
-    def __init__(self, config):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.debug(f"Called RemoveHandler.__init__(config={config})")
-    def remove_documents(self, paths, filter_pattern=None):
-        self.logger.debug(f"Called RemoveHandler.remove_documents(paths={paths}, filter_pattern={filter_pattern})")
-        return {'removed': [], 'failed': {}, 'not_found': []}

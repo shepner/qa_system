@@ -67,15 +67,19 @@ class ChromaVectorStore:
             logger.error(f"Query failed: {e}")
             raise QueryError(f"Query failed: {e}")
 
-    def delete(self, filter_criteria: Dict[str, Any], require_confirmation: bool = False):
-        logger.debug(f"Called ChromaVectorStore.delete(filter_criteria={filter_criteria}, require_confirmation={require_confirmation})")
+    def delete(self, filter_criteria: Dict[str, Any] = None, ids: list = None, require_confirmation: bool = False):
+        logger.debug(f"Called ChromaVectorStore.delete(filter_criteria={filter_criteria}, ids={ids}, require_confirmation={require_confirmation})")
         try:
-            # ChromaDB supports deletion by ids or metadata filter
             if require_confirmation:
-                # In a real CLI, prompt user; here, just log
-                logger.info(f"Confirmation required for deletion: {filter_criteria}")
-            self.collection.delete(where=filter_criteria)
-            logger.info(f"Deleted documents matching: {filter_criteria}")
+                logger.info(f"Confirmation required for deletion: ids={ids}, filter_criteria={filter_criteria}")
+            if ids:
+                self.collection.delete(ids=ids)
+                logger.info(f"Deleted documents with ids: {ids}")
+            elif filter_criteria:
+                self.collection.delete(where=filter_criteria)
+                logger.info(f"Deleted documents matching: {filter_criteria}")
+            else:
+                raise ValueError("Must provide either ids or filter_criteria for deletion.")
         except Exception as e:
             logger.error(f"Failed to delete documents: {e}")
             raise VectorStoreError(f"Failed to delete documents: {e}")

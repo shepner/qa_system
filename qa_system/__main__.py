@@ -209,7 +209,7 @@ def process_remove(paths: List[str], filter_pattern: Optional[str], config: dict
         return 1
         
     try:
-        from qa_system.document_processors import RemoveHandler
+        from qa_system.remove_handler import RemoveHandler
         
         handler = RemoveHandler(config)
         result = handler.remove_documents(paths, filter_pattern)
