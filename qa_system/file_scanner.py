@@ -13,7 +13,7 @@ class FileScanner:
     Scans directories for files to be embedded, applying inclusion/exclusion rules and hashing.
     """
     def __init__(self, config: Any):
-        logger.debug(f"Called FileScanner.__init__(config={config})")
+        logger.info(f"Called FileScanner.__init__(config={config})")
         self.config = config.get_nested('FILE_SCANNER') if hasattr(config, 'get_nested') else config.get('FILE_SCANNER', {})
         self.document_path = Path(self.config.get('DOCUMENT_PATH', './docs'))
         self.allowed_extensions = set(self.config.get('ALLOWED_EXTENSIONS', []))

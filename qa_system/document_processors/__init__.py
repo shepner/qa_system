@@ -6,7 +6,7 @@ from .pdf_processor import PDFDocumentProcessor
 
 def get_processor_for_file_type(path, config):
     logger = logging.getLogger(__name__)
-    logger.debug(f"Called get_processor_for_file_type(path={path}, config={config})")
+    logger.info(f"Called get_processor_for_file_type(path={path}, config={config})")
     ext = str(path).lower().rsplit('.', 1)[-1] if '.' in str(path) else ''
     if ext == 'txt':
         return TextDocumentProcessor(config)
@@ -16,14 +16,14 @@ def get_processor_for_file_type(path, config):
         return PDFDocumentProcessor(config)
     class DummyProcessor:
         def process(self):
-            logger.debug("Called DummyProcessor.process()")
+            logger.info("Called DummyProcessor.process()")
             return {'chunks': [], 'metadata': {}}
     return DummyProcessor()
 
 class ListHandler:
     def __init__(self, config):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.debug(f"Called ListHandler.__init__(config={config})")
+        self.logger.info(f"Called ListHandler.__init__(config={config})")
     def list_documents(self, filter_pattern=None):
-        self.logger.debug(f"Called ListHandler.list_documents(filter_pattern={filter_pattern})")
+        self.logger.info(f"Called ListHandler.list_documents(filter_pattern={filter_pattern})")
         return []

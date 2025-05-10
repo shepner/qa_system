@@ -10,7 +10,7 @@ class Config:
     
     def __init__(self, config_data: dict):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.debug(f"Called Config.__init__(config_data={config_data})")
+        self.logger.info(f"Called Config.__init__(config_data={config_data})")
         self._config = config_data
         
     def get_nested(self, path: str, default=None):
@@ -23,7 +23,7 @@ class Config:
         Returns:
             Configuration value or default if not found
         """
-        self.logger.debug(f"Called Config.get_nested(path={path}, default={default})")
+        self.logger.info(f"Called Config.get_nested(path={path}, default={default})")
         current = self._config
         for key in path.split('.'):
             if isinstance(current, dict) and key in current:
@@ -46,7 +46,7 @@ def get_config(config_path: str = "./config/config.yaml") -> Config:
         yaml.YAMLError: If configuration file is invalid
     """
     logger = logging.getLogger(__name__)
-    logger.debug(f"Called get_config(config_path={config_path})")
+    logger.info(f"Called get_config(config_path={config_path})")
     config_path = Path(config_path) if config_path else Path("./config/config.yaml")
     
     if not config_path.exists():

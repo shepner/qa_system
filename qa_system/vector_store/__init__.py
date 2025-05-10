@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class ChromaVectorStore:
     def __init__(self, config):
-        logger.debug(f"Called ChromaVectorStore.__init__(config={config})")
+        logger.info(f"Called ChromaVectorStore.__init__(config={config})")
         try:
             vector_config = config.get_nested('VECTOR_STORE')
             self.persist_directory = vector_config.get('PERSIST_DIRECTORY', './data/vector_store')

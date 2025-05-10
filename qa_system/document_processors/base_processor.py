@@ -22,7 +22,7 @@ class BaseDocumentProcessor:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.debug(f"Called __init__(config={config})")
+        self.logger.info(f"Called __init__(config={config})")
         # setup_logging()  # Do not configure logging here; let main do it
         self.chunk_size = self._get_config('DOCUMENT_PROCESSING.MAX_CHUNK_SIZE', 3072)
         self.min_chunk_size = self._get_config('DOCUMENT_PROCESSING.MIN_CHUNK_SIZE', 1024)
@@ -30,13 +30,13 @@ class BaseDocumentProcessor:
         self.preserve_sentences = self._get_config('DOCUMENT_PROCESSING.PRESERVE_SENTENCES', True)
 
     def _get_config(self, key, default=None):
-        self.logger.debug(f"Called _get_config(key={key}, default={default})")
+        self.logger.info(f"Called _get_config(key={key}, default={default})")
         if hasattr(self.config, 'get_nested'):
             return self.config.get_nested(key, default)
         return getattr(self.config, key, default)
 
     def extract_metadata(self, file_path):
-        self.logger.debug(f"Called extract_metadata(file_path={file_path})")
+        self.logger.info(f"Called extract_metadata(file_path={file_path})")
         """Extract basic file metadata."""
         path = Path(file_path)
         stat = path.stat()
@@ -90,7 +90,7 @@ class BaseDocumentProcessor:
         return [c for c in chunks if len(c) >= self.min_chunk_size or len(chunks) == 1]
 
     def process(self, file_path, metadata=None):
-        self.logger.debug(f"Called process(file_path={file_path}, metadata={metadata})")
+        self.logger.info(f"Called process(file_path={file_path}, metadata={metadata})")
         """
         Main entry point for processing a file. Should be implemented by subclasses.
         Do not call directly; use run() to invoke with error handling.
@@ -98,7 +98,7 @@ class BaseDocumentProcessor:
         raise NotImplementedError("Subclasses must implement process()")
 
     def run(self, file_path, metadata=None):
-        self.logger.debug(f"Called run(file_path={file_path}, metadata={metadata})")
+        self.logger.info(f"Called run(file_path={file_path}, metadata={metadata})")
         """
         Run the processor with error handling and logging.
         Calls self.process(file_path, metadata) and wraps errors as ProcessingError.

@@ -13,7 +13,7 @@ class EmbeddingGenerator:
             config: Configuration object (must support get_nested)
         """
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.debug(f"Called EmbeddingGenerator.__init__(config={config})")
+        self.logger.info(f"Called EmbeddingGenerator.__init__(config={config})")
         self.config = config
         self.model_name = self.config.get_nested('EMBEDDING_MODEL.MODEL_NAME', 'embedding-001')
         self.batch_size = self.config.get_nested('EMBEDDING_MODEL.BATCH_SIZE', 32)

@@ -4,6 +4,7 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
     """
     Processor for PDF (.pdf) files. Extracts metadata, extracts text per page, chunks text, and returns results.
     Attempts to preserve page boundaries in chunking.
+    Skips password-protected PDFs with a warning.
     """
     def process(self, file_path, metadata=None):
         self.logger.debug(f"Processing PDF file: {file_path}")
@@ -18,6 +19,15 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
             metadata = {**extracted, **metadata}
         with open(file_path, 'rb') as f:
             reader = pypdf.PdfReader(f)
+            if reader.is_encrypted:
+                self.logger.warning(f"File {file_path} is password-protected and will be skipped.")
+                metadata['skipped'] = True
+                metadata['skip_reason'] = 'password-protected'
+                return {
+                    'metadata': metadata,
+                    'chunks': [],
+                    'page_texts': []
+                }
             all_chunks = []
             page_texts = []
             for i, page in enumerate(reader.pages):

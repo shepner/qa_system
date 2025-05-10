@@ -12,7 +12,7 @@ from qa_system.logging_setup import setup_logging
 from qa_system.list import get_list_module
 
 logging.basicConfig(
-    level=logging.DEBUG,  # Default to INFO; can be overridden by setup_logging()
+    level=logging.INFO,  # Default to INFO; can be overridden by setup_logging()
     format="%(levelname)s - %(message)s"
 )
 
@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     Returns:
         argparse.Namespace: Parsed command line arguments
     """
-    logger.debug("Called parse_args()")
+    logger.info("Called parse_args()")
     parser = argparse.ArgumentParser(
         description="QA System - Document processing and question-answering system"
     )
@@ -85,7 +85,7 @@ def process_add_files(files: List[str], config: dict) -> int:
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
-    logger.debug(f"Called process_add_files(files={files}, config={config})")
+    logger.info(f"Called process_add_files(files={files}, config={config})")
     try:
         from qa_system.document_processors import FileScanner, get_processor_for_file_type
         from qa_system.embedding import EmbeddingGenerator
@@ -102,7 +102,7 @@ def process_add_files(files: List[str], config: dict) -> int:
             scan_results = scanner.scan_files(file_path)
             
             for result in scan_results:
-                logger.debug(f"Checking if file hash exists in vector DB: {result['hash']} for {result['path']}")
+                logger.info(f"Checking if file hash exists in vector DB: {result['hash']} for {result['path']}")
                 hash_exists = store.has_file(result['hash'])
                 logger.info(f"Hash check for {result['path']} (hash={result['hash']}): {'FOUND' if hash_exists else 'NOT FOUND'} in vector DB")
                 result['needs_processing'] = not hash_exists
@@ -134,7 +134,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                 # Overwrite embeddings['metadata'] with chunk_metadatas
                 embeddings['metadata'] = chunk_metadatas
                 
-                logger.debug(f"Chunk metadatas being added: {chunk_metadatas}")
+                logger.info(f"Chunk metadatas being added: {chunk_metadatas}")
                 
                 # Add to vector store
                 store.add_embeddings(
@@ -161,7 +161,7 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
-    logger.debug(f"Called process_list(filter_pattern={filter_pattern}, config={config})")
+    logger.info(f"Called process_list(filter_pattern={filter_pattern}, config={config})")
     try:
         from qa_system.document_processors import ListHandler
         
@@ -203,7 +203,7 @@ def process_remove(paths: List[str], filter_pattern: Optional[str], config: dict
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
-    logger.debug(f"Called process_remove(paths={paths}, filter_pattern={filter_pattern}, config={config})")
+    logger.info(f"Called process_remove(paths={paths}, filter_pattern={filter_pattern}, config={config})")
     if not paths and not filter_pattern:
         logger.error("No paths or filter pattern provided for removal")
         return 1
@@ -246,7 +246,7 @@ def process_query(query: Optional[str], config: dict) -> int:
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
-    logger.debug(f"Called process_query(query={query}, config={config})")
+    logger.info(f"Called process_query(query={query}, config={config})")
     try:
         from qa_system.query import QueryProcessor
         
@@ -295,7 +295,7 @@ def main() -> int:
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
-    logger.debug("Called main()")
+    logger.info("Called main()")
     try:
         args = parse_args()
         

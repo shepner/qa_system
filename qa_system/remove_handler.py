@@ -50,7 +50,7 @@ class RemoveHandler:
 
     def remove_documents(self, pattern: Union[str, List[str]] = None, paths: Union[str, List[str]] = None, recursive: bool = None, verify_removal: bool = None, require_confirmation: bool = None) -> Dict[str, Any]:
         print("IN REMOVE_DOCUMENTS: pattern=", pattern, "paths=", paths, "recursive=", recursive, "verify_removal=", verify_removal, "require_confirmation=", require_confirmation)
-        logger.debug(f"Entered remove_documents with pattern={pattern}, paths={paths}, recursive={recursive}, verify_removal={verify_removal}, require_confirmation={require_confirmation}")
+        logger.info(f"Entered remove_documents with pattern={pattern}, paths={paths}, recursive={recursive}, verify_removal={verify_removal}, require_confirmation={require_confirmation}")
         # Normalize input: if pattern is None and paths is provided, use paths as pattern
         if pattern is None and paths is not None:
             # Accept a single string or a list for paths
