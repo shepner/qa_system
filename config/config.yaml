@@ -24,6 +24,11 @@ FILE_SCANNER:
     - ".*"
     - "__pycache__"
     - "*.pyc"
+    - "smart-chats"
+    - "_template"
+    - "Excalidraw"
+    - "stylesheets"
+    - "Tags.md"
   HASH_ALGORITHM: "sha256"
   SKIP_EXISTING: true
 
