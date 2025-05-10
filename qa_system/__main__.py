@@ -118,6 +118,11 @@ def process_add_files(files: List[str], config: dict) -> int:
                 # Process file into chunks
                 processed = processor.process(result['path'])
                 
+                # If the file was skipped (e.g., encrypted PDF), log and continue
+                if processed['metadata'].get('skipped'):
+                    logger.warning(f"Skipping file due to processing issue: {result['path']} (reason: {processed['metadata'].get('skip_reason')})")
+                    continue
+                
                 # Assign unique IDs to each chunk's metadata
                 chunk_metadatas = []
                 for idx, chunk in enumerate(processed['chunks']):
