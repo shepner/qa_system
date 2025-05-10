@@ -222,6 +222,9 @@ processed_data = processor.process(file_path, metadata)
   - `chunk_count`: Number of text chunks
   - `total_tokens`: Total token count
   - `checksum`: SHA256 hash of the file
+  - `url`: Any URL or link found in the document (Markdown, wikilinks, HTML links, etc.)
+  - `url_external`: Any external URL (starting with `http://`, `https://`, etc.)
+  - `url_internal`: Internal document links (Markdown or wikilinks that do not start with `http://` or `https://`)
 
 #### 3.2.2. Core Components
 
@@ -236,88 +239,61 @@ processed_data = processor.process(file_path, metadata)
 
 ##### 3.2.2.2. Supported Processors
 1. **PDF Processor** (`pdf_processor.py`):
-   - Text extraction with page preservation
+   - Text extraction with page preservation - Structured content (clean text with formatting, extracted images, table data, form fields)
    - Header pattern recognition
    - Intelligent chunking based on section boundaries and sentence preservation
    - PDF-specific metadata extraction
    - Token counting using tiktoken
-   - Document Analysis:
-     - Page layout detection
-     - Text flow analysis
-     - Font and style mapping
-     - Table and figure identification
-   - Content Extraction:
-     - Text extraction with positioning
-     - Image extraction and processing
-     - Table structure preservation
-     - Form field detection
-   - Metadata Processing:
-     - PDF document properties
-     - Embedded metadata
-     - Digital signatures
-     - Document security settings
-   - Structure Preservation:
-     - Section hierarchy
-     - Page boundaries
-     - Headers and footers
-     - Footnotes and references
-   - Output:
-     - Structured content (clean text with formatting, extracted images, table data, form fields)
-     - Enhanced metadata (document properties, structure map, content statistics, security information)
-     - Layout information (page coordinates, text positioning, element relationships, visual hierarchy)
+   - **PDF-specific metadata** (in addition to core metadata):
+     - `page_count`: Number of pages in the PDF
+     - `pdf_properties`: Dictionary of PDF document properties (title, author, subject, etc.)
+     - `embedded_metadata`: Any embedded XMP or custom metadata
+     - `digital_signatures`: List of digital signature information, if present
+     - `security_settings`: Document security settings (encryption, permissions, etc.)
+     - `structure_map`: Section hierarchy, page boundaries, headers/footers, etc.
+     - `content_statistics`: Table/figure/form counts, text/image/table extraction stats
+     - `layout_info`: Page coordinates, text positioning, element relationships, visual hierarchy
 
 2. **Text Processor** (`text_processor.py`):
    - Plain text file processing
    - Sentence-aware chunking
-   - Basic metadata extraction
+   - **Text-specific metadata**:
+     (none currently)
    
 3. **Markdown Processor** (`markdown_processor.py`):
    - Markdown document processing
    - Sentence-aware chunking with markdown structure preservation
-   - Basic metadata extraction
+   - **Markdown-specific metadata**:
+     - `tags`: Tags extracted from YAML frontmatter or hashtags (with `#` removed)
    
 4. **CSV Processor** (`csv_processor.py`):
    - CSV file processing
    - Row-based chunking with header preservation
-   - Basic metadata extraction
+   - **CSV-specific metadata**:
+     - (Add any CSV-specific metadata fields here if needed, e.g., `header_fields`, `row_count`)
    
 5. **Vision Document Processor** (`vision_processor.py`):
    - Support for multiple image formats (jpg, jpeg, png, gif, bmp, webp)
    - Integration with Google Vision API for image analysis
-   - Extracts and processes:
-     - Labels and objects detected in the image
-     - Text content through OCR
-     - Face detection (if enabled)
-     - Safe search annotations
-   - Generates image metadata including:
-     - Image dimensions and format
-     - Color profile information
-     - Vision API analysis results
    - Passes both the processed image data and Vision API results to the Embedding Generator
-   - Input:
-     - Image files in supported formats (PNG, JPEG, GIF, BMP, WEBP)
-     - Configuration settings from config.DOCUMENT_PROCESSING.VISION_PROCESSOR:
-       - API version and credentials
-       - Enabled feature types
-       - Batch processing parameters
-       - Performance settings
-   - Output:
-     - Structured image analysis results including:
-       - OCR text extraction
-       - Object detection and localization
-       - Label detection and classification
-       - Face detection results
-       - Safe search annotations
-       - Image properties (color, quality, etc.)
-     - Processed metadata:
-       - Image dimensions and format
-       - Processing timestamp
-       - Feature detection confidence scores
-       - Error states and warnings
-   - Technologies:
-     - Google Cloud Vision API
-     - Pillow/PIL for image handling
-     - Python async for concurrent API calls
+   - Detailed textual description of the image
+   - **Image-specific metadata**:
+     - `image_dimensions`: Width and height in pixels
+     - `image_format`: File format (e.g., PNG, JPEG)
+     - `color_profile`: Color profile information
+     - `vision_labels`: Labels/objects detected by Vision API
+     - `ocr_text`: Text content extracted via OCR
+     - `face_detection`: Face detection results (if enabled)
+     - `safe_search`: Safe search annotations
+     - `feature_confidence`: Confidence scores for detected features
+     - `processing_timestamp`: When the image was processed
+     - `error_states`: Any error or warning states encountered
+
+---
+
+**Note:**
+- All processors inherit the core metadata fields from section 3.2.1 and should only add fields that are specific to their file type or processing logic.
+- If a processor extracts a field that is relevant to all file types, consider moving it to the core metadata section.
 
 #### 3.2.3. Interface Specification
 
