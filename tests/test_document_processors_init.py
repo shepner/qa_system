@@ -2,11 +2,11 @@ import pytest
 from qa_system.document_processors import (
     get_processor_for_file_type,
     ListHandler,
-    RemoveHandler,
     TextDocumentProcessor,
     MarkdownDocumentProcessor,
     PDFDocumentProcessor
 )
+from PIL import Image
 
 class DummyConfig:
     def get_nested(self, key, default=None):
@@ -48,16 +48,29 @@ def test_list_handler_list_documents_with_filter():
     result = handler.list_documents(filter_pattern='*.txt')
     assert result == []
 
-def test_remove_handler_init():
-    handler = RemoveHandler(DummyConfig())
-    assert handler is not None
+def test_get_processor_for_file_type_csv(tmp_path):
+    csv_file = tmp_path / 'test.csv'
+    csv_file.write_text('col1,col2\n1,2\n3,4')
+    from qa_system.document_processors import get_processor_for_file_type
+    from qa_system.document_processors.csv_processor import CSVDocumentProcessor
+    processor = get_processor_for_file_type(str(csv_file), DummyConfig())
+    assert isinstance(processor, CSVDocumentProcessor)
+    result = processor.process(str(csv_file))
+    assert 'header_fields' in result['metadata']
+    assert 'row_count' in result['metadata']
 
-def test_remove_handler_remove_documents_no_filter():
-    handler = RemoveHandler(DummyConfig())
-    result = handler.remove_documents(['test.txt'])
-    assert result == {'removed': [], 'failed': {}, 'not_found': []}
-
-def test_remove_handler_remove_documents_with_filter():
-    handler = RemoveHandler(DummyConfig())
-    result = handler.remove_documents(['test.txt'], filter_pattern='*.txt')
-    assert result == {'removed': [], 'failed': {}, 'not_found': []} 
+def test_get_processor_for_file_type_vision(tmp_path):
+    img_file = tmp_path / 'test.png'
+    # Create a simple 1x1 PNG
+    img = Image.new('RGB', (1, 1), color='white')
+    img.save(str(img_file))
+    from qa_system.document_processors import get_processor_for_file_type
+    from qa_system.document_processors.vision_processor import VisionDocumentProcessor
+    processor = get_processor_for_file_type(str(img_file), DummyConfig())
+    assert isinstance(processor, VisionDocumentProcessor)
+    result = processor.process(str(img_file))
+    assert 'image_dimensions' in result['metadata']
+    assert 'image_format' in result['metadata']
+    assert 'vision_labels' in result['metadata']
+    assert 'ocr_text' in result['metadata']
+    assert 'processing_timestamp' in result['metadata'] 

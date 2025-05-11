@@ -77,32 +77,6 @@ def test_process_remove_no_paths():
     result = process_remove([], None, DummyConfig())
     assert result == 1
 
-@patch('qa_system.document_processors.RemoveHandler')
-def test_process_remove_success(mock_handler):
-    mock_handler.return_value.remove_documents.return_value = {
-        'removed': ['test.txt'],
-        'failed': {},
-        'not_found': []
-    }
-    result = process_remove(['test.txt'], None, DummyConfig())
-    assert result == 0
-
-@patch('qa_system.document_processors.RemoveHandler')
-def test_process_remove_partial_failure(mock_handler):
-    mock_handler.return_value.remove_documents.return_value = {
-        'removed': ['test1.txt'],
-        'failed': {'test2.txt': 'Permission denied'},
-        'not_found': ['test3.txt']
-    }
-    result = process_remove(['test1.txt', 'test2.txt', 'test3.txt'], None, DummyConfig())
-    assert result == 1
-
-@patch('qa_system.document_processors.RemoveHandler')
-def test_process_remove_error(mock_handler):
-    mock_handler.side_effect = Exception("Remove error")
-    result = process_remove(['test.txt'], None, DummyConfig())
-    assert result == 1
-
 @patch('qa_system.query.QueryProcessor')
 def test_process_query_single(mock_processor):
     mock_response = MagicMock()

@@ -14,7 +14,6 @@ cachetools
 execnet
 orjson
 jsonschema_specifications
-xdist
 uvloop
 chromadb>=1.0.8
 oauthlib
@@ -87,4 +86,4 @@ jsonschema
 pypdf>=3.17.0
 reportlab
 coverage>=7.8.0
-google-genai>=1.13.0 
+dotenv

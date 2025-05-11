@@ -26,6 +26,7 @@ ALLOWED_EXTRA_PACKAGES = {
     "_distutils_hack", "gevent", "greenlet", "chardet", "pandas", "yaml", "dateutil", "markdown_it", "grpc",
     "pil",  # prevent false positive for PIL
     "markdown-it-py", "grpcio", "pypdf2", "python-dateutil",  # allow as extras in requirements.txt
+    "pillow",  # for VisionDocumentProcessor
 }
 
 IGNORED_MODULES = {"_pytest"}

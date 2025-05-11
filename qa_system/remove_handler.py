@@ -27,7 +27,7 @@ class RemoveHandler:
         self.case_sensitive = remover_config.get('CASE_SENSITIVE', False)
         self.require_confirmation = remover_config.get('REQUIRE_CONFIRMATION', True)
         self.batch_size = remover_config.get('BATCH_SIZE', 20)
-        self.verify_removal = remover_config.get('VERIFY_REMOVAL', True)
+        self.verify_removal_flag = remover_config.get('VERIFY_REMOVAL', True)
 
     def find_matches(self, pattern: Union[str, List[str]]) -> List[Dict[str, Any]]:
         """Find documents matching the given pattern(s) in the vector store."""
@@ -38,8 +38,11 @@ class RemoveHandler:
         all_docs = self.vector_store.list_documents()
         matches = []
         for pat in patterns:
-            # Normalize pattern to absolute path if it looks like a path
-            pat_abs = os.path.abspath(os.path.expanduser(pat))
+            # Only normalize to absolute path if not a glob
+            if any(c in pat for c in ['*', '?', '[']):
+                pat_abs = pat
+            else:
+                pat_abs = os.path.abspath(os.path.expanduser(pat))
             for doc in all_docs:
                 doc_path = doc.get('path', '')
                 doc_path_abs = os.path.abspath(os.path.expanduser(doc_path))
@@ -73,7 +76,7 @@ class RemoveHandler:
             return {'removed': [], 'failed': [], 'not_found': [], 'errors': ["No pattern or paths provided"]}
         print("Normalized pattern for matching:", pattern)
         recursive = self.recursive if recursive is None else recursive
-        verify_removal = self.verify_removal if verify_removal is None else verify_removal
+        verify_removal = self.verify_removal_flag if verify_removal is None else verify_removal
         require_confirmation = self.require_confirmation if require_confirmation is None else require_confirmation
         result = {'removed': [], 'failed': [], 'not_found': [], 'errors': []}
         try:

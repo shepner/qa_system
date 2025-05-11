@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from qa_system.remove_handler import RemoveHandler
 from qa_system.exceptions import DocumentNotFoundError, RemovalError, ValidationError
+import os
 
 class DummyConfig:
     def get_nested(self, path, default=None):
@@ -16,7 +17,7 @@ class DummyConfig:
         return default
 
 def make_docs(paths):
-    return [{'id': f'id_{i}', 'path': p} for i, p in enumerate(paths)]
+    return [{'id': f'id_{i}', 'path': os.path.abspath(p)} for i, p in enumerate(paths)]
 
 @pytest.fixture
 def handler():

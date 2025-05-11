@@ -46,11 +46,6 @@ def mock_list_handler(mocker):
     return mocker.patch("qa_system.document_processors.ListHandler")
 
 @pytest.fixture
-def mock_remove_handler(mocker):
-    """Mock RemoveHandler class."""
-    return mocker.patch("qa_system.document_processors.RemoveHandler")
-
-@pytest.fixture
 def mock_query_processor(mocker):
     """Mock QueryProcessor class."""
     return mocker.patch("qa_system.query.QueryProcessor") 

@@ -1,11 +1,13 @@
 import pytest
 from pathlib import Path
+from PIL import Image
 
 from qa_system.file_scanner import FileScanner
 from qa_system.document_processors.text_processor import TextDocumentProcessor
 from qa_system.embedding import EmbeddingGenerator
 from qa_system.vector_store import ChromaVectorStore
 from qa_system.config import Config
+from qa_system.document_processors import get_processor_for_file_type
 
 @pytest.fixture
 def temp_config(tmp_path):
@@ -13,7 +15,7 @@ def temp_config(tmp_path):
     return Config({
         'FILE_SCANNER': {
             'DOCUMENT_PATH': str(tmp_path),
-            'ALLOWED_EXTENSIONS': ['txt'],
+            'ALLOWED_EXTENSIONS': ['txt', 'csv', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'],
             'EXCLUDE_PATTERNS': [],
             'HASH_ALGORITHM': 'sha256',
             'SKIP_EXISTING': True,
@@ -81,4 +83,32 @@ def test_add_flow_integration(tmp_path, temp_config):
     # 8. Re-scan: Should still find the file (no deduplication in this integration test)
     files_again = scanner.scan_files()
     file_info_again = next(f for f in files_again if f['path'].endswith("test.txt"))
-    assert file_info_again is not None 
+    assert file_info_again is not None
+
+def test_add_flow_with_csv_and_image(tmp_path, temp_config):
+    # Create a CSV file
+    csv_file = tmp_path / 'test.csv'
+    csv_file.write_text('a,b\n1,2\n3,4')
+    # Create an image file
+    img_file = tmp_path / 'test.jpg'
+    img = Image.new('RGB', (2, 2), color='blue')
+    img.save(str(img_file))
+    # Scan files
+    scanner = FileScanner(temp_config)
+    files = scanner.scan_files(str(tmp_path))
+    # Should find both files
+    found = {f['path'] for f in files}
+    assert any('test.csv' in f for f in found)
+    assert any('test.jpg' in f for f in found)
+    # Process CSV
+    csv_proc = get_processor_for_file_type(str(csv_file), temp_config)
+    csv_result = csv_proc.process(str(csv_file))
+    assert 'header_fields' in csv_result['metadata']
+    assert 'row_count' in csv_result['metadata']
+    # Process image
+    img_proc = get_processor_for_file_type(str(img_file), temp_config)
+    img_result = img_proc.process(str(img_file))
+    assert 'image_dimensions' in img_result['metadata']
+    assert 'image_format' in img_result['metadata']
+    assert 'vision_labels' in img_result['metadata']
+    assert 'ocr_text' in img_result['metadata'] 

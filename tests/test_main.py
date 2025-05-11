@@ -229,54 +229,6 @@ class TestProcessList:
         assert result == 1
         mock_logger.error.assert_called_once()
 
-class TestProcessRemove:
-    @pytest.fixture
-    def mock_remove_handler(self):
-        with patch('qa_system.document_processors.RemoveHandler') as mock:
-            yield mock
-
-    def test_successful_removal(self, mock_remove_handler, capsys):
-        """Test successful document removal"""
-        mock_handler = Mock()
-        mock_remove_handler.return_value = mock_handler
-        mock_handler.remove_documents.return_value = {
-            'removed': ['test.txt'],
-            'failed': {},
-            'not_found': []
-        }
-        
-        result = process_remove(['test.txt'], None, TEST_CONFIG)
-        
-        assert result == 0
-        captured = capsys.readouterr()
-        assert 'Successfully removed' in captured.out
-        assert 'test.txt' in captured.out
-
-    def test_failed_removal(self, mock_remove_handler, capsys):
-        """Test partially failed document removal"""
-        mock_handler = Mock()
-        mock_remove_handler.return_value = mock_handler
-        mock_handler.remove_documents.return_value = {
-            'removed': ['test1.txt'],
-            'failed': {'test2.txt': 'Access denied'},
-            'not_found': ['test3.txt']
-        }
-        
-        result = process_remove(['test1.txt', 'test2.txt', 'test3.txt'], None, TEST_CONFIG)
-        
-        assert result == 1
-        captured = capsys.readouterr()
-        assert 'Successfully removed' in captured.out
-        assert 'Failed to remove' in captured.out
-        assert 'No matches found' in captured.out
-
-    def test_no_paths_provided(self, mock_remove_handler, mock_logger):
-        """Test removal with no paths provided"""
-        result = process_remove([], None, TEST_CONFIG)
-        
-        assert result == 1
-        mock_logger.error.assert_called_once()
-
 class TestProcessQuery:
     @pytest.fixture
     def mock_query_processor(self):

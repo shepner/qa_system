@@ -68,6 +68,7 @@ class ChromaVectorStore:
             raise QueryError(f"Query failed: {e}")
 
     def delete(self, filter_criteria: Dict[str, Any] = None, ids: list = None, require_confirmation: bool = False):
+        logger.info(f"Called ChromaVectorStore.delete(filter_criteria={filter_criteria}, ids={ids}, require_confirmation={require_confirmation})")
         logger.debug(f"Called ChromaVectorStore.delete(filter_criteria={filter_criteria}, ids={ids}, require_confirmation={require_confirmation})")
         try:
             if require_confirmation:
