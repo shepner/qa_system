@@ -74,7 +74,7 @@ def test_add_flow_integration(tmp_path, temp_config):
     assert len(embeddings['vectors']) == len(processed['chunks'])
 
     # 6. Store in vector DB
-    vector_store.add_embeddings(embeddings['vectors'], processed['chunks'], [processed['metadata']] * len(processed['chunks']))
+    vector_store.add_embeddings(embeddings['vectors'], [chunk['text'] for chunk in processed['chunks']], [processed['metadata']] * len(processed['chunks']))
 
     # 7. Query the vector DB to ensure the embedding is present
     result = vector_store.query(embeddings['vectors'][0], top_k=1)
@@ -103,12 +103,34 @@ def test_add_flow_with_csv_and_image(tmp_path, temp_config):
     # Process CSV
     csv_proc = get_processor_for_file_type(str(csv_file), temp_config)
     csv_result = csv_proc.process(str(csv_file))
-    assert 'header_fields' in csv_result['metadata']
-    assert 'row_count' in csv_result['metadata']
+    meta = csv_result['metadata']
+    assert 'header_fields' in meta
+    assert 'row_count' in meta
+    assert 'chunk_count' in meta
+    assert 'total_tokens' in meta
+    assert 'urls' in meta
+    # Check at least one chunk for all required fields
+    if csv_result['chunks']:
+        chunk = csv_result['chunks'][0]
+        assert 'text' in chunk
+        cmeta = chunk['metadata']
+        for field in [
+            'chunk_index', 'start_offset', 'end_offset', 'tags', 'urls', 'url_contexts', 'topics', 'summary']:
+            assert field in cmeta
     # Process image
     img_proc = get_processor_for_file_type(str(img_file), temp_config)
     img_result = img_proc.process(str(img_file))
-    assert 'image_dimensions' in img_result['metadata']
-    assert 'image_format' in img_result['metadata']
-    assert 'vision_labels' in img_result['metadata']
-    assert 'ocr_text' in img_result['metadata'] 
+    meta = img_result['metadata']
+    for field in [
+        'image_dimensions', 'image_format', 'color_profile', 'vision_labels', 'ocr_text',
+        'face_detection', 'safe_search', 'feature_confidence', 'processing_timestamp', 'error_states',
+        'chunk_count', 'total_tokens']:
+        assert field in meta
+    # Check at least one chunk for all required fields
+    if img_result['chunks']:
+        chunk = img_result['chunks'][0]
+        assert 'text' in chunk
+        cmeta = chunk['metadata']
+        for field in [
+            'chunk_index', 'start_offset', 'end_offset', 'chunk_type', 'urls', 'url_contexts', 'topics', 'summary']:
+            assert field in cmeta 

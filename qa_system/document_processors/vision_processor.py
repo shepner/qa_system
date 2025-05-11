@@ -32,6 +32,22 @@ class VisionDocumentProcessor(BaseDocumentProcessor):
                 metadata['color_profile'] = img.mode
         except Exception as e:
             metadata['error_states'] = [str(e)]
+            # Ensure all required fields are present, even if empty
+            for key, default in [
+                ('image_dimensions', {}),
+                ('image_format', ''),
+                ('color_profile', ''),
+                ('vision_labels', []),
+                ('ocr_text', ''),
+                ('face_detection', []),
+                ('safe_search', {}),
+                ('feature_confidence', {}),
+                ('processing_timestamp', ''),
+                ('error_states', []),
+                ('urls', ''),
+            ]:
+                if key not in metadata:
+                    metadata[key] = default
             return {'chunks': []}
         # Simulate Vision API fields
         metadata['vision_labels'] = ['label1', 'label2']
@@ -72,6 +88,22 @@ class VisionDocumentProcessor(BaseDocumentProcessor):
         document_metadata = dict(metadata)
         document_metadata['chunk_count'] = len(chunk_dicts)
         document_metadata['total_tokens'] = sum(len(chunk['text']) for chunk in chunk_dicts)
+        # Ensure all required fields are present, even if empty
+        for key, default in [
+            ('image_dimensions', {}),
+            ('image_format', ''),
+            ('color_profile', ''),
+            ('vision_labels', []),
+            ('ocr_text', ''),
+            ('face_detection', []),
+            ('safe_search', {}),
+            ('feature_confidence', {}),
+            ('processing_timestamp', ''),
+            ('error_states', []),
+            ('urls', ''),
+        ]:
+            if key not in document_metadata:
+                document_metadata[key] = default
         return {
             'chunks': chunk_dicts,
             'metadata': document_metadata

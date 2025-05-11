@@ -117,6 +117,10 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         document_metadata['tags'] = self._list_to_csv(sorted(doc_tags))
         document_metadata['chunk_count'] = len(chunk_dicts)
         document_metadata['total_tokens'] = sum(len(chunk['text']) for chunk in chunk_dicts)
+        # Ensure all required fields are present, even if empty
+        for key in ['tags', 'urls']:
+            if key not in document_metadata:
+                document_metadata[key] = ''
         return {
             'chunks': chunk_dicts,
             'metadata': document_metadata

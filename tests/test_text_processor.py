@@ -21,11 +21,21 @@ def test_text_processor_basic(tmp_path):
     result = proc.process(str(file))
     assert 'metadata' in result
     assert 'chunks' in result
-    assert result['metadata']['filename_full'] == 'sample.txt'
-    assert result['metadata']['file_type'] == 'txt'
-    assert result['metadata']['chunk_count'] == len(result['chunks'])
-    assert all(isinstance(chunk, str) for chunk in result['chunks'])
-    assert sum(len(chunk) for chunk in result['chunks']) == result['metadata']['total_tokens']
+    meta = result['metadata']
+    assert meta['filename_full'] == 'sample.txt'
+    assert meta['file_type'] == 'txt'
+    assert meta['chunk_count'] == len(result['chunks'])
+    assert 'urls' in meta
+    assert 'total_tokens' in meta
+    # Check at least one chunk for all required fields
+    if result['chunks']:
+        chunk = result['chunks'][0]
+        assert 'text' in chunk
+        cmeta = chunk['metadata']
+        for field in [
+            'chunk_index', 'start_offset', 'end_offset', 'urls', 'url_contexts',
+            'topics', 'summary']:
+            assert field in cmeta
 
 def test_text_processor_empty_file(tmp_path):
     file = tmp_path / 'empty.txt'

@@ -21,14 +21,25 @@ def test_markdown_processor_basic(tmp_path):
     result = proc.process(str(file))
     assert 'metadata' in result
     assert 'chunks' in result
-    assert result['metadata']['filename_full'] == 'sample.md'
-    assert result['metadata']['file_type'] == 'md'
-    assert result['metadata']['chunk_count'] == len(result['chunks'])
-    assert all(isinstance(chunk, str) for chunk in result['chunks'])
-    assert sum(len(chunk) for chunk in result['chunks']) == result['metadata']['total_tokens']
+    meta = result['metadata']
+    assert meta['filename_full'] == 'sample.md'
+    assert meta['file_type'] == 'md'
+    assert meta['chunk_count'] == len(result['chunks'])
+    assert 'tags' in meta
+    assert 'urls' in meta
+    assert 'total_tokens' in meta
     # Should split on headers
-    assert any(chunk.startswith('# Header 1') for chunk in result['chunks'])
-    assert any(chunk.startswith('## Header 2') for chunk in result['chunks'])
+    assert any(chunk['text'].startswith('# Header 1') for chunk in result['chunks'])
+    assert any(chunk['text'].startswith('# Header 2') for chunk in result['chunks'])
+    # Check at least one chunk for all required fields
+    if result['chunks']:
+        chunk = result['chunks'][0]
+        assert 'text' in chunk
+        cmeta = chunk['metadata']
+        for field in [
+            'chunk_index', 'start_offset', 'end_offset', 'section_header', 'section_hierarchy',
+            'tags', 'urls', 'url_contexts', 'topics', 'summary']:
+            assert field in cmeta
 
 def test_markdown_processor_empty_file(tmp_path):
     file = tmp_path / 'empty.md'

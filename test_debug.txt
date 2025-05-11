@@ -1,1 +1,869 @@
-Debug file test
+============================= test session starts ==============================
+platform darwin -- Python 3.13.2, pytest-8.3.5, pluggy-1.5.0 -- /Users/shepner/src/qa_system/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/shepner/src/qa_system
+configfile: pytest.ini
+plugins: anyio-4.9.0, mock-3.14.0
+collecting ... collected 94 items
+
+tests/test_base_processor.py::test_extract_metadata PASSED               [  1%]
+tests/test_base_processor.py::test_chunk_text_sentence_aware PASSED      [  2%]
+tests/test_base_processor.py::test_chunk_text_overlap PASSED             [  3%]
+tests/test_base_processor.py::test_process_not_implemented PASSED        [  4%]
+tests/test_base_processor.py::test_logging_integration PASSED            [  5%]
+tests/test_base_processor.py::test_base_metadata_and_chunk_fields PASSED [  6%]
+tests/test_config.py::test_get_config_and_nested_access PASSED           [  7%]
+tests/test_config.py::test_config_file_not_found PASSED                  [  8%]
+tests/test_config.py::test_invalid_yaml PASSED                           [  9%]
+tests/test_document_processors_init.py::test_get_processor_for_file_type_txt PASSED [ 10%]
+tests/test_document_processors_init.py::test_get_processor_for_file_type_md PASSED [ 11%]
+tests/test_document_processors_init.py::test_get_processor_for_file_type_pdf PASSED [ 12%]
+tests/test_document_processors_init.py::test_get_processor_for_file_type_unknown PASSED [ 13%]
+tests/test_document_processors_init.py::test_get_processor_for_file_type_no_extension PASSED [ 14%]
+tests/test_document_processors_init.py::test_list_handler_init PASSED    [ 15%]
+tests/test_document_processors_init.py::test_list_handler_list_documents_no_filter PASSED [ 17%]
+tests/test_document_processors_init.py::test_list_handler_list_documents_with_filter PASSED [ 18%]
+tests/test_document_processors_init.py::test_get_processor_for_file_type_csv PASSED [ 19%]
+tests/test_document_processors_init.py::test_get_processor_for_file_type_vision PASSED [ 20%]
+tests/test_embedding.py::test_generate_embeddings_basic PASSED           [ 21%]
+tests/test_embedding.py::test_generate_embeddings_empty PASSED           [ 22%]
+tests/test_embedding.py::test_generate_embeddings_batching PASSED        [ 23%]
+tests/test_file_scanner.py::test_scan_files_basic PASSED                 [ 24%]
+tests/test_file_scanner.py::test_scan_files_empty PASSED                 [ 25%]
+tests/test_file_scanner.py::test_scan_files_invalid_path PASSED          [ 26%]
+tests/test_file_scanner.py::test_scan_files_unsupported_hash PASSED      [ 27%]
+tests/test_file_scanner.py::test_scan_files_exclude_pattern PASSED       [ 28%]
+tests/test_integration_add_flow.py::test_add_flow_integration PASSED     [ 29%]
+tests/test_integration_add_flow.py::test_add_flow_with_csv_and_image PASSED [ 30%]
+tests/test_logging_setup.py::test_logging_creates_log_file PASSED        [ 31%]
+tests/test_logging_setup.py::test_logging_level_respected PASSED         [ 32%]
+tests/test_logging_setup.py::test_log_rotation PASSED                    [ 34%]
+tests/test_logging_setup.py::test_console_and_file_output PASSED         [ 35%]
+tests/test_logging_setup.py::test_debug_level_and_format PASSED          [ 36%]
+tests/test_logging_setup.py::test_debug_entry_logging_for_function_calls FAILED [ 37%]
+tests/test_main.py::TestParseArgs::test_add_operation PASSED             [ 38%]
+tests/test_main.py::TestParseArgs::test_list_operation PASSED            [ 39%]
+tests/test_main.py::TestParseArgs::test_remove_operation PASSED          [ 40%]
+tests/test_main.py::TestParseArgs::test_query_operation PASSED           [ 41%]
+tests/test_main.py::TestParseArgs::test_query_interactive_mode PASSED    [ 42%]
+tests/test_main.py::TestParseArgs::test_debug_flag PASSED                [ 43%]
+tests/test_main.py::TestParseArgs::test_custom_config PASSED             [ 44%]
+tests/test_main.py::TestProcessAddFiles::test_successful_processing FAILED [ 45%]
+tests/test_main.py::TestProcessAddFiles::test_skip_processed_file FAILED [ 46%]
+tests/test_main.py::TestProcessAddFiles::test_processing_error PASSED    [ 47%]
+tests/test_main.py::TestProcessList::test_successful_listing PASSED      [ 48%]
+tests/test_main.py::TestProcessList::test_empty_listing PASSED           [ 50%]
+tests/test_main.py::TestProcessList::test_listing_error PASSED           [ 51%]
+tests/test_main.py::TestProcessQuery::test_single_query PASSED           [ 52%]
+tests/test_main.py::TestProcessQuery::test_interactive_mode PASSED       [ 53%]
+tests/test_main.py::TestProcessQuery::test_query_error PASSED            [ 54%]
+tests/test_main.py::TestMain::test_successful_execution FAILED           [ 55%]
+tests/test_main.py::TestMain::test_qa_system_error FAILED                [ 56%]
+tests/test_main.py::TestMain::test_unexpected_error FAILED               [ 57%]
+tests/test_main.py::test_query_processor_integration PASSED              [ 58%]
+tests/test_main_additional.py::test_process_add_files_file_not_found PASSED [ 59%]
+tests/test_main_additional.py::test_process_add_files_empty_list PASSED  [ 60%]
+tests/test_main_additional.py::test_process_add_files_scanner_error PASSED [ 61%]
+tests/test_main_additional.py::test_process_list_empty PASSED            [ 62%]
+tests/test_main_additional.py::test_process_list_with_documents PASSED   [ 63%]
+tests/test_main_additional.py::test_process_list_error PASSED            [ 64%]
+tests/test_main_additional.py::test_process_remove_no_paths PASSED       [ 65%]
+tests/test_main_additional.py::test_process_query_single PASSED          [ 67%]
+tests/test_main_additional.py::test_process_query_error PASSED           [ 68%]
+tests/test_main_additional.py::test_process_query_interactive PASSED     [ 69%]
+tests/test_main_additional.py::test_process_query_interactive_keyboard_interrupt PASSED [ 70%]
+tests/test_main_additional.py::test_main_success FAILED                  [ 71%]
+tests/test_main_additional.py::test_main_qa_system_error PASSED          [ 72%]
+tests/test_main_additional.py::test_main_unexpected_error PASSED         [ 73%]
+tests/test_markdown_processor.py::test_markdown_processor_basic FAILED   [ 74%]
+tests/test_markdown_processor.py::test_markdown_processor_empty_file PASSED [ 75%]
+tests/test_markdown_processor.py::test_markdown_processor_metadata_override PASSED [ 76%]
+tests/test_pdf_processor.py::test_pdf_processor_basic PASSED             [ 77%]
+tests/test_pdf_processor.py::test_pdf_processor_metadata_override PASSED [ 78%]
+tests/test_pdf_processor.py::test_pdf_processor_import_error PASSED      [ 79%]
+tests/test_pdf_processor.py::test_pdf_processor_file_error PASSED        [ 80%]
+tests/test_pdf_processor.py::test_pdf_processor_corrupted_file PASSED    [ 81%]
+tests/test_remove_handler.py::test_find_matches PASSED                   [ 82%]
+tests/test_remove_handler.py::test_remove_documents_success FAILED       [ 84%]
+tests/test_remove_handler.py::test_remove_documents_not_found PASSED     [ 85%]
+tests/test_remove_handler.py::test_remove_documents_batch_failure FAILED [ 86%]
+tests/test_remove_handler.py::test_verify_removal PASSED                 [ 87%]
+tests/test_remove_handler.py::test_cleanup_failed_removal PASSED         [ 88%]
+tests/test_requirements.py::test_requirements_dynamic PASSED             [ 89%]
+tests/test_text_processor.py::test_text_processor_basic PASSED           [ 90%]
+tests/test_text_processor.py::test_text_processor_empty_file PASSED      [ 91%]
+tests/test_text_processor.py::test_text_processor_metadata_override PASSED [ 92%]
+tests/test_vector_store.py::test_initialization PASSED                   [ 93%]
+tests/test_vector_store.py::test_add_and_query_embeddings PASSED         [ 94%]
+tests/test_vector_store.py::test_delete_embeddings PASSED                [ 95%]
+tests/test_vector_store.py::test_error_handling_on_bad_init FAILED       [ 96%]
+tests/test_vector_store.py::test_error_handling_on_add PASSED            [ 97%]
+tests/test_vector_store.py::test_error_handling_on_query PASSED          [ 98%]
+tests/test_vector_store.py::test_error_handling_on_delete PASSED         [100%]
+
+=================================== FAILURES ===================================
+_________________ test_debug_entry_logging_for_function_calls __________________
+
+tmp_path = PosixPath('/private/var/folders/d2/r_89717x5m7dh95_nkl2vlhh0000gp/T/pytest-of-shepner/pytest-15/test_debug_entry_logging_for_f0')
+caplog = <_pytest.logging.LogCaptureFixture object at 0x107c64a50>
+
+    def test_debug_entry_logging_for_function_calls(tmp_path, caplog):
+        import sys
+        import types
+        from unittest.mock import patch
+        import pytest
+        from qa_system import __main__
+        from qa_system.config import get_config, Config
+        from qa_system.file_scanner import FileScanner
+        from qa_system.document_processors.base_processor import BaseDocumentProcessor
+        from qa_system.embedding import EmbeddingGenerator
+        from qa_system.vector_store import ChromaVectorStore
+        from qa_system.query import QueryProcessor
+    
+        caplog.set_level("DEBUG")
+    
+        # Patch sys.argv for parse_args
+        with patch.object(sys, 'argv', ['prog', '--list']):
+            try:
+                __main__.parse_args()
+            except SystemExit:
+                pass
+        __main__.process_list(None, Config({
+            'LOGGING': {'LEVEL': 'DEBUG'},
+            'FILE_SCANNER': {
+                'DOCUMENT_PATH': './docs',
+                'ALLOWED_EXTENSIONS': ['txt'],
+                'EXCLUDE_PATTERNS': [],
+                'HASH_ALGORITHM': 'sha256',
+                'SKIP_EXISTING': True
+            },
+            'DOCUMENT_PROCESSING': {
+                'MAX_CHUNK_SIZE': 50,
+                'MIN_CHUNK_SIZE': 10,
+                'CHUNK_OVERLAP': 10,
+                'PRESERVE_SENTENCES': True
+            },
+            'VECTOR_STORE': {
+                'PERSIST_DIRECTORY': './data/vector_store',
+                'COLLECTION_NAME': 'qa_documents',
+                'DISTANCE_METRIC': 'cosine',
+                'TOP_K': 10
+            }
+        }))
+        __main__.process_remove([], None, Config({'LOGGING': {'LEVEL': 'DEBUG'}}))
+    
+        # Test config
+        config = Config({
+            'LOGGING': {'LEVEL': 'DEBUG'},
+            'FILE_SCANNER': {
+                'DOCUMENT_PATH': './docs',
+                'ALLOWED_EXTENSIONS': ['txt'],
+                'EXCLUDE_PATTERNS': [],
+                'HASH_ALGORITHM': 'sha256',
+                'SKIP_EXISTING': True
+            },
+            'DOCUMENT_PROCESSING': {
+                'MAX_CHUNK_SIZE': 50,
+                'MIN_CHUNK_SIZE': 10,
+                'CHUNK_OVERLAP': 10,
+                'PRESERVE_SENTENCES': True
+            },
+            'VECTOR_STORE': {
+                'PERSIST_DIRECTORY': './data/vector_store',
+                'COLLECTION_NAME': 'qa_documents',
+                'DISTANCE_METRIC': 'cosine',
+                'TOP_K': 10
+            }
+        })
+        config.get_nested('LOGGING.LEVEL')
+        get_config()
+    
+        # Test file_scanner
+        scanner = FileScanner(config)
+        # Don't actually scan files, just test method entry
+        try:
+            scanner._is_allowed(tmp_path)
+            scanner._is_excluded(tmp_path)
+        except Exception:
+            pass
+    
+        # Test base processor
+        class DummyProcessor(BaseDocumentProcessor):
+            def process(self, file_path, metadata=None):
+                return {'chunks': [], 'metadata': {}}
+        proc = DummyProcessor(config)
+        proc.chunk_text('Hello. World!')
+        proc.extract_metadata(str(tmp_path))
+        try:
+            proc.run('nonexistent.txt')
+        except Exception:
+            pass
+    
+        # Test embedding
+        emb = EmbeddingGenerator(config)
+        emb.generate_embeddings(['a', 'b'], {'meta': 1})
+    
+        # Test vector store
+        store = ChromaVectorStore(config)
+        try:
+            store.add_embeddings([[0.1]], ['a'], [{'id': 'a'}])
+            store.query([0.1], 1, None)
+            store.delete({'id': 'a'})
+        except Exception:
+            pass
+    
+        # Test query processor
+        qp = QueryProcessor(config)
+        qp.process_query('test')
+    
+        # Now check that debug entry logs are present for each
+        debug_lines = caplog.text.splitlines()
+        assert any('Called parse_args()' in l for l in debug_lines)
+        assert any('Called process_list' in l for l in debug_lines)
+        assert any('Called process_remove' in l for l in debug_lines)
+        assert any('Called Config.__init__' in l for l in debug_lines)
+        assert any('Called Config.get_nested' in l for l in debug_lines)
+        assert any('Called get_config' in l for l in debug_lines)
+        assert any('Called FileScanner.__init__' in l for l in debug_lines)
+        assert any('Called FileScanner._is_allowed' in l for l in debug_lines)
+        assert any('Called FileScanner._is_excluded' in l for l in debug_lines)
+        assert any('Called chunk_text' in l for l in debug_lines)
+        assert any('Called extract_metadata' in l for l in debug_lines)
+        assert any('Called EmbeddingGenerator.__init__' in l for l in debug_lines)
+        assert any('Called EmbeddingGenerator.generate_embeddings' in l for l in debug_lines)
+        assert any('Called ChromaVectorStore.__init__' in l for l in debug_lines)
+        assert any('Called ChromaVectorStore.add_embeddings' in l for l in debug_lines)
+        assert any('Called ChromaVectorStore.query' in l for l in debug_lines)
+>       assert any('Called ChromaVectorStore.delete' in l for l in debug_lines)
+E       assert False
+E        +  where False = any(<generator object test_debug_entry_logging_for_function_calls.<locals>.<genexpr> at 0x107c5f9f0>)
+
+tests/test_logging_setup.py:207: AssertionError
+----------------------------- Captured stdout call -----------------------------
+No documents found
+----------------------------- Captured stderr call -----------------------------
+INFO - Called parse_args()
+INFO - Called Config.__init__(config_data={'LOGGING': {'LEVEL': 'DEBUG'}, 'FILE_SCANNER': {'DOCUMENT_PATH': './docs', 'ALLOWED_EXTENSIONS': ['txt'], 'EXCLUDE_PATTERNS': [], 'HASH_ALGORITHM': 'sha256', 'SKIP_EXISTING': True}, 'DOCUMENT_PROCESSING': {'MAX_CHUNK_SIZE': 50, 'MIN_CHUNK_SIZE': 10, 'CHUNK_OVERLAP': 10, 'PRESERVE_SENTENCES': True}, 'VECTOR_STORE': {'PERSIST_DIRECTORY': './data/vector_store', 'COLLECTION_NAME': 'qa_documents', 'DISTANCE_METRIC': 'cosine', 'TOP_K': 10}})
+INFO - Called process_list(filter_pattern=None, config=<qa_system.config.Config object at 0x107c80fc0>)
+INFO - Called ListHandler.__init__(config=<qa_system.config.Config object at 0x107c80fc0>)
+INFO - Called ListHandler.list_documents(filter_pattern=None)
+INFO - Called Config.__init__(config_data={'LOGGING': {'LEVEL': 'DEBUG'}})
+INFO - Called process_remove(paths=[], filter_pattern=None, config=<qa_system.config.Config object at 0x107c68cb0>)
+ERROR - No paths or filter pattern provided for removal
+INFO - Called Config.__init__(config_data={'LOGGING': {'LEVEL': 'DEBUG'}, 'FILE_SCANNER': {'DOCUMENT_PATH': './docs', 'ALLOWED_EXTENSIONS': ['txt'], 'EXCLUDE_PATTERNS': [], 'HASH_ALGORITHM': 'sha256', 'SKIP_EXISTING': True}, 'DOCUMENT_PROCESSING': {'MAX_CHUNK_SIZE': 50, 'MIN_CHUNK_SIZE': 10, 'CHUNK_OVERLAP': 10, 'PRESERVE_SENTENCES': True}, 'VECTOR_STORE': {'PERSIST_DIRECTORY': './data/vector_store', 'COLLECTION_NAME': 'qa_documents', 'DISTANCE_METRIC': 'cosine', 'TOP_K': 10}})
+INFO - Called Config.get_nested(path=LOGGING.LEVEL, default=None)
+INFO - Called get_config(config_path=./config/config.yaml)
+INFO - Called Config.__init__(config_data={'LOGGING': {'LEVEL': 'INFO', 'LOG_FILE': 'logs/qa_system.log'}, 'SECURITY': {'GOOGLE_APPLICATION_CREDENTIALS': '/Users/shepner/credentials.json', 'GOOGLE_CLOUD_REGION': None, 'GOOGLE_CLOUD_PROJECT': None, 'GOOGLE_VISION_API_KEY': None, 'GEMINI_API_KEY': None}, 'FILE_SCANNER': {'DOCUMENT_PATH': './docs', 'ALLOWED_EXTENSIONS': ['txt', 'md', 'pdf'], 'EXCLUDE_PATTERNS': ['.*', '__pycache__', '*.pyc', 'smart-chats', '_template', 'Excalidraw', 'stylesheets', 'Tags.md'], 'HASH_ALGORITHM': 'sha256', 'SKIP_EXISTING': True}, 'DOCUMENT_PROCESSING': {'MAX_CHUNK_SIZE': 3072, 'MIN_CHUNK_SIZE': 1024, 'CHUNK_OVERLAP': 768, 'CONCURRENT_TASKS': 6, 'BATCH_SIZE': 50, 'PRESERVE_SENTENCES': True}, 'VECTOR_STORE': {'TYPE': 'chroma', 'PERSIST_DIRECTORY': './data/vector_store', 'COLLECTION_NAME': 'qa_documents', 'DISTANCE_METRIC': 'cosine', 'TOP_K': 40}})
+INFO - Called FileScanner.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO - Called Config.get_nested(path=FILE_SCANNER, default=None)
+DEBUG - Called FileScanner._is_allowed(file_path=/private/var/folders/d2/r_89717x5m7dh95_nkl2vlhh0000gp/T/pytest-of-shepner/pytest-15/test_debug_entry_logging_for_f0)
+DEBUG - Called FileScanner._is_excluded(file_path=/private/var/folders/d2/r_89717x5m7dh95_nkl2vlhh0000gp/T/pytest-of-shepner/pytest-15/test_debug_entry_logging_for_f0)
+INFO - Called __init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO - Called _get_config(key=DOCUMENT_PROCESSING.MAX_CHUNK_SIZE, default=3072)
+INFO - Called Config.get_nested(path=DOCUMENT_PROCESSING.MAX_CHUNK_SIZE, default=3072)
+INFO - Called _get_config(key=DOCUMENT_PROCESSING.MIN_CHUNK_SIZE, default=1024)
+INFO - Called Config.get_nested(path=DOCUMENT_PROCESSING.MIN_CHUNK_SIZE, default=1024)
+INFO - Called _get_config(key=DOCUMENT_PROCESSING.CHUNK_OVERLAP, default=768)
+INFO - Called Config.get_nested(path=DOCUMENT_PROCESSING.CHUNK_OVERLAP, default=768)
+INFO - Called _get_config(key=DOCUMENT_PROCESSING.PRESERVE_SENTENCES, default=True)
+INFO - Called Config.get_nested(path=DOCUMENT_PROCESSING.PRESERVE_SENTENCES, default=True)
+DEBUG - Called chunk_text(text=<len 13>)
+INFO - Called extract_metadata(file_path=/private/var/folders/d2/r_89717x5m7dh95_nkl2vlhh0000gp/T/pytest-of-shepner/pytest-15/test_debug_entry_logging_for_f0)
+INFO - Called run(file_path=nonexistent.txt, metadata=None)
+INFO - Called EmbeddingGenerator.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO - Called Config.get_nested(path=EMBEDDING_MODEL.MODEL_NAME, default=embedding-001)
+INFO - Called Config.get_nested(path=EMBEDDING_MODEL.BATCH_SIZE, default=32)
+INFO - Called Config.get_nested(path=EMBEDDING_MODEL.MAX_LENGTH, default=3072)
+INFO - Called Config.get_nested(path=EMBEDDING_MODEL.DIMENSIONS, default=768)
+DEBUG - Called EmbeddingGenerator.generate_embeddings(texts=<len 2>, metadata={'meta': 1})
+INFO - Called ChromaVectorStore.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO - Called Config.get_nested(path=VECTOR_STORE, default=None)
+DEBUG - Starting component System
+DEBUG - Starting component Posthog
+DEBUG - Called ChromaVectorStore.add_embeddings(embeddings=<len 1>, texts=<len 1>, metadatas=<len 1>)
+DEBUG - Embedding IDs to add: ['a']
+ERROR - Failed to add embeddings: Collection expecting embedding with dimension of 768, got 1
+DEBUG - Called QueryProcessor.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO - Called EmbeddingGenerator.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO - Called Config.get_nested(path=EMBEDDING_MODEL.MODEL_NAME, default=embedding-001)
+INFO - Called Config.get_nested(path=EMBEDDING_MODEL.BATCH_SIZE, default=32)
+INFO - Called Config.get_nested(path=EMBEDDING_MODEL.MAX_LENGTH, default=3072)
+INFO - Called Config.get_nested(path=EMBEDDING_MODEL.DIMENSIONS, default=768)
+INFO - Called ChromaVectorStore.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO - Called Config.get_nested(path=VECTOR_STORE, default=None)
+DEBUG - Called EmbeddingGenerator.generate_embeddings(texts=<len 1>, metadata={'task_type': 'RETRIEVAL_QUERY'})
+DEBUG - Called ChromaVectorStore.query(query_vector=<len 768>, top_k=None, filter_criteria=None)
+INFO - Query returned 5 results from collection 'qa_documents'
+------------------------------ Captured log call -------------------------------
+INFO     qa_system.__main__:__main__.py:27 Called parse_args()
+INFO     Config:config.py:13 Called Config.__init__(config_data={'LOGGING': {'LEVEL': 'DEBUG'}, 'FILE_SCANNER': {'DOCUMENT_PATH': './docs', 'ALLOWED_EXTENSIONS': ['txt'], 'EXCLUDE_PATTERNS': [], 'HASH_ALGORITHM': 'sha256', 'SKIP_EXISTING': True}, 'DOCUMENT_PROCESSING': {'MAX_CHUNK_SIZE': 50, 'MIN_CHUNK_SIZE': 10, 'CHUNK_OVERLAP': 10, 'PRESERVE_SENTENCES': True}, 'VECTOR_STORE': {'PERSIST_DIRECTORY': './data/vector_store', 'COLLECTION_NAME': 'qa_documents', 'DISTANCE_METRIC': 'cosine', 'TOP_K': 10}})
+INFO     qa_system.__main__:__main__.py:169 Called process_list(filter_pattern=None, config=<qa_system.config.Config object at 0x107c80fc0>)
+INFO     ListHandler:__init__.py:32 Called ListHandler.__init__(config=<qa_system.config.Config object at 0x107c80fc0>)
+INFO     ListHandler:__init__.py:34 Called ListHandler.list_documents(filter_pattern=None)
+INFO     Config:config.py:13 Called Config.__init__(config_data={'LOGGING': {'LEVEL': 'DEBUG'}})
+INFO     qa_system.__main__:__main__.py:211 Called process_remove(paths=[], filter_pattern=None, config=<qa_system.config.Config object at 0x107c68cb0>)
+ERROR    qa_system.__main__:__main__.py:213 No paths or filter pattern provided for removal
+INFO     Config:config.py:13 Called Config.__init__(config_data={'LOGGING': {'LEVEL': 'DEBUG'}, 'FILE_SCANNER': {'DOCUMENT_PATH': './docs', 'ALLOWED_EXTENSIONS': ['txt'], 'EXCLUDE_PATTERNS': [], 'HASH_ALGORITHM': 'sha256', 'SKIP_EXISTING': True}, 'DOCUMENT_PROCESSING': {'MAX_CHUNK_SIZE': 50, 'MIN_CHUNK_SIZE': 10, 'CHUNK_OVERLAP': 10, 'PRESERVE_SENTENCES': True}, 'VECTOR_STORE': {'PERSIST_DIRECTORY': './data/vector_store', 'COLLECTION_NAME': 'qa_documents', 'DISTANCE_METRIC': 'cosine', 'TOP_K': 10}})
+INFO     Config:config.py:26 Called Config.get_nested(path=LOGGING.LEVEL, default=None)
+INFO     qa_system.config:config.py:49 Called get_config(config_path=./config/config.yaml)
+INFO     Config:config.py:13 Called Config.__init__(config_data={'LOGGING': {'LEVEL': 'INFO', 'LOG_FILE': 'logs/qa_system.log'}, 'SECURITY': {'GOOGLE_APPLICATION_CREDENTIALS': '/Users/shepner/credentials.json', 'GOOGLE_CLOUD_REGION': None, 'GOOGLE_CLOUD_PROJECT': None, 'GOOGLE_VISION_API_KEY': None, 'GEMINI_API_KEY': None}, 'FILE_SCANNER': {'DOCUMENT_PATH': './docs', 'ALLOWED_EXTENSIONS': ['txt', 'md', 'pdf'], 'EXCLUDE_PATTERNS': ['.*', '__pycache__', '*.pyc', 'smart-chats', '_template', 'Excalidraw', 'stylesheets', 'Tags.md'], 'HASH_ALGORITHM': 'sha256', 'SKIP_EXISTING': True}, 'DOCUMENT_PROCESSING': {'MAX_CHUNK_SIZE': 3072, 'MIN_CHUNK_SIZE': 1024, 'CHUNK_OVERLAP': 768, 'CONCURRENT_TASKS': 6, 'BATCH_SIZE': 50, 'PRESERVE_SENTENCES': True}, 'VECTOR_STORE': {'TYPE': 'chroma', 'PERSIST_DIRECTORY': './data/vector_store', 'COLLECTION_NAME': 'qa_documents', 'DISTANCE_METRIC': 'cosine', 'TOP_K': 40}})
+INFO     qa_system.file_scanner:file_scanner.py:16 Called FileScanner.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO     Config:config.py:26 Called Config.get_nested(path=FILE_SCANNER, default=None)
+DEBUG    qa_system.file_scanner:file_scanner.py:74 Called FileScanner._is_allowed(file_path=/private/var/folders/d2/r_89717x5m7dh95_nkl2vlhh0000gp/T/pytest-of-shepner/pytest-15/test_debug_entry_logging_for_f0)
+DEBUG    qa_system.file_scanner:file_scanner.py:78 Called FileScanner._is_excluded(file_path=/private/var/folders/d2/r_89717x5m7dh95_nkl2vlhh0000gp/T/pytest-of-shepner/pytest-15/test_debug_entry_logging_for_f0)
+INFO     DummyProcessor:base_processor.py:25 Called __init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO     DummyProcessor:base_processor.py:33 Called _get_config(key=DOCUMENT_PROCESSING.MAX_CHUNK_SIZE, default=3072)
+INFO     Config:config.py:26 Called Config.get_nested(path=DOCUMENT_PROCESSING.MAX_CHUNK_SIZE, default=3072)
+INFO     DummyProcessor:base_processor.py:33 Called _get_config(key=DOCUMENT_PROCESSING.MIN_CHUNK_SIZE, default=1024)
+INFO     Config:config.py:26 Called Config.get_nested(path=DOCUMENT_PROCESSING.MIN_CHUNK_SIZE, default=1024)
+INFO     DummyProcessor:base_processor.py:33 Called _get_config(key=DOCUMENT_PROCESSING.CHUNK_OVERLAP, default=768)
+INFO     Config:config.py:26 Called Config.get_nested(path=DOCUMENT_PROCESSING.CHUNK_OVERLAP, default=768)
+INFO     DummyProcessor:base_processor.py:33 Called _get_config(key=DOCUMENT_PROCESSING.PRESERVE_SENTENCES, default=True)
+INFO     Config:config.py:26 Called Config.get_nested(path=DOCUMENT_PROCESSING.PRESERVE_SENTENCES, default=True)
+DEBUG    DummyProcessor:base_processor.py:55 Called chunk_text(text=<len 13>)
+INFO     DummyProcessor:base_processor.py:39 Called extract_metadata(file_path=/private/var/folders/d2/r_89717x5m7dh95_nkl2vlhh0000gp/T/pytest-of-shepner/pytest-15/test_debug_entry_logging_for_f0)
+INFO     DummyProcessor:base_processor.py:101 Called run(file_path=nonexistent.txt, metadata=None)
+INFO     EmbeddingGenerator:__init__.py:16 Called EmbeddingGenerator.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO     Config:config.py:26 Called Config.get_nested(path=EMBEDDING_MODEL.MODEL_NAME, default=embedding-001)
+INFO     Config:config.py:26 Called Config.get_nested(path=EMBEDDING_MODEL.BATCH_SIZE, default=32)
+INFO     Config:config.py:26 Called Config.get_nested(path=EMBEDDING_MODEL.MAX_LENGTH, default=3072)
+INFO     Config:config.py:26 Called Config.get_nested(path=EMBEDDING_MODEL.DIMENSIONS, default=768)
+DEBUG    EmbeddingGenerator:__init__.py:32 Called EmbeddingGenerator.generate_embeddings(texts=<len 2>, metadata={'meta': 1})
+INFO     qa_system.vector_store:__init__.py:11 Called ChromaVectorStore.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO     Config:config.py:26 Called Config.get_nested(path=VECTOR_STORE, default=None)
+DEBUG    chromadb.config:config.py:359 Starting component System
+DEBUG    chromadb.config:config.py:359 Starting component Posthog
+DEBUG    qa_system.vector_store:__init__.py:29 Called ChromaVectorStore.add_embeddings(embeddings=<len 1>, texts=<len 1>, metadatas=<len 1>)
+DEBUG    qa_system.vector_store:__init__.py:32 Embedding IDs to add: ['a']
+ERROR    qa_system.vector_store:__init__.py:50 Failed to add embeddings: Collection expecting embedding with dimension of 768, got 1
+DEBUG    QueryProcessor:__init__.py:31 Called QueryProcessor.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO     EmbeddingGenerator:__init__.py:16 Called EmbeddingGenerator.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO     Config:config.py:26 Called Config.get_nested(path=EMBEDDING_MODEL.MODEL_NAME, default=embedding-001)
+INFO     Config:config.py:26 Called Config.get_nested(path=EMBEDDING_MODEL.BATCH_SIZE, default=32)
+INFO     Config:config.py:26 Called Config.get_nested(path=EMBEDDING_MODEL.MAX_LENGTH, default=3072)
+INFO     Config:config.py:26 Called Config.get_nested(path=EMBEDDING_MODEL.DIMENSIONS, default=768)
+INFO     qa_system.vector_store:__init__.py:11 Called ChromaVectorStore.__init__(config=<qa_system.config.Config object at 0x107c1abe0>)
+INFO     Config:config.py:26 Called Config.get_nested(path=VECTOR_STORE, default=None)
+DEBUG    EmbeddingGenerator:__init__.py:32 Called EmbeddingGenerator.generate_embeddings(texts=<len 1>, metadata={'task_type': 'RETRIEVAL_QUERY'})
+DEBUG    qa_system.vector_store:__init__.py:54 Called ChromaVectorStore.query(query_vector=<len 768>, top_k=None, filter_criteria=None)
+INFO     qa_system.vector_store:__init__.py:64 Query returned 5 results from collection 'qa_documents'
+________________ TestProcessAddFiles.test_successful_processing ________________
+
+self = <test_main.TestProcessAddFiles object at 0x106d66850>
+mock_components = {'generator': <MagicMock name='EmbeddingGenerator' id='4425811680'>, 'processor_factory': <MagicMock name='get_process...canner': <MagicMock name='FileScanner' id='4425811008'>, 'store': <MagicMock name='ChromaVectorStore' id='4425811344'>}
+mock_logger = <MagicMock name='logger' id='4425812352'>
+
+    def test_successful_processing(self, mock_components, mock_logger):
+        """Test successful file processing"""
+        # Setup mock returns
+        mock_scanner = Mock()
+        mock_store = Mock()
+        mock_generator = Mock()
+        mock_processor = Mock()
+    
+        mock_components['scanner'].return_value = mock_scanner
+        mock_components['store'].return_value = mock_store
+        mock_components['generator'].return_value = mock_generator
+        mock_components['processor_factory'].return_value = mock_processor
+    
+        mock_scanner.scan_files.return_value = [{
+            'path': 'test.txt',
+            'needs_processing': True
+        }]
+    
+        mock_processor.process.return_value = {
+            'chunks': ['chunk1', 'chunk2'],
+            'metadata': {'file_type': 'txt'}
+        }
+    
+        mock_generator.generate_embeddings.return_value = {
+            'vectors': [[0.1, 0.2], [0.3, 0.4]],
+            'texts': ['chunk1', 'chunk2'],
+            'metadata': [{'file_type': 'txt'}, {'file_type': 'txt'}]
+        }
+    
+        # Call function
+        result = process_add_files(['test.txt'], TEST_CONFIG)
+    
+        # Verify
+>       assert result == 0
+E       assert 1 == 0
+
+tests/test_main.py:150: AssertionError
+_________________ TestProcessAddFiles.test_skip_processed_file _________________
+
+self = <test_main.TestProcessAddFiles object at 0x10728c050>
+mock_components = {'generator': <MagicMock name='EmbeddingGenerator' id='4425817056'>, 'processor_factory': <MagicMock name='get_process...canner': <MagicMock name='FileScanner' id='4425816384'>, 'store': <MagicMock name='ChromaVectorStore' id='4425816720'>}
+mock_logger = <MagicMock name='logger' id='4425817728'>
+
+    def test_skip_processed_file(self, mock_components, mock_logger):
+        """Test skipping already processed file"""
+        mock_scanner = Mock()
+        mock_components['scanner'].return_value = mock_scanner
+        mock_scanner.scan_files.return_value = [{
+            'path': 'test.txt',
+            'needs_processing': False
+        }]
+    
+        result = process_add_files(['test.txt'], TEST_CONFIG)
+    
+>       assert result == 0
+E       assert 1 == 0
+
+tests/test_main.py:168: AssertionError
+______________________ TestMain.test_successful_execution ______________________
+
+self = <test_main.TestMain object at 0x10728cb90>
+mock_config = <MagicMock name='get_config' id='4438265536'>
+mock_setup_logging = <MagicMock name='setup_logging' id='4438265872'>
+
+    def test_successful_execution(self, mock_config, mock_setup_logging):
+        """Test successful main execution"""
+        with patch('qa_system.__main__.process_list', return_value=0) as mock_list:
+            with patch('sys.argv', ['qa_system', '--list']):
+                result = main()
+    
+>               assert result == 0
+E               assert 1 == 0
+
+tests/test_main.py:292: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO - Called main()
+INFO - Called parse_args()
+INFO - Called Config.get_nested(path=LOGGING.LEVEL, default=INFO)
+INFO - Called Config.get_nested(path=LOGGING.LOG_FILE, default=logs/qa_system.log)
+INFO - Called ChromaVectorStore.__init__(config=<qa_system.config.Config object at 0x104e96f90>)
+INFO - Called Config.get_nested(path=VECTOR_STORE, default=None)
+ERROR - Failed to initialize ChromaVectorStore: 'NoneType' object has no attribute 'get'
+ERROR - Failed to initialize vector store: 'NoneType' object has no attribute 'get'
+------------------------------ Captured log call -------------------------------
+INFO     qa_system.__main__:__main__.py:303 Called main()
+INFO     qa_system.__main__:__main__.py:27 Called parse_args()
+INFO     Config:config.py:26 Called Config.get_nested(path=LOGGING.LEVEL, default=INFO)
+INFO     Config:config.py:26 Called Config.get_nested(path=LOGGING.LOG_FILE, default=logs/qa_system.log)
+INFO     qa_system.vector_store:__init__.py:11 Called ChromaVectorStore.__init__(config=<qa_system.config.Config object at 0x104e96f90>)
+INFO     Config:config.py:26 Called Config.get_nested(path=VECTOR_STORE, default=None)
+ERROR    qa_system.vector_store:__init__.py:25 Failed to initialize ChromaVectorStore: 'NoneType' object has no attribute 'get'
+ERROR    qa_system.__main__:__main__.py:339 Failed to initialize vector store: 'NoneType' object has no attribute 'get'
+________________________ TestMain.test_qa_system_error _________________________
+
+self = <MagicMock name='logger.error' id='4425821088'>, args = ('Test error',)
+kwargs = {}, expected = call('Test error')
+actual = call("Failed to initialize vector store: 'NoneType' object has no attribute 'get'")
+_error_message = <function NonCallableMock.assert_called_with.<locals>._error_message at 0x108821bc0>
+cause = None
+
+    def assert_called_with(self, /, *args, **kwargs):
+        """assert that the last call was made with the specified arguments.
+    
+        Raises an AssertionError if the args and keyword args passed in are
+        different to the last call to the mock."""
+        if self.call_args is None:
+            expected = self._format_mock_call_signature(args, kwargs)
+            actual = 'not called.'
+            error_message = ('expected call not found.\nExpected: %s\n  Actual: %s'
+                    % (expected, actual))
+            raise AssertionError(error_message)
+    
+        def _error_message():
+            msg = self._format_mock_failure_message(args, kwargs)
+            return msg
+        expected = self._call_matcher(_Call((args, kwargs), two=True))
+        actual = self._call_matcher(self.call_args)
+        if actual != expected:
+            cause = expected if isinstance(expected, Exception) else None
+>           raise AssertionError(_error_message()) from cause
+E           AssertionError: expected call not found.
+E           Expected: error('Test error')
+E             Actual: error("Failed to initialize vector store: 'NoneType' object has no attribute 'get'")
+
+/opt/homebrew/Cellar/python@3.13/3.13.2/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:977: AssertionError
+
+During handling of the above exception, another exception occurred:
+
+self = <MagicMock name='logger.error' id='4425821088'>, args = ('Test error',)
+kwargs = {}
+
+    def assert_called_once_with(self, /, *args, **kwargs):
+        """assert that the mock was called exactly once and that that call was
+        with the specified arguments."""
+        if not self.call_count == 1:
+            msg = ("Expected '%s' to be called once. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+            raise AssertionError(msg)
+>       return self.assert_called_with(*args, **kwargs)
+E       AssertionError: expected call not found.
+E       Expected: error('Test error')
+E         Actual: error("Failed to initialize vector store: 'NoneType' object has no attribute 'get'")
+E       
+E       pytest introspection follows:
+E       
+E       Args:
+E       assert ("Failed to i...ibute 'get'",) == ('Test error',)
+E         
+E         At index 0 diff: "Failed to initialize vector store: 'NoneType' object has no attribute 'get'" != 'Test error'
+E         
+E         Full diff:
+E           (
+E         -     'Test error',
+E         +     "Failed to initialize vector store: 'NoneType' object has no attribute "
+E         +     "'get'",
+E           )
+
+/opt/homebrew/Cellar/python@3.13/3.13.2/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:989: AssertionError
+
+During handling of the above exception, another exception occurred:
+
+self = <test_main.TestMain object at 0x10728ccd0>
+mock_config = <MagicMock name='get_config' id='4425822432'>
+mock_setup_logging = <MagicMock name='setup_logging' id='4425822768'>
+mock_logger = <MagicMock name='logger' id='4425821760'>
+
+    def test_qa_system_error(self, mock_config, mock_setup_logging, mock_logger):
+        """Test handling of QASystemError"""
+        with patch('qa_system.__main__.process_list', side_effect=QASystemError("Test error")):
+            with patch('sys.argv', ['qa_system', '--list']):
+                result = main()
+    
+                assert result == 1
+>               mock_logger.error.assert_called_once_with("Test error")
+E               AssertionError: expected call not found.
+E               Expected: error('Test error')
+E                 Actual: error("Failed to initialize vector store: 'NoneType' object has no attribute 'get'")
+E               
+E               pytest introspection follows:
+E               
+E               Args:
+E               assert ("Failed to i...ibute 'get'",) == ('Test error',)
+E                 
+E                 At index 0 diff: "Failed to initialize vector store: 'NoneType' object has no attribute 'get'" != 'Test error'
+E                 
+E                 Full diff:
+E                   (
+E                 -     'Test error',
+E                 +     "Failed to initialize vector store: 'NoneType' object has no attribute "
+E                 +     "'get'",
+E                   )
+
+tests/test_main.py:304: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO - Called Config.get_nested(path=LOGGING.LEVEL, default=INFO)
+INFO - Called Config.get_nested(path=LOGGING.LOG_FILE, default=logs/qa_system.log)
+INFO - Called ChromaVectorStore.__init__(config=<qa_system.config.Config object at 0x104e96f90>)
+INFO - Called Config.get_nested(path=VECTOR_STORE, default=None)
+ERROR - Failed to initialize ChromaVectorStore: 'NoneType' object has no attribute 'get'
+------------------------------ Captured log call -------------------------------
+INFO     Config:config.py:26 Called Config.get_nested(path=LOGGING.LEVEL, default=INFO)
+INFO     Config:config.py:26 Called Config.get_nested(path=LOGGING.LOG_FILE, default=logs/qa_system.log)
+INFO     qa_system.vector_store:__init__.py:11 Called ChromaVectorStore.__init__(config=<qa_system.config.Config object at 0x104e96f90>)
+INFO     Config:config.py:26 Called Config.get_nested(path=VECTOR_STORE, default=None)
+ERROR    qa_system.vector_store:__init__.py:25 Failed to initialize ChromaVectorStore: 'NoneType' object has no attribute 'get'
+________________________ TestMain.test_unexpected_error ________________________
+
+self = <MagicMock name='logger.critical' id='4438262512'>
+
+    def assert_called_once(self):
+        """assert that the mock was called only once.
+        """
+        if not self.call_count == 1:
+            msg = ("Expected '%s' to have been called once. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'critical' to have been called once. Called 0 times.
+
+/opt/homebrew/Cellar/python@3.13/3.13.2/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:956: AssertionError
+
+During handling of the above exception, another exception occurred:
+
+self = <test_main.TestMain object at 0x1072a8510>
+mock_config = <MagicMock name='get_config' id='4425823104'>
+mock_setup_logging = <MagicMock name='setup_logging' id='4425822096'>
+mock_logger = <MagicMock name='logger' id='4425821424'>
+
+    def test_unexpected_error(self, mock_config, mock_setup_logging, mock_logger):
+        """Test handling of unexpected error"""
+        with patch('qa_system.__main__.process_list', side_effect=Exception("Unexpected error")):
+            with patch('sys.argv', ['qa_system', '--list']):
+                result = main()
+    
+                assert result == 1
+>               mock_logger.critical.assert_called_once()
+E               AssertionError: Expected 'critical' to have been called once. Called 0 times.
+
+tests/test_main.py:313: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO - Called Config.get_nested(path=LOGGING.LEVEL, default=INFO)
+INFO - Called Config.get_nested(path=LOGGING.LOG_FILE, default=logs/qa_system.log)
+INFO - Called ChromaVectorStore.__init__(config=<qa_system.config.Config object at 0x104e96f90>)
+INFO - Called Config.get_nested(path=VECTOR_STORE, default=None)
+ERROR - Failed to initialize ChromaVectorStore: 'NoneType' object has no attribute 'get'
+------------------------------ Captured log call -------------------------------
+INFO     Config:config.py:26 Called Config.get_nested(path=LOGGING.LEVEL, default=INFO)
+INFO     Config:config.py:26 Called Config.get_nested(path=LOGGING.LOG_FILE, default=logs/qa_system.log)
+INFO     qa_system.vector_store:__init__.py:11 Called ChromaVectorStore.__init__(config=<qa_system.config.Config object at 0x104e96f90>)
+INFO     Config:config.py:26 Called Config.get_nested(path=VECTOR_STORE, default=None)
+ERROR    qa_system.vector_store:__init__.py:25 Failed to initialize ChromaVectorStore: 'NoneType' object has no attribute 'get'
+______________________________ test_main_success _______________________________
+
+mock_parse_args = <MagicMock name='parse_args' id='4438273936'>
+
+    @patch('qa_system.__main__.parse_args')
+    def test_main_success(mock_parse_args):
+        mock_args = MagicMock()
+        mock_args.debug = False
+        mock_args.config = None
+        mock_args.add = None
+        mock_args.list = True
+        mock_args.remove = None
+        mock_args.query = None
+        mock_args.filter = None
+        mock_parse_args.return_value = mock_args
+    
+        result = main()
+>       assert result == 0
+E       assert 1 == 0
+
+tests/test_main_additional.py:131: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO - Called main()
+INFO - Called get_config(config_path=None)
+INFO - Called Config.__init__(config_data={'LOGGING': {'LEVEL': 'INFO', 'LOG_FILE': 'logs/qa_system.log'}, 'SECURITY': {'GOOGLE_APPLICATION_CREDENTIALS': '/Users/shepner/credentials.json', 'GOOGLE_CLOUD_REGION': None, 'GOOGLE_CLOUD_PROJECT': None, 'GOOGLE_VISION_API_KEY': None, 'GEMINI_API_KEY': None}, 'FILE_SCANNER': {'DOCUMENT_PATH': './docs', 'ALLOWED_EXTENSIONS': ['txt', 'md', 'pdf'], 'EXCLUDE_PATTERNS': ['.*', '__pycache__', '*.pyc', 'smart-chats', '_template', 'Excalidraw', 'stylesheets', 'Tags.md'], 'HASH_ALGORITHM': 'sha256', 'SKIP_EXISTING': True}, 'DOCUMENT_PROCESSING': {'MAX_CHUNK_SIZE': 3072, 'MIN_CHUNK_SIZE': 1024, 'CHUNK_OVERLAP': 768, 'CONCURRENT_TASKS': 6, 'BATCH_SIZE': 50, 'PRESERVE_SENTENCES': True}, 'VECTOR_STORE': {'TYPE': 'chroma', 'PERSIST_DIRECTORY': './data/vector_store', 'COLLECTION_NAME': 'qa_documents', 'DISTANCE_METRIC': 'cosine', 'TOP_K': 40}})
+INFO - Called Config.get_nested(path=LOGGING.LEVEL, default=INFO)
+INFO - Called Config.get_nested(path=LOGGING.LOG_FILE, default=logs/qa_system.log)
+DEBUG - Called setup_logging(LOG_FILE=logs/qa_system.log, LEVEL=INFO)
+INFO - Logging setup complete (level INFO)
+INFO - Called ChromaVectorStore.__init__(config=<qa_system.config.Config object at 0x107cc6150>)
+INFO - Called Config.get_nested(path=VECTOR_STORE, default=None)
+ERROR - Failed to list documents: expected str, bytes or os.PathLike object, not bool
+ERROR - Failed to list documents: expected str, bytes or os.PathLike object, not bool
+------------------------------ Captured log call -------------------------------
+INFO     qa_system.__main__:__main__.py:303 Called main()
+INFO     qa_system.config:config.py:49 Called get_config(config_path=None)
+INFO     Config:config.py:13 Called Config.__init__(config_data={'LOGGING': {'LEVEL': 'INFO', 'LOG_FILE': 'logs/qa_system.log'}, 'SECURITY': {'GOOGLE_APPLICATION_CREDENTIALS': '/Users/shepner/credentials.json', 'GOOGLE_CLOUD_REGION': None, 'GOOGLE_CLOUD_PROJECT': None, 'GOOGLE_VISION_API_KEY': None, 'GEMINI_API_KEY': None}, 'FILE_SCANNER': {'DOCUMENT_PATH': './docs', 'ALLOWED_EXTENSIONS': ['txt', 'md', 'pdf'], 'EXCLUDE_PATTERNS': ['.*', '__pycache__', '*.pyc', 'smart-chats', '_template', 'Excalidraw', 'stylesheets', 'Tags.md'], 'HASH_ALGORITHM': 'sha256', 'SKIP_EXISTING': True}, 'DOCUMENT_PROCESSING': {'MAX_CHUNK_SIZE': 3072, 'MIN_CHUNK_SIZE': 1024, 'CHUNK_OVERLAP': 768, 'CONCURRENT_TASKS': 6, 'BATCH_SIZE': 50, 'PRESERVE_SENTENCES': True}, 'VECTOR_STORE': {'TYPE': 'chroma', 'PERSIST_DIRECTORY': './data/vector_store', 'COLLECTION_NAME': 'qa_documents', 'DISTANCE_METRIC': 'cosine', 'TOP_K': 40}})
+INFO     Config:config.py:26 Called Config.get_nested(path=LOGGING.LEVEL, default=INFO)
+INFO     Config:config.py:26 Called Config.get_nested(path=LOGGING.LOG_FILE, default=logs/qa_system.log)
+DEBUG    qa_system.logging_setup:logging_setup.py:16 Called setup_logging(LOG_FILE=logs/qa_system.log, LEVEL=INFO)
+________________________ test_markdown_processor_basic _________________________
+
+tmp_path = PosixPath('/private/var/folders/d2/r_89717x5m7dh95_nkl2vlhh0000gp/T/pytest-of-shepner/pytest-15/test_markdown_processor_basic0')
+
+    def test_markdown_processor_basic(tmp_path):
+        file = tmp_path / 'sample.md'
+        file.write_text('# Header 1\nThis is a test.\n## Header 2\nAnother section!\nNo header here.')
+        proc = MarkdownDocumentProcessor(DummyConfig())
+        result = proc.process(str(file))
+        assert 'metadata' in result
+        assert 'chunks' in result
+        meta = result['metadata']
+        assert meta['filename_full'] == 'sample.md'
+        assert meta['file_type'] == 'md'
+        assert meta['chunk_count'] == len(result['chunks'])
+        assert 'tags' in meta
+        assert 'urls' in meta
+        assert 'total_tokens' in meta
+        # Should split on headers
+>       assert any(chunk['text'].startswith('# Header 1') for chunk in result['chunks'])
+E       assert False
+E        +  where False = any(<generator object test_markdown_processor_basic.<locals>.<genexpr> at 0x108dbc790>)
+
+tests/test_markdown_processor.py:32: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO - Called __init__(config=<test_markdown_processor.DummyConfig object at 0x1088a9400>)
+INFO - Called _get_config(key=DOCUMENT_PROCESSING.MAX_CHUNK_SIZE, default=3072)
+INFO - Called _get_config(key=DOCUMENT_PROCESSING.MIN_CHUNK_SIZE, default=1024)
+INFO - Called _get_config(key=DOCUMENT_PROCESSING.CHUNK_OVERLAP, default=768)
+INFO - Called _get_config(key=DOCUMENT_PROCESSING.PRESERVE_SENTENCES, default=True)
+INFO - Called extract_metadata(file_path=/private/var/folders/d2/r_89717x5m7dh95_nkl2vlhh0000gp/T/pytest-of-shepner/pytest-15/test_markdown_processor_basic0/sample.md)
+------------------------------ Captured log call -------------------------------
+INFO     MarkdownDocumentProcessor:base_processor.py:25 Called __init__(config=<test_markdown_processor.DummyConfig object at 0x1088a9400>)
+INFO     MarkdownDocumentProcessor:base_processor.py:33 Called _get_config(key=DOCUMENT_PROCESSING.MAX_CHUNK_SIZE, default=3072)
+INFO     MarkdownDocumentProcessor:base_processor.py:33 Called _get_config(key=DOCUMENT_PROCESSING.MIN_CHUNK_SIZE, default=1024)
+INFO     MarkdownDocumentProcessor:base_processor.py:33 Called _get_config(key=DOCUMENT_PROCESSING.CHUNK_OVERLAP, default=768)
+INFO     MarkdownDocumentProcessor:base_processor.py:33 Called _get_config(key=DOCUMENT_PROCESSING.PRESERVE_SENTENCES, default=True)
+INFO     MarkdownDocumentProcessor:base_processor.py:39 Called extract_metadata(file_path=/private/var/folders/d2/r_89717x5m7dh95_nkl2vlhh0000gp/T/pytest-of-shepner/pytest-15/test_markdown_processor_basic0/sample.md)
+________________________ test_remove_documents_success _________________________
+
+handler = <qa_system.remove_handler.RemoveHandler object at 0x108888050>
+
+    def test_remove_documents_success(handler):
+        result = handler.remove_documents('*.pdf')
+        assert 'removed' in result
+>       assert set(result['removed']) == {'/docs/a.pdf', '/docs/b.pdf'}
+E       AssertionError: assert set() == {'/docs/a.pdf', '/docs/b.pdf'}
+E         
+E         Extra items in the right set:
+E         '/docs/a.pdf'
+E         '/docs/b.pdf'
+E         
+E         Full diff:
+E         + set()...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests/test_remove_handler.py:41: AssertionError
+----------------------------- Captured stdout call -----------------------------
+IN REMOVE_DOCUMENTS: pattern= *.pdf paths= None recursive= None verify_removal= None require_confirmation= None
+Normalized pattern for matching: ['*.pdf']
+After find_matches: found 2 matches for pattern ['*.pdf']: ['id_0', 'id_1']
+IDs to be deleted: ['id_0', 'id_1']
+Deleting ids: ['id_0', 'id_1']
+----------------------------- Captured stderr call -----------------------------
+INFO - Entered remove_documents with pattern=*.pdf, paths=None, recursive=None, verify_removal=None, require_confirmation=None
+INFO - Deleting ids: ['id_0', 'id_1']
+------------------------------ Captured log call -------------------------------
+INFO     qa_system.remove_handler:remove_handler.py:56 Entered remove_documents with pattern=*.pdf, paths=None, recursive=None, verify_removal=None, require_confirmation=None
+INFO     qa_system.remove_handler:remove_handler.py:95 Deleting ids: ['id_0', 'id_1']
+_____________________ test_remove_documents_batch_failure ______________________
+
+args = (), kwargs = {'ids': ['id_0', 'id_1'], 'require_confirmation': False}
+
+    def fail_delete(*args, **kwargs):
+>       raise Exception('delete failed')
+E       Exception: delete failed
+
+tests/test_remove_handler.py:53: Exception
+
+During handling of the above exception, another exception occurred:
+
+handler = <qa_system.remove_handler.RemoveHandler object at 0x1089f7490>
+
+    def test_remove_documents_batch_failure(handler):
+        def fail_delete(*args, **kwargs):
+            raise Exception('delete failed')
+        handler.vector_store.delete.side_effect = fail_delete
+>       result = handler.remove_documents('*.pdf')
+
+tests/test_remove_handler.py:55: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <qa_system.remove_handler.RemoveHandler object at 0x1089f7490>
+pattern = ['*.pdf'], paths = None, recursive = True, verify_removal = True
+require_confirmation = False
+
+    def remove_documents(self, pattern: Union[str, List[str]] = None, paths: Union[str, List[str]] = None, recursive: bool = None, verify_removal: bool = None, require_confirmation: bool = None) -> Dict[str, Any]:
+        print("IN REMOVE_DOCUMENTS: pattern=", pattern, "paths=", paths, "recursive=", recursive, "verify_removal=", verify_removal, "require_confirmation=", require_confirmation)
+        logger.info(f"Entered remove_documents with pattern={pattern}, paths={paths}, recursive={recursive}, verify_removal={verify_removal}, require_confirmation={require_confirmation}")
+        # Normalize input: if pattern is None and paths is provided, use paths as pattern
+        if pattern is None and paths is not None:
+            # Accept a single string or a list for paths
+            if isinstance(paths, str):
+                pattern = [paths]
+            elif isinstance(paths, list):
+                pattern = paths
+            else:
+                print("WARNING: 'paths' argument is not a string or list.")
+                return {'removed': [], 'failed': [], 'not_found': [], 'errors': ["Invalid 'paths' argument type"]}
+        elif pattern is not None:
+            # Accept a single string or a list for pattern
+            if isinstance(pattern, str):
+                pattern = [pattern]
+            elif not isinstance(pattern, list):
+                print("WARNING: 'pattern' argument is not a string or list.")
+                return {'removed': [], 'failed': [], 'not_found': [], 'errors': ["Invalid 'pattern' argument type"]}
+        else:
+            print("WARNING: Both 'pattern' and 'paths' are None. Nothing to remove.")
+            return {'removed': [], 'failed': [], 'not_found': [], 'errors': ["No pattern or paths provided"]}
+        print("Normalized pattern for matching:", pattern)
+        recursive = self.recursive if recursive is None else recursive
+        verify_removal = self.verify_removal_flag if verify_removal is None else verify_removal
+        require_confirmation = self.require_confirmation if require_confirmation is None else require_confirmation
+        result = {'removed': [], 'failed': [], 'not_found': [], 'errors': []}
+        try:
+            matches = self.find_matches(pattern)
+            print(f"After find_matches: found {len(matches)} matches for pattern {pattern}: {[doc.get('id') for doc in matches]}")
+            logger.debug(f"After find_matches: found {len(matches)} matches for pattern {pattern}: {[doc.get('id') for doc in matches]}")
+            if not matches:
+                result['not_found'].append(pattern)
+                return result
+            # Collect all matching ids
+            ids = [doc.get('id') for doc in matches if doc.get('id')]
+            print("IDs to be deleted:", ids)
+            logger.debug(f"IDs to be deleted: {ids}")
+            if ids:
+                print(f"Deleting ids: {ids}")
+                logger.info(f"Deleting ids: {ids}")
+                self.vector_store.delete(ids=ids, require_confirmation=require_confirmation)
+                if verify_removal:
+                    still_exists = self.find_matches([doc.get('path') for doc in matches])
+                    if still_exists:
+                        result['failed'].extend([doc.get('path') for doc in still_exists])
+                    else:
+                        result['removed'].extend([doc.get('path') for doc in matches])
+                else:
+                    result['removed'].extend([doc.get('path') for doc in matches])
+            else:
+                print("No valid ids found for deletion.")
+                logger.error("No valid ids found for deletion.")
+                result['failed'].extend([doc.get('path') for doc in matches])
+        except ValidationError as e:
+            print("Validation error:", e)
+            logger.error(f"Validation error: {e}")
+            result['errors'].append({'exception': str(e), 'type': 'ValidationError'})
+            raise
+        except Exception as e:
+            print("Unexpected error:", e)
+            logger.error(f"Unexpected error: {e}")
+            result['errors'].append({'exception': str(e), 'type': 'Unknown'})
+>           raise RemovalError(f"Failed to remove documents: {e}")
+E           qa_system.exceptions.RemovalError: Failed to remove documents: delete failed
+
+qa_system/remove_handler.py:118: RemovalError
+----------------------------- Captured stdout call -----------------------------
+IN REMOVE_DOCUMENTS: pattern= *.pdf paths= None recursive= None verify_removal= None require_confirmation= None
+Normalized pattern for matching: ['*.pdf']
+After find_matches: found 2 matches for pattern ['*.pdf']: ['id_0', 'id_1']
+IDs to be deleted: ['id_0', 'id_1']
+Deleting ids: ['id_0', 'id_1']
+Unexpected error: delete failed
+----------------------------- Captured stderr call -----------------------------
+INFO - Entered remove_documents with pattern=*.pdf, paths=None, recursive=None, verify_removal=None, require_confirmation=None
+INFO - Deleting ids: ['id_0', 'id_1']
+ERROR - Unexpected error: delete failed
+------------------------------ Captured log call -------------------------------
+INFO     qa_system.remove_handler:remove_handler.py:56 Entered remove_documents with pattern=*.pdf, paths=None, recursive=None, verify_removal=None, require_confirmation=None
+INFO     qa_system.remove_handler:remove_handler.py:95 Deleting ids: ['id_0', 'id_1']
+ERROR    qa_system.remove_handler:remove_handler.py:116 Unexpected error: delete failed
+_______________________ test_error_handling_on_bad_init ________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10884cdd0>
+temp_vector_config = <test_vector_store.temp_vector_config.<locals>.DummyConfig object at 0x107cca900>
+
+    def test_error_handling_on_bad_init(monkeypatch, temp_vector_config):
+        # Simulate chromadb.Client raising an error
+        import qa_system.vector_store
+        monkeypatch.setattr(qa_system.vector_store.chromadb, 'Client', lambda *a, **kw: (_ for _ in ()).throw(Exception("fail")))
+>       with pytest.raises(ConnectionError):
+E       Failed: DID NOT RAISE <class 'qa_system.exceptions.ConnectionError'>
+
+tests/test_vector_store.py:62: Failed
+----------------------------- Captured stderr call -----------------------------
+INFO - Called ChromaVectorStore.__init__(config=<test_vector_store.temp_vector_config.<locals>.DummyConfig object at 0x107cca900>)
+------------------------------ Captured log call -------------------------------
+INFO     qa_system.vector_store:__init__.py:11 Called ChromaVectorStore.__init__(config=<test_vector_store.temp_vector_config.<locals>.DummyConfig object at 0x107cca900>)
+=============================== warnings summary ===============================
+tests/test_main.py:352
+  /Users/shepner/src/qa_system/tests/test_main.py:352: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.integration
+
+tests/test_vector_store.py:10
+  /Users/shepner/src/qa_system/tests/test_vector_store.py:10: PytestUnknownMarkWarning: Unknown pytest.mark.forked - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.forked
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_logging_setup.py::test_debug_entry_logging_for_function_calls
+FAILED tests/test_main.py::TestProcessAddFiles::test_successful_processing - ...
+FAILED tests/test_main.py::TestProcessAddFiles::test_skip_processed_file - as...
+FAILED tests/test_main.py::TestMain::test_successful_execution - assert 1 == 0
+FAILED tests/test_main.py::TestMain::test_qa_system_error - AssertionError: e...
+FAILED tests/test_main.py::TestMain::test_unexpected_error - AssertionError: ...
+FAILED tests/test_main_additional.py::test_main_success - assert 1 == 0
+FAILED tests/test_markdown_processor.py::test_markdown_processor_basic - asse...
+FAILED tests/test_remove_handler.py::test_remove_documents_success - Assertio...
+FAILED tests/test_remove_handler.py::test_remove_documents_batch_failure - qa...
+FAILED tests/test_vector_store.py::test_error_handling_on_bad_init - Failed: ...
+================== 11 failed, 83 passed, 2 warnings in 2.08s ===================

@@ -29,6 +29,9 @@ class TextDocumentProcessor(BaseDocumentProcessor):
         for m in re.finditer(r'(https?://[^\s)\]\'\"<>]+|ftp://[^\s)\]\'\"<>]+)', text):
             urls.add(m.group(1))
         metadata['urls'] = self._list_to_csv(sorted(urls))
+        # Ensure all required fields are present, even if empty
+        if 'urls' not in metadata:
+            metadata['urls'] = ''
         chunks = self.chunk_text(text)
         chunk_dicts = []
         offset = 0
@@ -56,6 +59,9 @@ class TextDocumentProcessor(BaseDocumentProcessor):
         document_metadata = dict(metadata)
         document_metadata['chunk_count'] = len(chunk_dicts)
         document_metadata['total_tokens'] = sum(len(chunk['text']) for chunk in chunk_dicts)
+        # Ensure all required fields are present, even if empty
+        if 'urls' not in document_metadata:
+            document_metadata['urls'] = ''
         return {
             'chunks': chunk_dicts,
             'metadata': document_metadata

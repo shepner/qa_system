@@ -74,4 +74,17 @@ def test_logging_integration(tmp_path, caplog):
     proc = FailingProcessor(DummyConfig())
     with pytest.raises(ProcessingError):
         proc.run(str(file))
-    assert 'Processing failed: fail!' in caplog.text 
+    assert 'Processing failed: fail!' in caplog.text
+
+def test_base_metadata_and_chunk_fields(tmp_path):
+    file = tmp_path / 'base.txt'
+    file.write_text('Sentence one. Sentence two. Sentence three.')
+    proc = DummyProcessor(DummyConfig())
+    result = proc.process(str(file))
+    meta = result['metadata']
+    for field in ['filename_full', 'file_type', 'path', 'created_at', 'last_modified']:
+        assert field in meta
+    # Check at least one chunk for base fields
+    if result['chunks']:
+        chunk = result['chunks'][0]
+        assert isinstance(chunk, str) 

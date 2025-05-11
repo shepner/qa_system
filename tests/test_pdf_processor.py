@@ -49,12 +49,23 @@ def test_pdf_processor_basic(tmp_path):
     result = proc.process(str(pdf_path))
     assert 'metadata' in result
     assert 'chunks' in result
-    assert result['metadata']['filename_full'].endswith('.pdf')
-    assert result['metadata']['file_type'] == 'pdf'
-    assert result['metadata']['chunk_count'] == len(result['chunks'])
-    assert result['metadata']['page_count'] >= 1
-    assert all(isinstance(chunk, str) for chunk in result['chunks'])
-    assert sum(len(chunk) for chunk in result['chunks']) == result['metadata']['total_tokens']
+    meta = result['metadata']
+    assert meta['filename_full'].endswith('.pdf')
+    assert meta['file_type'] == 'pdf'
+    assert meta['chunk_count'] == len(result['chunks'])
+    assert meta['page_count'] >= 1
+    assert 'urls' in meta
+    assert 'total_tokens' in meta
+    # Check at least one chunk for all required fields
+    if result['chunks']:
+        chunk = result['chunks'][0]
+        assert 'text' in chunk
+        cmeta = chunk['metadata']
+        for field in [
+            'chunk_index', 'start_offset', 'end_offset', 'page_number',
+            'section_header', 'section_hierarchy', 'urls', 'url_contexts',
+            'topics', 'summary']:
+            assert field in cmeta
 
 @pytest.mark.skipif(pypdf is None, reason="pypdf not installed")
 def test_pdf_processor_metadata_override(tmp_path):

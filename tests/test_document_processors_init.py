@@ -56,8 +56,20 @@ def test_get_processor_for_file_type_csv(tmp_path):
     processor = get_processor_for_file_type(str(csv_file), DummyConfig())
     assert isinstance(processor, CSVDocumentProcessor)
     result = processor.process(str(csv_file))
-    assert 'header_fields' in result['metadata']
-    assert 'row_count' in result['metadata']
+    meta = result['metadata']
+    assert 'header_fields' in meta
+    assert 'row_count' in meta
+    assert 'chunk_count' in meta
+    assert 'total_tokens' in meta
+    assert 'urls' in meta
+    # Check at least one chunk for all required fields
+    if result['chunks']:
+        chunk = result['chunks'][0]
+        assert 'text' in chunk
+        cmeta = chunk['metadata']
+        for field in [
+            'chunk_index', 'start_offset', 'end_offset', 'tags', 'urls', 'url_contexts', 'topics', 'summary']:
+            assert field in cmeta
 
 def test_get_processor_for_file_type_vision(tmp_path):
     img_file = tmp_path / 'test.png'
@@ -69,8 +81,17 @@ def test_get_processor_for_file_type_vision(tmp_path):
     processor = get_processor_for_file_type(str(img_file), DummyConfig())
     assert isinstance(processor, VisionDocumentProcessor)
     result = processor.process(str(img_file))
-    assert 'image_dimensions' in result['metadata']
-    assert 'image_format' in result['metadata']
-    assert 'vision_labels' in result['metadata']
-    assert 'ocr_text' in result['metadata']
-    assert 'processing_timestamp' in result['metadata'] 
+    meta = result['metadata']
+    for field in [
+        'image_dimensions', 'image_format', 'color_profile', 'vision_labels', 'ocr_text',
+        'face_detection', 'safe_search', 'feature_confidence', 'processing_timestamp', 'error_states',
+        'chunk_count', 'total_tokens']:
+        assert field in meta
+    # Check at least one chunk for all required fields
+    if result['chunks']:
+        chunk = result['chunks'][0]
+        assert 'text' in chunk
+        cmeta = chunk['metadata']
+        for field in [
+            'chunk_index', 'start_offset', 'end_offset', 'chunk_type', 'urls', 'url_contexts', 'topics', 'summary']:
+            assert field in cmeta 
