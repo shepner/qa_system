@@ -3,6 +3,8 @@ import logging
 from .text_processor import TextDocumentProcessor
 from .markdown_processor import MarkdownDocumentProcessor
 from .pdf_processor import PDFDocumentProcessor
+from .csv_processor import CSVDocumentProcessor
+from .vision_processor import VisionDocumentProcessor
 
 def get_processor_for_file_type(path, config):
     logger = logging.getLogger(__name__)
@@ -14,6 +16,10 @@ def get_processor_for_file_type(path, config):
         return MarkdownDocumentProcessor(config)
     if ext == 'pdf':
         return PDFDocumentProcessor(config)
+    if ext == 'csv':
+        return CSVDocumentProcessor(config)
+    if ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
+        return VisionDocumentProcessor(config)
     class DummyProcessor:
         def process(self):
             logger.info("Called DummyProcessor.process()")
