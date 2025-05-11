@@ -139,8 +139,14 @@ def process_add_files(files: List[str], config: dict) -> int:
                 # Overwrite embeddings['metadata'] with chunk_metadatas
                 embeddings['metadata'] = chunk_metadatas
                 
-                logger.info(f"Chunk metadatas being added: {chunk_metadatas}")
-                
+                # Defensive check before adding to vector store
+                if not embeddings['vectors'] or not embeddings['texts'] or not embeddings['metadata']:
+                    logger.warning(f"No embeddings generated for {result['path']}, skipping add to vector store.")
+                    continue
+                if not (len(embeddings['vectors']) == len(embeddings['texts']) == len(embeddings['metadata'])):
+                    logger.error(f"Mismatch in number of vectors, texts, and metadatas for {result['path']}, skipping.")
+                    continue
+
                 # Add to vector store
                 store.add_embeddings(
                     embeddings=embeddings['vectors'],

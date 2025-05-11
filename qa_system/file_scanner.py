@@ -47,7 +47,7 @@ class FileScanner:
             file_info = {
                 'path': str(root.resolve()),
                 'size': root.stat().st_size,
-                'hash': self._compute_hash(root),
+                'checksum': self._compute_hash(root),
             }
             found_files.append(file_info)
         elif root.is_dir():
@@ -61,7 +61,7 @@ class FileScanner:
                 file_info = {
                     'path': str(file_path.resolve()),
                     'size': file_path.stat().st_size,
-                    'hash': self._compute_hash(file_path),
+                    'checksum': self._compute_hash(file_path),
                 }
                 found_files.append(file_info)
         else:
