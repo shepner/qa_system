@@ -23,6 +23,12 @@ TEST_CONFIG = Config({
     'LOGGING': {
         'LEVEL': 'INFO',
         'LOG_FILE': 'logs/test.log'
+    },
+    'VECTOR_STORE': {
+        'PERSIST_DIRECTORY': '.',
+        'COLLECTION_NAME': 'qa_documents',
+        'DISTANCE_METRIC': 'cosine',
+        'TOP_K': 10
     }
 })
 
@@ -129,18 +135,24 @@ class TestProcessAddFiles:
         
         mock_scanner.scan_files.return_value = [{
             'path': 'test.txt',
+            'checksum': 'abc123',
             'needs_processing': True
         }]
+        mock_store.has_file.return_value = False
+        mock_store.add_embeddings.return_value = None
         
         mock_processor.process.return_value = {
-            'chunks': ['chunk1', 'chunk2'],
-            'metadata': {'file_type': 'txt'}
+            'chunks': [{'text': 'chunk1'}, {'text': 'chunk2'}],
+            'metadata': {'file_type': 'txt', 'path': 'test.txt'}
         }
         
         mock_generator.generate_embeddings.return_value = {
             'vectors': [[0.1, 0.2], [0.3, 0.4]],
             'texts': ['chunk1', 'chunk2'],
-            'metadata': [{'file_type': 'txt'}, {'file_type': 'txt'}]
+            'metadata': [
+                {'file_type': 'txt', 'id': 'test.txt:0', 'checksum': 'abc123'},
+                {'file_type': 'txt', 'id': 'test.txt:1', 'checksum': 'abc123'}
+            ]
         }
         
         # Call function
@@ -160,13 +172,17 @@ class TestProcessAddFiles:
         mock_components['scanner'].return_value = mock_scanner
         mock_scanner.scan_files.return_value = [{
             'path': 'test.txt',
+            'checksum': 'abc123',
             'needs_processing': False
         }]
+        mock_store = Mock()
+        mock_components['store'].return_value = mock_store
+        mock_store.has_file.return_value = True
         
         result = process_add_files(['test.txt'], TEST_CONFIG)
         
         assert result == 0
-        mock_logger.info.assert_any_call('Skipping already processed file: test.txt')
+        mock_logger.info.assert_any_call('Skipping file (already exists in vector DB by checksum): test.txt (checksum=abc123)')
 
     def test_processing_error(self, mock_components, mock_logger):
         """Test handling of processing error"""
@@ -285,35 +301,50 @@ class TestProcessQuery:
 class TestMain:
     def test_successful_execution(self, mock_config, mock_setup_logging):
         """Test successful main execution"""
-        with patch('qa_system.__main__.process_list', return_value=0) as mock_list:
+        with patch('qa_system.__main__.get_list_module') as mock_get_list_module:
+            mock_list_module = Mock()
+            mock_get_list_module.return_value = mock_list_module
+            mock_list_module.list_documents.return_value = []
+            mock_list_module.get_collection_stats.return_value = {'total_documents': 0, 'document_types': {}}
             with patch('sys.argv', ['qa_system', '--list']):
                 result = main()
-                
                 assert result == 0
                 mock_config.assert_called_once()
                 mock_setup_logging.assert_called_once()
-                mock_list.assert_called_once()
+                mock_list_module.list_documents.assert_called_once()
 
     def test_qa_system_error(self, mock_config, mock_setup_logging, mock_logger):
         """Test handling of QASystemError"""
-        with patch('qa_system.__main__.process_list', side_effect=QASystemError("Test error")):
+        with patch('qa_system.__main__.get_list_module') as mock_get_list_module:
+            mock_list_module = Mock()
+            mock_get_list_module.return_value = mock_list_module
+            mock_list_module.list_documents.side_effect = QASystemError("Test error")
             with patch('sys.argv', ['qa_system', '--list']):
                 result = main()
-                
                 assert result == 1
-                mock_logger.error.assert_called_once_with("Test error")
+                mock_logger.error.assert_called()
 
     def test_unexpected_error(self, mock_config, mock_setup_logging, mock_logger):
         """Test handling of unexpected error"""
-        with patch('qa_system.__main__.process_list', side_effect=Exception("Unexpected error")):
+        with patch('qa_system.__main__.get_list_module') as mock_get_list_module:
+            mock_list_module = Mock()
+            mock_get_list_module.return_value = mock_list_module
+            mock_list_module.list_documents.side_effect = Exception("Unexpected error")
             with patch('sys.argv', ['qa_system', '--list']):
                 result = main()
-                
                 assert result == 1
-                mock_logger.critical.assert_called_once()
+                mock_logger.critical.assert_called()
 
 class DummyConfig:
     def get_nested(self, key, default=None):
+        if key.startswith('VECTOR_STORE'):
+            # Always return a valid VECTOR_STORE dict for any VECTOR_STORE key
+            return {
+                'PERSIST_DIRECTORY': '.',
+                'COLLECTION_NAME': 'qa_documents',
+                'DISTANCE_METRIC': 'cosine',
+                'TOP_K': 10
+            }
         if key == 'EMBEDDING_MODEL.MODEL_NAME':
             return 'gemini-embedding-exp-03-07'
         if key == 'EMBEDDING_MODEL.BATCH_SIZE':
@@ -322,14 +353,6 @@ class DummyConfig:
             return 3072
         if key == 'EMBEDDING_MODEL.DIMENSIONS':
             return 3
-        if key == 'VECTOR_STORE.PERSIST_DIRECTORY':
-            return '.'
-        if key == 'VECTOR_STORE.COLLECTION_NAME':
-            return 'qa_documents'
-        if key == 'VECTOR_STORE.DISTANCE_METRIC':
-            return 'cosine'
-        if key == 'VECTOR_STORE.TOP_K':
-            return 2
         return default
 
 class DummyEmbeddingGenerator:

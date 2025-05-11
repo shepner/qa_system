@@ -30,7 +30,7 @@ def test_markdown_processor_basic(tmp_path):
     assert 'total_tokens' in meta
     # Should split on headers
     assert any(chunk['text'].startswith('# Header 1') for chunk in result['chunks'])
-    assert any(chunk['text'].startswith('# Header 2') for chunk in result['chunks'])
+    assert any(chunk['text'].startswith('## Header 2') for chunk in result['chunks'])
     # Check at least one chunk for all required fields
     if result['chunks']:
         chunk = result['chunks'][0]

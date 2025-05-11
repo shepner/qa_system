@@ -56,9 +56,9 @@ def test_delete_embeddings(temp_vector_config):
     assert result['ids'][0] == []
 
 def test_error_handling_on_bad_init(monkeypatch, temp_vector_config):
-    # Simulate chromadb.Client raising an error
+    # Simulate chromadb.PersistentClient raising an error
     import qa_system.vector_store
-    monkeypatch.setattr(qa_system.vector_store.chromadb, 'Client', lambda *a, **kw: (_ for _ in ()).throw(Exception("fail")))
+    monkeypatch.setattr(qa_system.vector_store.chromadb, 'PersistentClient', lambda *a, **kw: (_ for _ in ()).throw(Exception("fail")))
     with pytest.raises(ConnectionError):
         ChromaVectorStore(temp_vector_config)
 

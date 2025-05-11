@@ -102,16 +102,16 @@ def process_add_files(files: List[str], config: dict) -> int:
             scan_results = scanner.scan_files(file_path)
             
             for result in scan_results:
-                logger.info(f"Checking if file hash exists in vector DB: {result['hash']} for {result['path']}")
-                hash_exists = store.has_file(result['hash'])
-                logger.info(f"Hash check for {result['path']} (hash={result['hash']}): {'FOUND' if hash_exists else 'NOT FOUND'} in vector DB")
+                logger.info(f"Checking if file checksum exists in vector DB: {result['checksum']} for {result['path']}")
+                hash_exists = store.has_file(result['checksum'])
+                logger.info(f"Checksum check for {result['path']} (checksum={result['checksum']}): {'FOUND' if hash_exists else 'NOT FOUND'} in vector DB")
                 result['needs_processing'] = not hash_exists
             
             for result in scan_results:
                 if not result['needs_processing']:
-                    logger.info(f"Skipping file (already exists in vector DB by hash): {result['path']} (hash={result['hash']})")
+                    logger.info(f"Skipping file (already exists in vector DB by checksum): {result['path']} (checksum={result['checksum']})")
                     continue
-                logger.info(f"File needs processing (not found in vector DB): {result['path']} (hash={result['hash']})")
+                logger.info(f"File needs processing (not found in vector DB): {result['path']} (checksum={result['checksum']})")
                 # Get appropriate processor for file type
                 processor = get_processor_for_file_type(result['path'], config)
                 
@@ -128,7 +128,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                 for idx, chunk in enumerate(processed['chunks']):
                     meta = dict(processed['metadata'])
                     meta['id'] = f"{meta['path']}:{idx}"
-                    meta['hash'] = result['hash']  # Ensure hash is present in every chunk's metadata
+                    meta['checksum'] = result['checksum']  # Ensure checksum is present in every chunk's metadata
                     chunk_metadatas.append(meta)
                 
                 # Generate embeddings
@@ -327,7 +327,7 @@ def main() -> int:
             stats = list_module.get_collection_stats()
             print(f"\nTotal documents: {stats['total_documents']}")
             print(f"Document types: {stats['document_types']}")
-            return
+            return 0
         elif args.remove:
             return process_remove(args.remove, args.filter, config)
         elif args.query is not None:  # Empty string is valid for interactive mode

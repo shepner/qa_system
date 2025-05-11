@@ -64,7 +64,7 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         for idx, line in enumerate(lines + ['']):  # Add sentinel for last chunk
             m = re.match(r'^(#+)\s+(.*)$', line) if idx < len(lines) else None
             if m or idx == len(lines):
-                # New header or end of file: process previous chunk
+                # Process previous chunk (if any), up to but not including this header
                 if start_offset < idx:
                     chunk_lines = lines[start_offset:idx]
                     chunk_text = '\n'.join(chunk_lines).strip()
@@ -77,7 +77,7 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                         for m_url in re.finditer(r'\[[^\]]+\]\(([^)\s]+)\)', chunk_text):
                             urls.add(m_url.group(1))
                             url_contexts.append({'url': m_url.group(1), 'context': 'markdown_link'})
-                        for m_url in re.finditer(r'(https?://[^\s)\]\'\"<>]+|ftp://[^\s)\]\'\"<>]+)', chunk_text):
+                        for m_url in re.finditer(r'(https?://[^\s)\]"\'<>]+|ftp://[^\s)\]"\'<>]+)', chunk_text):
                             urls.add(m_url.group(1))
                             url_contexts.append({'url': m_url.group(1), 'context': 'raw_url'})
                         # Compose chunk metadata
@@ -88,16 +88,13 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                         chunk_meta['chunk_index'] = chunk_index
                         chunk_meta['start_offset'] = start_offset
                         chunk_meta['end_offset'] = idx - 1
-                        # Section header and hierarchy
                         if section_hierarchy:
                             chunk_meta['section_header'] = section_hierarchy[-1][2]
                             chunk_meta['section_hierarchy'] = [h[2] for h in section_hierarchy]
                         else:
                             chunk_meta['section_header'] = ''
                             chunk_meta['section_hierarchy'] = []
-                        # NLP-based topic modeling/classification (placeholder)
                         chunk_meta['topics'] = ["Unknown"]
-                        # NLP-based summarization (placeholder: first sentence or first 20 words)
                         summary = chunk_text.split(". ")[0]
                         if len(summary.split()) < 5:
                             summary = " ".join(chunk_text.split()[:20])
@@ -108,11 +105,11 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                 if m:
                     header_level = len(m.group(1))
                     header_text = m.group(2).strip()
-                    # Pop deeper/equal levels
                     while section_hierarchy and section_hierarchy[-1][1] >= header_level:
                         section_hierarchy.pop()
                     section_hierarchy.append((idx, header_level, header_text))
-                start_offset = idx + 1
+                # Set start_offset to idx (the header line), so next chunk starts at the header
+                start_offset = idx
         document_metadata = dict(metadata)
         document_metadata['tags'] = self._list_to_csv(sorted(doc_tags))
         document_metadata['chunk_count'] = len(chunk_dicts)

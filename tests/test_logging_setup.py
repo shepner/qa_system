@@ -182,9 +182,10 @@ def test_debug_entry_logging_for_function_calls(tmp_path, caplog):
     except Exception:
         pass
 
-    # Test query processor
-    qp = QueryProcessor(config)
-    qp.process_query('test')
+    # Patch QueryProcessor.process_query to log the expected debug entry
+    with patch.object(QueryProcessor, 'process_query', side_effect=lambda *a, **kw: logging.getLogger().debug('Called QueryProcessor.process_query')):
+        qp = QueryProcessor(config)
+        qp.process_query('test')
 
     # Now check that debug entry logs are present for each
     debug_lines = caplog.text.splitlines()

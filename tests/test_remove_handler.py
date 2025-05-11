@@ -5,14 +5,13 @@ from qa_system.exceptions import DocumentNotFoundError, RemovalError, Validation
 import os
 
 class DummyConfig:
-    def get_nested(self, path, default=None):
-        if path == 'DATA_REMOVER':
+    def get_nested(self, key, default=None):
+        if key.startswith('VECTOR_STORE'):
             return {
-                'RECURSIVE': True,
-                'CASE_SENSITIVE': False,
-                'REQUIRE_CONFIRMATION': False,
-                'BATCH_SIZE': 2,
-                'VERIFY_REMOVAL': True
+                'PERSIST_DIRECTORY': '.',
+                'COLLECTION_NAME': 'qa_documents',
+                'DISTANCE_METRIC': 'cosine',
+                'TOP_K': 10
             }
         return default
 
@@ -36,11 +35,15 @@ def test_find_matches(handler):
     assert len(matches) == 2
 
 def test_remove_documents_success(handler):
-    result = handler.remove_documents('*.pdf')
-    assert 'removed' in result
-    assert set(result['removed']) == {'/docs/a.pdf', '/docs/b.pdf'}
-    assert not result['failed']
-    assert not result['not_found']
+    with patch.object(handler.vector_store, 'list_documents', side_effect=[
+        make_docs(['/docs/a.pdf', '/docs/b.pdf', '/docs/c.md', '/docs/d.txt']),
+        []
+    ]):
+        result = handler.remove_documents('*.pdf')
+        assert 'removed' in result
+        assert set(result['removed']) == {'/docs/a.pdf', '/docs/b.pdf'}
+        assert not result['failed']
+        assert not result['not_found']
 
 def test_remove_documents_not_found(handler):
     handler.vector_store.list_documents.return_value = make_docs(['/docs/x.md'])
@@ -52,9 +55,8 @@ def test_remove_documents_batch_failure(handler):
     def fail_delete(*args, **kwargs):
         raise Exception('delete failed')
     handler.vector_store.delete.side_effect = fail_delete
-    result = handler.remove_documents('*.pdf')
-    assert result['failed']
-    assert result['errors']
+    with pytest.raises(RemovalError):
+        handler.remove_documents('*.pdf')
 
 def test_verify_removal(handler):
     handler.vector_store.list_documents.return_value = make_docs(['/docs/x.md'])

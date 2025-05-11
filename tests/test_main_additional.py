@@ -6,6 +6,13 @@ from qa_system.exceptions import QASystemError
 
 class DummyConfig:
     def get_nested(self, key, default=None):
+        if key.startswith('VECTOR_STORE'):
+            return {
+                'PERSIST_DIRECTORY': '.',
+                'COLLECTION_NAME': 'qa_documents',
+                'DISTANCE_METRIC': 'cosine',
+                'TOP_K': 10
+            }
         return default
 
 @patch('qa_system.document_processors.FileScanner')
