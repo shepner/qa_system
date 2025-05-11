@@ -32,7 +32,7 @@ class VisionDocumentProcessor(BaseDocumentProcessor):
                 metadata['color_profile'] = img.mode
         except Exception as e:
             metadata['error_states'] = [str(e)]
-            return {'metadata': metadata, 'chunks': []}
+            return {'chunks': []}
         # Simulate Vision API fields
         metadata['vision_labels'] = ['label1', 'label2']
         metadata['ocr_text'] = 'Simulated OCR text.'
@@ -43,15 +43,36 @@ class VisionDocumentProcessor(BaseDocumentProcessor):
         metadata['error_states'] = []
         # For images, the "chunk" is just the OCR text and label summary
         chunks = [metadata['ocr_text'], ', '.join(metadata['vision_labels'])]
-        metadata['chunk_count'] = len(chunks)
-        metadata['total_tokens'] = sum(len(chunk) for chunk in chunks)
-        # Extract URLs from detected text
-        text = self.ocr_extract_text(file_path)
-        urls = set()
-        for m in re.finditer(r'(https?://[^\s)\]\'"<>]+|ftp://[^\s)\]\'"<>]+)', text):
-            urls.add(m.group(1))
-        metadata['urls'] = self._list_to_csv(sorted(urls)) if urls else ''
+        chunk_dicts = []
+        chunk_types = ['ocr_text', 'vision_labels']
+        offset = 0
+        for idx, chunk in enumerate(chunks):
+            chunk_meta = dict(metadata)
+            chunk_meta['chunk_type'] = chunk_types[idx]
+            # Extract URLs for this chunk
+            chunk_urls = set()
+            url_contexts = []
+            for m in re.finditer(r'(https?://[^\s)\]\'\"<>]+|ftp://[^\s)\]\'\"<>]+)', chunk):
+                chunk_urls.add(m.group(1))
+                url_contexts.append({'url': m.group(1), 'context': chunk_types[idx]})
+            chunk_meta['urls'] = self._list_to_csv(sorted(chunk_urls))
+            chunk_meta['url_contexts'] = url_contexts
+            chunk_meta['chunk_index'] = idx
+            chunk_meta['start_offset'] = offset
+            chunk_meta['end_offset'] = offset + len(chunk) - 1
+            offset += len(chunk)
+            # NLP-based topic modeling/classification (placeholder)
+            chunk_meta['topics'] = ["Unknown"]
+            # NLP-based summarization (placeholder: first sentence or first 20 words)
+            summary = chunk.split(". ")[0]
+            if len(summary.split()) < 5:
+                summary = " ".join(chunk.split()[:20])
+            chunk_meta['summary'] = summary.strip()
+            chunk_dicts.append({'text': chunk, 'metadata': chunk_meta})
+        document_metadata = dict(metadata)
+        document_metadata['chunk_count'] = len(chunk_dicts)
+        document_metadata['total_tokens'] = sum(len(chunk['text']) for chunk in chunk_dicts)
         return {
-            'metadata': metadata,
-            'chunks': chunks
+            'chunks': chunk_dicts,
+            'document_metadata': document_metadata
         } 

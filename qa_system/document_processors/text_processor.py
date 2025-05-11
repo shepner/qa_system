@@ -26,13 +26,37 @@ class TextDocumentProcessor(BaseDocumentProcessor):
             text = f.read()
         # Extract URLs from text
         urls = set()
-        for m in re.finditer(r'(https?://[^\s)\]\'"<>]+|ftp://[^\s)\]\'"<>]+)', text):
+        for m in re.finditer(r'(https?://[^\s)\]\'\"<>]+|ftp://[^\s)\]\'\"<>]+)', text):
             urls.add(m.group(1))
         metadata['urls'] = self._list_to_csv(sorted(urls))
         chunks = self.chunk_text(text)
-        metadata['chunk_count'] = len(chunks)
-        metadata['total_tokens'] = sum(len(chunk) for chunk in chunks)
+        chunk_dicts = []
+        offset = 0
+        for chunk_index, chunk in enumerate(chunks):
+            chunk_urls = set()
+            url_contexts = []
+            for m in re.finditer(r'(https?://[^\s)\]\'\"<>]+|ftp://[^\s)\]\'\"<>]+)', chunk):
+                chunk_urls.add(m.group(1))
+                url_contexts.append({'url': m.group(1), 'context': 'paragraph'})
+            chunk_meta = dict(metadata)
+            chunk_meta['urls'] = self._list_to_csv(sorted(chunk_urls))
+            chunk_meta['url_contexts'] = url_contexts
+            chunk_meta['chunk_index'] = chunk_index
+            chunk_meta['start_offset'] = offset
+            chunk_meta['end_offset'] = offset + len(chunk) - 1
+            offset += len(chunk)
+            # NLP-based topic modeling/classification (placeholder)
+            chunk_meta['topics'] = ["Unknown"]
+            # NLP-based summarization (placeholder: first sentence or first 20 words)
+            summary = chunk.split(". ")[0]
+            if len(summary.split()) < 5:
+                summary = " ".join(chunk.split()[:20])
+            chunk_meta['summary'] = summary.strip()
+            chunk_dicts.append({'text': chunk, 'metadata': chunk_meta})
+        document_metadata = dict(metadata)
+        document_metadata['chunk_count'] = len(chunk_dicts)
+        document_metadata['total_tokens'] = sum(len(chunk['text']) for chunk in chunk_dicts)
         return {
-            'metadata': metadata,
-            'chunks': chunks
+            'chunks': chunk_dicts,
+            'document_metadata': document_metadata
         } 

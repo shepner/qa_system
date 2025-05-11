@@ -219,12 +219,28 @@ processed_data = processor.process(file_path, metadata)
   - `file_type`: Document format/extension
   - `created_at`: Creation timestamp
   - `last_modified`: Last modification timestamp
+  - `checksum`: SHA256 hash of the file
   - `chunk_count`: Number of text chunks
   - `total_tokens`: Total token count
-  - `checksum`: SHA256 hash of the file
   - `url`: Any URL or link found in the document (Markdown, wikilinks, HTML links, etc.)
   - `url_external`: Any external URL (starting with `http://`, `https://`, etc.)
   - `url_internal`: Internal document links (Markdown or wikilinks that do not start with `http://` or `https://`)
+
+- **Chunk Metadata** (applies to every chunk, not just the document):
+  - All file/document-level metadata (inherited)
+  - `chunk_index`: Index of the chunk in the document
+  - `start_offset`, `end_offset`: Character or line offsets in the original document
+  - `section_header`: The name of the section header (e.g., chapter title) for all associated chunks (PDF, Markdown)
+  - `section_hierarchy`: List of all parent section headers for the chunk (e.g., ["Chapter 1", "Section 1.2"])
+  - `tags`: Tags relevant to the chunk (from YAML, inline, or propagated from parent sections)
+  - `urls`: URLs found in the chunk
+  - `url_contexts`: List of dicts with `url` and its context (e.g., paragraph, header, table, code block)
+  - `page_number`: (PDF/Image) Page number for the chunk
+  - `chunk_type`: (Image) Type of chunk (e.g., ocr_text, vision_labels)
+  - `topics`: List of topics or categories assigned to the chunk (NLP-based)
+  - `summary`: Short summary of the chunk (NLP-based)
+
+> Note: `topics` and `summary` are generated using NLP models and are available for all processors that support text content. These fields are extensible and may be added to more processors in the future.
 
 #### 3.2.2. Core Components
 
@@ -236,15 +252,20 @@ processed_data = processor.process(file_path, metadata)
   - Implements shared utility functions
   - Requires implementation of `process()` method by subclasses
   - Implements sentence-aware text chunking to preserve sentence boundaries
+  - Provides hooks for chunk-level metadata assignment (section, tag, url, position, etc.)
 
 ##### 3.2.2.2. Supported Processors
 1. **PDF Processor** (`pdf_processor.py`):
-   - Text extraction with page preservation - Structured content (clean text with formatting, extracted images, table data, form fields)
-   - Header pattern recognition
-   - Intelligent chunking based on section boundaries and sentence preservation
+   - Text extraction with page and section preservation
+   - Header pattern recognition (detects section/chapter headers)
+   - Intelligent chunking based on section boundaries and sentence/paragraph preservation
+   - Propagates section headers and section hierarchy to all associated chunks
+   - Tag propagation from higher-level sections (if tags are detected)
+   - Tracks URL context (e.g., paragraph, header, table)
+   - Adds chunk position metadata (chunk_index, start_offset, end_offset, page_number)
    - PDF-specific metadata extraction
    - Token counting using tiktoken
-   - **PDF-specific metadata** (in addition to core metadata):
+   - **PDF-specific metadata** (in addition to core and chunk metadata):
      - `page_count`: Number of pages in the PDF
      - `pdf_properties`: Dictionary of PDF document properties (title, author, subject, etc.)
      - `embedded_metadata`: Any embedded XMP or custom metadata
@@ -257,18 +278,26 @@ processed_data = processor.process(file_path, metadata)
 2. **Text Processor** (`text_processor.py`):
    - Plain text file processing
    - Sentence-aware chunking
+   - Adds chunk position metadata (chunk_index, start_offset, end_offset)
+   - Tracks URL context (e.g., paragraph)
    - **Text-specific metadata**:
      (none currently)
    
 3. **Markdown Processor** (`markdown_processor.py`):
    - Markdown document processing
-   - Sentence-aware chunking with markdown structure preservation
+   - Sentence-aware chunking with markdown structure and section hierarchy preservation
+   - Tracks full section hierarchy (H1 > H2 > H3, etc.)
+   - Propagates tags from YAML frontmatter and inline hashtags, as well as from parent sections
+   - Tracks URL context (markdown_link, raw_url, code block, etc.)
+   - Adds chunk position metadata (chunk_index, start_offset, end_offset)
    - **Markdown-specific metadata**:
      - `tags`: Tags extracted from YAML frontmatter or hashtags (with `#` removed)
    
 4. **CSV Processor** (`csv_processor.py`):
    - CSV file processing
    - Row-based chunking with header preservation
+   - Adds chunk position metadata (chunk_index, start_offset, end_offset)
+   - Tracks URL context (e.g., cell, header)
    - **CSV-specific metadata**:
      - (Add any CSV-specific metadata fields here if needed, e.g., `header_fields`, `row_count`)
    
@@ -276,7 +305,8 @@ processed_data = processor.process(file_path, metadata)
    - Support for multiple image formats (jpg, jpeg, png, gif, bmp, webp)
    - Integration with Google Vision API for image analysis
    - Passes both the processed image data and Vision API results to the Embedding Generator
-   - Detailed textual description of the image
+   - Each chunk (OCR text, label summary) gets its own chunk_type and position metadata
+   - Tracks URL context (e.g., ocr_text, vision_labels)
    - **Image-specific metadata**:
      - `image_dimensions`: Width and height in pixels
      - `image_format`: File format (e.g., PNG, JPEG)
@@ -292,8 +322,11 @@ processed_data = processor.process(file_path, metadata)
 ---
 
 **Note:**
-- All processors inherit the core metadata fields from section 3.2.1 and should only add fields that are specific to their file type or processing logic.
-- If a processor extracts a field that is relevant to all file types, consider moving it to the core metadata section.
+- All processors now assign chunk-level metadata for every chunk, including section, tag, url, context, and position fields.
+- Section and tag propagation is hierarchical: tags/headers from parent sections are inherited by all sub-sections/chunks unless overridden.
+- URL context is tracked for each URL in a chunk.
+- Chunk position metadata is always included.
+- The metadata structure is extensible for future types (e.g., author, language, table/figure context, etc.).
 
 #### 3.2.3. Interface Specification
 
@@ -306,12 +339,16 @@ processed_data = processor.process(file_path, metadata)
   - `checksum`: SHA256 hash of the file (provided by File Scanner)
 
 ##### Output Format
-- **Metadata Dictionary**:
+- **Document Metadata**:
   - All input metadata fields
   - Processing timestamp
   - Processor type used
   - Chunk information (if applicable)
   - Document-specific metadata (varies by processor)
+- **Chunks**:
+  - List of dicts, each with:
+    - `text`: The chunk text
+    - `metadata`: Chunk-level metadata as described above
 
 #### 3.2.4. Configuration
 ```yaml
