@@ -133,7 +133,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                 
                 # Generate embeddings
                 embeddings = generator.generate_embeddings(
-                    texts=processed['chunks'],
+                    texts=[chunk['text'] for chunk in processed['chunks']],
                     metadata=processed['metadata']
                 )
                 # Overwrite embeddings['metadata'] with chunk_metadatas

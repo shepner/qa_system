@@ -74,5 +74,5 @@ class VisionDocumentProcessor(BaseDocumentProcessor):
         document_metadata['total_tokens'] = sum(len(chunk['text']) for chunk in chunk_dicts)
         return {
             'chunks': chunk_dicts,
-            'document_metadata': document_metadata
+            'metadata': document_metadata
         } 

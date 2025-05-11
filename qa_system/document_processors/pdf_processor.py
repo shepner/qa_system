@@ -124,6 +124,6 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
         document_metadata['page_count'] = len(all_text)
         return {
             'chunks': chunk_dicts,
-            'document_metadata': document_metadata,
+            'metadata': document_metadata,
             'page_texts': all_text
         } 
