@@ -15,6 +15,7 @@ last_updated: 2024-03-20
 3. [Components](#3-components)
    3.1. [Query Processor](#31-query-processor)
    3.2. [Response Generator](#32-response-generator)
+   3.3. [Hybrid Scoring: Semantic + Metadata (Key Points)](#33-hybrid-scoring-semantic--metadata-key-points)
 4. [Query Types](#4-query-types)
    4.1. [Basic Query](#41-basic-query)
    4.2. [Advanced Query](#42-advanced-query)
@@ -33,6 +34,11 @@ last_updated: 2024-03-20
 # 1. Overview
 
 The query flow enables semantic search capabilities across processed documents. It converts user queries into vector embeddings, performs similarity searches, and generates contextually relevant responses using the Gemini model.
+
+- **Embeddings and Text Generation**: Uses the Google Gemini API for both embedding generation and text generation, following the latest API usage patterns (see [Gemini API Docs](https://ai.google.dev/gemini-api/docs/text-generation)).
+- **Security**: API keys are loaded securely from environment variables (see examples below).
+- **Document Processing**: Relies on the chunking, metadata, and document processor architecture described in [ARCHITECTURE-add-flow.md](ARCHITECTURE-add-flow.md#32-document-processors).
+- **Reference Examples**: See [`reference_example/talk_to_documents_with_embeddings_example.py`](reference_example/talk_to_documents_with_embeddings_example.py) and [`reference_example/text_generation_example.py`](reference_example/text_generation_example.py) for working code.
 
 # 2. System Flow
 
@@ -60,7 +66,7 @@ sequenceDiagram
 ```
 
 # 3. Components
-Implementation of the Google Gemini AI models are to follow the API guide found here: https://ai.google.dev/gemini-api/docs/text-generation
+Implementation of the Google Gemini AI models must follow the API guide found here: https://ai.google.dev/gemini-api/docs/text-generation and the working code in [reference_example/talk_to_documents_with_embeddings_example.py](reference_example/talk_to_documents_with_embeddings_example.py) and [reference_example/text_generation_example.py](reference_example/text_generation_example.py).
 
 ## 3.1 Query Processor
 - **Purpose**: Handles semantic search queries and manages the search process
@@ -109,6 +115,34 @@ Implementation of the Google Gemini AI models are to follow the API guide found 
   - Gemini API
   - Rich text formatting
 
+## 3.3 Hybrid Scoring: Semantic + Metadata (Key Points)
+
+Hybrid Scoring combines semantic similarity with metadata-based adjustments to improve the relevance and contextual accuracy of search results. This approach is especially effective when users do not specify explicit filters, allowing the system to surface more meaningful results automatically.
+
+### Key Points
+
+- **Automatic Relevance Boosting:** Results are ranked not only by semantic similarity but also by how well their metadata matches implicit or inferred user needs (e.g., recency, document type, tags).
+- **No User Input Required:** Users simply enter their query; the system applies metadata-based boosts or penalties transparently.
+- **Customizable Scoring:** The scoring function can be tuned to prioritize certain metadata fields (e.g., boost recent documents, preferred sources, or matching tags).
+- **Implementation Flow:**
+    1. Perform standard semantic search to retrieve candidate results and similarity scores.
+    2. For each result, evaluate relevant metadata fields (e.g., date, tags, source).
+    3. Adjust the similarity score by applying boosts/penalties based on metadata matches.
+    4. Re-rank results by the new hybrid score before returning to the user.
+- **Example Metadata Boosts:**
+    - Recent documents (e.g., last 12 months)
+    - Documents with tags matching query keywords
+    - Official or preferred sources
+- **Benefits:**
+    - Improves result relevance without complicating the user experience
+    - Surfaces contextually important documents that might otherwise be missed
+    - Adaptable to evolving business or user needs
+- **Implementation Notes:**
+    - Identify which metadata fields are most valuable for your use case (e.g., date, tags, source, author).
+    - Integrate a scoring function in the query pipeline to adjust similarity scores post-search.
+    - Tune boost/penalty values based on testing and feedback.
+    - Optionally, log or explain to users why certain results are ranked higher (for transparency).
+
 # 4. Query Types
 
 ## 4.1 Basic Query
@@ -128,79 +162,54 @@ Implementation of the Google Gemini AI models are to follow the API guide found 
 
 # 5. Configuration
 
-The query flow is configured through several sections in the configuration file:
+The query flow is configured through several sections in the configuration file. These must match the structure and field names used in the add flow (see [ARCHITECTURE-add-flow.md](ARCHITECTURE-add-flow.md#324-configuration)):
 
 ```yaml
-# Embedding Model Configuration
-EMBEDDING_MODEL:
-  MODEL_NAME: "models/embedding-001"    # Gemini embedding model
-  BATCH_SIZE: 15                        # Number of texts to process at once
-  MAX_LENGTH: 3072                      # Maximum text length in tokens
-  DIMENSIONS: 768                       # Output embedding dimensions
+# Security Configuration
+SECURITY:
+  GEMINI_API_KEY: ${GEMINI_API_KEY}    # Google Gemini API credentials (from environment)
+  GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
 
 # Vector Database Configuration
 VECTOR_STORE:
   TYPE: "chroma"                        # Vector store implementation
   PERSIST_DIRECTORY: "./data/vector_store"  # Data storage location
   COLLECTION_NAME: "qa_documents"       # Collection name
-  DISTANCE_METRIC: "cosine"            # Similarity metric
-  TOP_K: 40                            # Number of results to retrieve
 
-# Document Processing Configuration
-DOCUMENT_PROCESSING:
-  MAX_CHUNK_SIZE: 3072                 # Maximum size of text chunks
-  MIN_CHUNK_SIZE: 1024                 # Minimum chunk size
-  CHUNK_OVERLAP: 768                   # Overlap between chunks
-  PRESERVE_SENTENCES: true             # Ensure chunks don't break sentences
-  CONCURRENT_TASKS: 6                  # Number of parallel tasks
-  BATCH_SIZE: 50                       # Documents per batch
+# Query-Specific Parameters
+QUERY:
+  # Retrieval/Search Parameters
+  DISTANCE_METRIC: "cosine"         # (str) Similarity metric for vector search: "cosine", "euclidean", etc.
+  TOP_K: 40                         # (int) Number of top results to retrieve per query
 
-# Security Configuration
-SECURITY:
-  GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
-  GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
+  # Hybrid Scoring/Metadata Boosts
+  RECENCY_BOOST: 1.0                # (float) Boost for recent documents (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
+  TAG_BOOST: 1.0                    # (float) Boost for tag matches (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
+  SOURCE_BOOST: 1.0                 # (float) Boost for preferred sources (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
+
+  # Generation Parameters (for Gemini or LLM response)
+  TEMPERATURE: 0.2                  # (float) Controls randomness of generated text (0.0 = deterministic, 1.0 = creative)
+  MAX_TOKENS: 512                   # (int) Maximum tokens in generated response
+  CONTEXT_WINDOW: 4096              # (int) Number of tokens of context to pass to the model
 ```
 
-### Configuration Details
-
-#### Embedding Model
-- `MODEL_NAME`: Specifies the Gemini model for embeddings
-- `BATCH_SIZE`: Controls batch processing efficiency (10-15 recommended)
-- `MAX_LENGTH`: Maximum token length (3072 for text-embedding-004)
-- `DIMENSIONS`: Output dimensions (768 or 1024)
-
-#### Vector Store
-- `TYPE`: Vector database implementation (ChromaDB)
-- `PERSIST_DIRECTORY`: Storage location for vector data
-- `COLLECTION_NAME`: Name of the document collection
-- `DISTANCE_METRIC`: Similarity calculation method (cosine, euclidean, dot)
-- `TOP_K`: Initial retrieval count before relevance scoring
-
-#### Document Processing
-- `MAX_CHUNK_SIZE`: Maximum characters per chunk (matches embedding limit)
-- `MIN_CHUNK_SIZE`: Minimum chunk size to ensure meaningful content
-- `CHUNK_OVERLAP`: Character overlap between chunks
-- `PRESERVE_SENTENCES`: Maintains sentence integrity during chunking
-- `CONCURRENT_TASKS`: Parallel processing capacity
-- `BATCH_SIZE`: Batch processing size for efficiency
-
-#### Security
-- `GOOGLE_APPLICATION_CREDENTIALS`: Path to Google Cloud credentials
-- `GOOGLE_CLOUD_PROJECT`: Google Cloud project identifier
+> **Note:**
+> All embedding operations (for both document ingestion and query-time search) must use the `EmbeddingGenerator` class.
 
 # 6. Technical Specifications
 
 ### System Requirements
 - Python 3.13 or higher
-- Gemini API access
+- Gemini API access (API key via environment variable)
 - Vector database support (ChromaDB)
 - Sufficient memory for embedding operations
 
 ### Dependencies
-- `google-cloud-aiplatform`: Gemini API integration
-- `chromadb`: Vector database operations
-- `numpy`: Vector operations and calculations
-- `pydantic`: Data validation and settings management
+- `google-genai` (Gemini API integration)
+- `chromadb` (Vector database operations)
+- `numpy` (Vector operations and calculations)
+- `pydantic` (Data validation and settings management)
+- `python-dotenv` (for loading environment variables from `.env`)
 
 ### Performance Considerations
 - Query processing: < 100ms
@@ -214,6 +223,7 @@ SECURITY:
 - Vector search timeouts
 - Response generation limits
 - Rate limiting and quotas
+- API key/configuration errors (fail fast if missing)
 
 # 7. Integration
 
@@ -221,6 +231,7 @@ SECURITY:
 - Uses logging setup from [ARCHITECTURE-common-components.md](ARCHITECTURE-common-components.md)
 - Follows configuration patterns defined in common components
 - Utilizes shared error handling and monitoring
+- **Document Processing and Metadata**: All query results and context assembly rely on the chunking, metadata, and document processor architecture described in [ARCHITECTURE-add-flow.md](ARCHITECTURE-add-flow.md#32-document-processors). Chunk-level metadata is preserved throughout the query and response flow.
 
 ### Vector Store Integration
 - Interfaces with vector database for similarity search
@@ -229,8 +240,19 @@ SECURITY:
 
 ### Security Integration
 - Implements authentication and authorization checks
-- Manages API keys and credentials securely
+- Manages API keys and credentials securely (see below)
 - Follows security best practices from common components
+
+#### Secure API Key Handling Example
+```python
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("GEMINI_API_KEY not set in environment.")
+```
 
 # 8. Usage
 
@@ -249,19 +271,48 @@ python -m qa_system --query --config custom_config.yaml     # Use custom configu
 ```
 
 ## 8.2 Python API Usage
+
+### Embedding and Similarity Search Example
+```python
+from qa_system.embedding import EmbeddingGenerator
+
+embedding_generator = EmbeddingGenerator(config)
+embedding_result = embedding_generator.generate_embeddings([query], metadata={"task_type": "RETRIEVAL_QUERY"})
+query_vector = embedding_result['vectors'][0]
+# Use query_vector for similarity search in the vector store
+```
+
+### Text Generation Example
+```python
+from google import genai
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+client = genai.Client(api_key=GEMINI_API_KEY)
+
+response = client.models.generate_content(
+    model="gemini-1.5-flash-latest",
+    contents="Write a story about a magic backpack."
+)
+print(response.text)
+```
+
+### Full Query Flow Example
+
+Below is an example of running an **interactive chat session** with the query processor. This is the primary usage mode for the query flow module and demonstrates how users interact with the system in real time. This example should always be included in documentation for this module.
+
 ```python
 from qa_system.query_processor import QueryProcessor
 from qa_system.config import get_config
 from qa_system.logging_setup import setup_logging
 
-# Initialize components
 config = get_config()
 setup_logging(
     LOG_FILE=config.get_nested('LOGGING.LOG_FILE'),
     LEVEL=config.get_nested('LOGGING.LEVEL', default="INFO")
 )
-
-# Create query processor
 processor = QueryProcessor(config)
 
 # Single query mode
