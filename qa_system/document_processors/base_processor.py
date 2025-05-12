@@ -56,8 +56,12 @@ class BaseDocumentProcessor:
         """
         Chunk text into sentence-aware segments.
         Returns a list of text chunks.
+        Implements a conditional chunking strategy: if the document is shorter than min_chunk_size, it is retained as a single chunk.
         """
         import re
+        # If the document is shorter than min_chunk_size, return as a single chunk
+        if len(text.strip()) <= self.min_chunk_size:
+            return [text.strip()]
         # Split into sentences (very basic, can be replaced by nltk or spacy)
         sentences = re.split(r'(?<=[.!?])\s+', text.strip())
         chunks = []
@@ -86,7 +90,7 @@ class BaseDocumentProcessor:
             current_len += len(sent)
         if current:
             chunks.append(' '.join(current))
-        # Remove tiny chunks
+        # Remove tiny chunks unless it's the only chunk (i.e., short doc)
         return [c for c in chunks if len(c) >= self.min_chunk_size or len(chunks) == 1]
 
     def process(self, file_path, metadata=None):

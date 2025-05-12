@@ -2,26 +2,38 @@
 
 # Logging Configuration
 LOGGING:
+  # The minimum severity of log messages to record (e.g., "INFO", "DEBUG", "WARNING", "ERROR"). Controls verbosity.
   LEVEL: "INFO"
+  # The file path where logs will be written.
   LOG_FILE: "logs/qa_system.log"
 
 # Security & API Configuration
 SECURITY:
+  # Path to the Google Cloud service account credentials file (usually a JSON file). Used for authenticating with Google APIs.
   GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
+  # The default Google Cloud region for API operations (e.g., "us-central1").
   GOOGLE_CLOUD_REGION: ${GOOGLE_CLOUD_REGION}
+  # The Google Cloud project ID to use for API calls and resource management.
   GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
+  # API key for accessing Google Vision API services.
   GOOGLE_VISION_API_KEY: ${GOOGLE_VISION_API_KEY}
+  # API key for accessing Gemini (likely a generative AI or embedding service).
   GEMINI_API_KEY: ${GEMINI_API_KEY}
 
 # File Scanner Configuration
 FILE_SCANNER:
+  # The root directory to scan for documents to ingest or process.
   DOCUMENT_PATH: "./docs"
+  # If true, files that have already been processed (e.g., by hash or record) will be skipped.
   SKIP_EXISTING: true
+  # The algorithm used to hash files for deduplication or change detection (e.g., "sha256").
   HASH_ALGORITHM: "sha256"
+  # List of file extensions that are allowed for processing (e.g., "txt", "md", "pdf").
   ALLOWED_EXTENSIONS:
     - "txt"
     - "md"
-
+    - "pdf"
+  # List of glob or regex patterns for files/directories to exclude from scanning (e.g., hidden files, cache, templates).
   EXCLUDE_PATTERNS:
     - ".*"
     - "__pycache__"
@@ -34,33 +46,67 @@ FILE_SCANNER:
 
 # Document Processing Configuration
 DOCUMENT_PROCESSING:
+  # If true, attempts to keep sentence boundaries when chunking documents.
   PRESERVE_SENTENCES: true
-  MAX_CHUNK_SIZE: 3072
-  MIN_CHUNK_SIZE: 1024
-  CHUNK_OVERLAP: 768
+  # Maximum number of characters (or tokens) per document chunk.
+  # NOTE: This value should be less than or equal to EMBEDDING_MODEL.MAX_LENGTH (currently 8192)
+  MAX_CHUNK_SIZE: 8192
+  # Minimum number of characters (or tokens) per chunk.
+  # A ratio of 1/4 to 1/2 is recommended
+  # this also sets the minimum size of the document that will be chunked
+  # Documents smaller than this will be retained as a single chunk
+  MIN_CHUNK_SIZE: 2048
+  # Number of characters (or tokens) that overlap between consecutive chunks (for context continuity).
+  # Start with 10–20% of MAX_CHUNK_SIZE and <= MIN_CHUNK_SIZE.  Increase if retrievals are missing context.  
+  CHUNK_OVERLAP: 1024
+  # Number of parallel tasks to use for document processing (controls concurrency).
   CONCURRENT_TASKS: 6
+  # Number of documents or chunks to process in a single batch.
   BATCH_SIZE: 50
+
+# Embedding Model Configuration
+EMBEDDING_MODEL:
+  # The name or identifier of the embedding model to use (e.g., "gemini-embedding-exp-03-07").
+  MODEL_NAME: "gemini-embedding-exp-03-07"
+  # Maximum number of input tokens supported by this model (highest supported: 8192).
+  MAX_LENGTH: 8192
+  # The dimensionality of the output embedding vectors (highest supported: 3072).
+  DIMENSIONS: 3072
+  # High batch size for throughput (adjust if you hit rate limits or memory issues).
+  BATCH_SIZE: 64
 
 # Vector Store Configuration
 VECTOR_STORE:
+  # The type of vector store backend to use (e.g., "chroma" for ChromaDB).
   TYPE: "chroma"
+  # Directory where the vector store data is persisted on disk.
   PERSIST_DIRECTORY: "./data/vector_store"
+  # The name of the collection or namespace within the vector store for storing document embeddings.
   COLLECTION_NAME: "qa_documents"
 
 QUERY:
-  # Retrieval/Search Parameters
-  DISTANCE_METRIC: "cosine"         # (str) Similarity metric for vector search: "cosine", "euclidean", etc.
-  TOP_K: 40                         # (int) Number of top results to retrieve per query
-  MIN_SIMILARITY: 0.2               # (float) Minimum similarity threshold for source inclusion (0.0-1.0, default 0.2)
+  # The name or identifier of the language model to use for query answering (e.g., "gemini-2.5-pro-preview-05-06").
+  MODEL_NAME: "gemini-2.5-pro-preview-05-06"
+  # The similarity metric used for vector search (e.g., "cosine", "euclidean").
+  DISTANCE_METRIC: "cosine"
+  # The number of top results to retrieve for each query.
+  TOP_K: 40
+  # The minimum similarity threshold (0.0–1.0) for including a source in the results.
+  MIN_SIMILARITY: 0.2
 
-  # Hybrid Scoring/Metadata Boosts
-  RECENCY_BOOST: 1.0                # (float) Boost for recent documents (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
-  TAG_BOOST: 1.0                    # (float) Boost for tag matches (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
-  SOURCE_BOOST: 1.5                 # (float) Boost for preferred sources (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
-  PREFERRED_SOURCES:                # this uses globbing to match files
+  # Multiplier to boost the score of more recent documents (1.0 = neutral, >1.0 = boost, <1.0 = penalty).
+  RECENCY_BOOST: 1.0
+  # Multiplier to boost the score of documents with matching tags.
+  TAG_BOOST: 1.0
+  # Multiplier to boost the score of documents from preferred sources.
+  SOURCE_BOOST: 1.5
+  # List of glob patterns for files or sources that should be preferred in search results.
+  PREFERRED_SOURCES:
     - "Library/Archive/**/*.md"
 
-  # Generation Parameters (for Gemini or LLM response)
-  TEMPERATURE: 0.2                  # (float) Controls randomness of generated text (0.0 = deterministic, 1.0 = creative)
-  MAX_TOKENS: 512                   # (int) Maximum tokens in generated response
-  CONTEXT_WINDOW: 4096              # (int) Number of tokens of context to pass to the model
+  # Controls the randomness of generated text from the LLM (0.0 = deterministic, 1.0 = highly creative).
+  TEMPERATURE: 0.2
+  # Maximum number of tokens to generate in the model's response.
+  MAX_TOKENS: 512
+  # Number of tokens of context to provide to the model for each query.
+  CONTEXT_WINDOW: 4096
