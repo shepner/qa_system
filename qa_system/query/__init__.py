@@ -42,7 +42,7 @@ class QueryProcessor:
         if not self.gemini_api_key:
             raise RuntimeError("GEMINI_API_KEY not set in environment.")
         self.gemini_client = genai.Client(api_key=self.gemini_api_key)
-        self.gemini_model = "gemini-2.0-flash"
+        self.gemini_model = self.config.get_nested('QUERY.MODEL_NAME', 'gemini-2.0-flash')
 
     def _apply_hybrid_scoring(self, sources: List[Source]) -> List[Source]:
         # Configurable boosts
@@ -118,15 +118,17 @@ class QueryProcessor:
             docs = results.get('documents', [[]])[0]
             metadatas = results.get('metadatas', [[]])[0]
             distances = results.get('distances', [[]])[0] if 'distances' in results else []
-            # Log the metadata being searched at INFO level
-            self.logger.debug(f"Searching over metadata for query '{query}': {metadatas}")
-            # Detailed logging for vector store results
+            # Log concise list of sources after vector search
+            source_paths = [meta.get('path', doc_id) for meta, doc_id in zip(metadatas, ids)]
+            self.logger.debug(f"Initial sources after vector search for query '{query}': {source_paths}")
+            # Detailed logging for vector store results (no document excerpts, no document content, no full results dump)
             self.logger.debug(f"Vector store returned {len(ids)} results.")
             for i, doc_id in enumerate(ids):
                 self.logger.debug(f"  id: {doc_id}")
-                self.logger.debug(f"  doc: {docs[i][:80] if i < len(docs) else ''} ...")
                 self.logger.debug(f"  distance: {distances[i] if i < len(distances) else 'N/A'}")
-                self.logger.debug(f"  metadata: {metadatas[i] if i < len(metadatas) else {}}")
+                # Only log safe metadata fields (never log 'documents' or any content)
+                safe_meta = {k: v for k, v in (metadatas[i] if i < len(metadatas) else {}).items() if k != 'chunk' and k != 'document' and k != 'text'}
+                self.logger.debug(f"  metadata: {safe_meta}")
             # Build sources list
             sources = []
             for i, doc_id in enumerate(ids):
@@ -139,6 +141,7 @@ class QueryProcessor:
             self.logger.debug("Similarities before hybrid scoring:")
             for src in sources:
                 self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
+            self.logger.debug(f"Sources before hybrid scoring: {[src.document for src in sources]}")
             # Hybrid scoring: extract keywords from query for tag boost
             import re
             self._last_query_keywords = set(re.findall(r"\w+", query.lower()))
@@ -147,6 +150,7 @@ class QueryProcessor:
             self.logger.debug("Similarities after hybrid scoring:")
             for src in sources:
                 self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
+            self.logger.debug(f"Sources after hybrid scoring: {[src.document for src in sources]}")
             # Deduplicate sources by document path (keep highest similarity chunk per doc)
             deduped_sources = self._deduplicate_sources(sources)
             # Minimum similarity threshold
@@ -155,6 +159,8 @@ class QueryProcessor:
             if not filtered_sources:
                 self.logger.warning(f"No sources above similarity threshold {min_similarity}. Returning top result anyway.")
                 filtered_sources = deduped_sources[:1] if deduped_sources else []
+            # Log concise list of sources after deduplication/filtering
+            self.logger.debug(f"Sources after deduplication/filtering: {[src.document for src in filtered_sources]}")
             # Check for relevant document presence (example: look for 'access control' in document path or chunk)
             relevant_keywords = [k for k in self._last_query_keywords if k in {'access', 'control', 'controls'}]
             found_relevant = any(any(kw in (src.document.lower() + src.chunk.lower()) for kw in relevant_keywords) for src in filtered_sources)
@@ -176,11 +182,11 @@ class QueryProcessor:
                 if tokens_used > context_window:
                     break
                 context_text += f"\n---\n{chunk}"
-                context_chunks.append((src.document, chunk[:80]))
+                context_chunks.append(src.document)
                 used_docs.add(src.document)
-            self.logger.debug("Context chunks for Gemini:")
-            for doc, preview in context_chunks:
-                self.logger.debug(f"  - {doc}: {preview} ...")
+            self.logger.debug("Context documents for Gemini:")
+            for doc in context_chunks:
+                self.logger.debug(f"  - {doc}")
             prompt = (
                 "You are an expert assistant. Use the following context to answer the user's question. "
                 "If the answer is not directly in the context, use your best judgment to provide a helpful, accurate answer. "

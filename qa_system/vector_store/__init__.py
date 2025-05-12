@@ -62,6 +62,7 @@ class ChromaVectorStore:
                 query_args['where'] = filter_criteria
             results = self.collection.query(**query_args)
             logger.info(f"Query returned {len(results['ids'][0])} results from collection '{self.collection_name}'")
+            logger.debug(f"Query results: {results}")
             return results
         except Exception as e:
             logger.error(f"Query failed: {e}")
