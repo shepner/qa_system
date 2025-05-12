@@ -16,10 +16,12 @@ SECURITY:
 # File Scanner Configuration
 FILE_SCANNER:
   DOCUMENT_PATH: "./docs"
+  SKIP_EXISTING: true
+  HASH_ALGORITHM: "sha256"
   ALLOWED_EXTENSIONS:
     - "txt"
     - "md"
-    - "pdf"
+
   EXCLUDE_PATTERNS:
     - ".*"
     - "__pycache__"
@@ -29,17 +31,15 @@ FILE_SCANNER:
     - "Excalidraw"
     - "stylesheets"
     - "Tags.md"
-  HASH_ALGORITHM: "sha256"
-  SKIP_EXISTING: true
 
 # Document Processing Configuration
 DOCUMENT_PROCESSING:
+  PRESERVE_SENTENCES: true
   MAX_CHUNK_SIZE: 3072
   MIN_CHUNK_SIZE: 1024
   CHUNK_OVERLAP: 768
   CONCURRENT_TASKS: 6
   BATCH_SIZE: 50
-  PRESERVE_SENTENCES: true
 
 # Vector Store Configuration
 VECTOR_STORE:
@@ -51,11 +51,14 @@ QUERY:
   # Retrieval/Search Parameters
   DISTANCE_METRIC: "cosine"         # (str) Similarity metric for vector search: "cosine", "euclidean", etc.
   TOP_K: 40                         # (int) Number of top results to retrieve per query
+  MIN_SIMILARITY: 0.2               # (float) Minimum similarity threshold for source inclusion (0.0-1.0, default 0.2)
 
   # Hybrid Scoring/Metadata Boosts
   RECENCY_BOOST: 1.0                # (float) Boost for recent documents (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
   TAG_BOOST: 1.0                    # (float) Boost for tag matches (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
-  SOURCE_BOOST: 1.0                 # (float) Boost for preferred sources (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
+  SOURCE_BOOST: 1.5                 # (float) Boost for preferred sources (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
+  PREFERRED_SOURCES:                # this uses globbing to match files
+    - "Library/Archive/**/*.md"
 
   # Generation Parameters (for Gemini or LLM response)
   TEMPERATURE: 0.2                  # (float) Controls randomness of generated text (0.0 = deterministic, 1.0 = creative)

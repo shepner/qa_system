@@ -82,12 +82,16 @@ Implementation of the Google Gemini AI models must follow the API guide found he
   - Similarity search execution
     - Performs vector similarity calculations
     - Filters results based on metadata
+    - Logs detailed vector store results and similarity calculations at DEBUG level for each query, including ids, documents, distances, and metadatas.
+    - Applies a minimum similarity threshold (default 0.2, configurable via `QUERY.MIN_SIMILARITY`) to filter sources before context assembly and output.
+    - Checks and logs whether relevant documents (by keyword) are present in the top results, aiding in debugging chunking/indexing issues.
   - Result ranking
     - Scores and ranks search results
     - Applies relevance filtering
   - Context assembly
     - Gathers relevant document chunks
     - Builds context for response generation
+    - Only includes sources above the minimum similarity threshold and deduplicates by document.
 - **Technologies**:
   - Vector similarity algorithms
   - Result ranking algorithms
@@ -181,11 +185,14 @@ QUERY:
   # Retrieval/Search Parameters
   DISTANCE_METRIC: "cosine"         # (str) Similarity metric for vector search: "cosine", "euclidean", etc.
   TOP_K: 40                         # (int) Number of top results to retrieve per query
+  MIN_SIMILARITY: 0.2               # (float) Minimum similarity threshold for source inclusion (0.0-1.0, default 0.2)
 
   # Hybrid Scoring/Metadata Boosts
   RECENCY_BOOST: 1.0                # (float) Boost for recent documents (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
   TAG_BOOST: 1.0                    # (float) Boost for tag matches (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
-  SOURCE_BOOST: 1.0                 # (float) Boost for preferred sources (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
+  SOURCE_BOOST: 1.5                 # (float) Boost for preferred sources (1.0 = neutral, >1.0 = boost, <1.0 = penalty)
+  PREFERRED_SOURCES:
+    - "Library/Archive"
 
   # Generation Parameters (for Gemini or LLM response)
   TEMPERATURE: 0.2                  # (float) Controls randomness of generated text (0.0 = deterministic, 1.0 = creative)
@@ -203,6 +210,12 @@ QUERY:
 - Gemini API access (API key via environment variable)
 - Vector database support (ChromaDB)
 - Sufficient memory for embedding operations
+
+### Diagnostics and Debugging
+- **Detailed DEBUG logging for vector store results and similarity calculations.**
+- **Minimum similarity threshold for source inclusion (default 0.2, configurable).**
+- **Logs warnings if relevant documents (by keyword) are not found in top results, to help diagnose chunking/indexing issues.**
+- These diagnostics help ensure the right documents are surfaced and can be tuned for better retrieval quality.
 
 ### Dependencies
 - `google-genai` (Gemini API integration)

@@ -3,6 +3,10 @@ from typing import List, Optional, Any, Dict
 from qa_system.embedding import EmbeddingGenerator
 from qa_system.vector_store import ChromaVectorStore
 from qa_system.exceptions import QASystemError, QueryError, EmbeddingError
+from dotenv import load_dotenv
+import os
+from google import genai
+import time
 
 class Source:
     def __init__(self, document: str, chunk: str, similarity: float, context: str = '', metadata: Optional[dict] = None):
@@ -23,8 +27,8 @@ class QueryResponse:
 
 class QueryProcessor:
     """
-    Handles semantic search queries and generates contextual responses using embeddings and the vector store.
-    Supports dependency injection for embedding_generator and vector_store for testability.
+    Handles semantic search queries and generates contextual responses using embeddings, vector store, and Gemini LLM.
+    Implements hybrid scoring (semantic + metadata boosts) and config-driven parameters.
     """
     def __init__(self, config, embedding_generator=None, vector_store=None):
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -32,16 +36,71 @@ class QueryProcessor:
         self.config = config
         self.embedding_generator = embedding_generator if embedding_generator is not None else EmbeddingGenerator(config)
         self.vector_store = vector_store if vector_store is not None else ChromaVectorStore(config)
+        # Gemini setup
+        load_dotenv()
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if not self.gemini_api_key:
+            raise RuntimeError("GEMINI_API_KEY not set in environment.")
+        self.gemini_client = genai.Client(api_key=self.gemini_api_key)
+        self.gemini_model = "gemini-2.0-flash"
+
+    def _apply_hybrid_scoring(self, sources: List[Source]) -> List[Source]:
+        # Configurable boosts
+        recency_boost = float(self.config.get_nested('QUERY.RECENCY_BOOST', default=1.0))
+        tag_boost = float(self.config.get_nested('QUERY.TAG_BOOST', default=1.5))  # More aggressive by default
+        source_boost = float(self.config.get_nested('QUERY.SOURCE_BOOST', default=1.0))
+        now = time.time()
+        # Fetch preferred sources ONCE
+        preferred_sources = self.config.get_nested('QUERY.PREFERRED_SOURCES', default=[])
+        for src in sources:
+            boost = 1.0
+            # Recency boost (if 'date' in metadata)
+            date = src.metadata.get('date')
+            if date:
+                try:
+                    # Assume date is ISO8601 or epoch seconds
+                    if isinstance(date, (int, float)):
+                        age_days = (now - float(date)) / 86400
+                    else:
+                        from dateutil.parser import parse
+                        dt = parse(date)
+                        age_days = (now - dt.timestamp()) / 86400
+                    if age_days < 365:
+                        boost *= recency_boost
+                except Exception:
+                    pass
+            # Tag boost (if tags overlap with query keywords)
+            tags = src.metadata.get('tags', [])
+            if tags and hasattr(self, '_last_query_keywords'):
+                if any(tag.lower() in self._last_query_keywords for tag in tags):
+                    boost *= tag_boost
+            # Source boost (if preferred source substring in document path)
+            if preferred_sources and any(pref in src.document for pref in preferred_sources):
+                boost *= source_boost
+            src.similarity *= boost
+        # Re-rank by new similarity
+        return sorted(sources, key=lambda s: s.similarity, reverse=True)
+
+    def _deduplicate_sources(self, sources: List[Source]) -> List[Source]:
+        """
+        Deduplicate sources by document path. Keep only the highest-similarity chunk per document.
+        """
+        seen = {}
+        for src in sources:
+            doc = src.document
+            if doc not in seen or src.similarity > seen[doc].similarity:
+                seen[doc] = src
+        return list(seen.values())
 
     def process_query(self, query: str) -> QueryResponse:
         """
         Process a semantic search query and return a response object.
+        Implements hybrid scoring and Gemini LLM response generation.
         Args:
             query: The user query string
         Returns:
             QueryResponse object with answer, sources, and metadata
         """
-        import time
         start_time = time.time()
         try:
             if not query or not isinstance(query, str):
@@ -53,11 +112,21 @@ class QueryProcessor:
                 raise EmbeddingError("Failed to generate embedding for query.")
             query_vector = vectors[0]
             # Query the vector store
-            results = self.vector_store.query(query_vector)
+            top_k = int(self.config.get_nested('QUERY.TOP_K', default=40))
+            results = self.vector_store.query(query_vector, top_k=top_k)
             ids = results.get('ids', [[]])[0]
             docs = results.get('documents', [[]])[0]
             metadatas = results.get('metadatas', [[]])[0]
             distances = results.get('distances', [[]])[0] if 'distances' in results else []
+            # Log the metadata being searched at INFO level
+            self.logger.debug(f"Searching over metadata for query '{query}': {metadatas}")
+            # Detailed logging for vector store results
+            self.logger.debug(f"Vector store returned {len(ids)} results.")
+            for i, doc_id in enumerate(ids):
+                self.logger.debug(f"  id: {doc_id}")
+                self.logger.debug(f"  doc: {docs[i][:80] if i < len(docs) else ''} ...")
+                self.logger.debug(f"  distance: {distances[i] if i < len(distances) else 'N/A'}")
+                self.logger.debug(f"  metadata: {metadatas[i] if i < len(metadatas) else {}}")
             # Build sources list
             sources = []
             for i, doc_id in enumerate(ids):
@@ -66,18 +135,104 @@ class QueryProcessor:
                 sim = 1.0 - distances[i] if i < len(distances) else 0.0
                 context = doc[:200]  # Truncate for context
                 sources.append(Source(document=meta.get('path', doc_id), chunk=doc, similarity=sim, context=context, metadata=meta))
-            # Generate response text (simple: return top doc chunk or summary)
-            response_text = sources[0].chunk if sources else "No relevant documents found."
-            confidence = sources[0].similarity if sources else 0.0
+            # Log similarity before hybrid scoring
+            self.logger.debug("Similarities before hybrid scoring:")
+            for src in sources:
+                self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
+            # Hybrid scoring: extract keywords from query for tag boost
+            import re
+            self._last_query_keywords = set(re.findall(r"\w+", query.lower()))
+            sources = self._apply_hybrid_scoring(sources)
+            # Log similarity after hybrid scoring
+            self.logger.debug("Similarities after hybrid scoring:")
+            for src in sources:
+                self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
+            # Deduplicate sources by document path (keep highest similarity chunk per doc)
+            deduped_sources = self._deduplicate_sources(sources)
+            # Minimum similarity threshold
+            min_similarity = float(self.config.get_nested('QUERY.MIN_SIMILARITY', default=0.2))
+            filtered_sources = [src for src in deduped_sources if src.similarity >= min_similarity]
+            if not filtered_sources:
+                self.logger.warning(f"No sources above similarity threshold {min_similarity}. Returning top result anyway.")
+                filtered_sources = deduped_sources[:1] if deduped_sources else []
+            # Check for relevant document presence (example: look for 'access control' in document path or chunk)
+            relevant_keywords = [k for k in self._last_query_keywords if k in {'access', 'control', 'controls'}]
+            found_relevant = any(any(kw in (src.document.lower() + src.chunk.lower()) for kw in relevant_keywords) for src in filtered_sources)
+            if not found_relevant:
+                self.logger.warning(f"Relevant document for keywords {relevant_keywords} not found in top results.")
+            # Assemble context for Gemini (at most one chunk per document, unless more needed to fill context window)
+            context_window = int(self.config.get_nested('QUERY.CONTEXT_WINDOW', default=4096))
+            max_tokens = int(self.config.get_nested('QUERY.MAX_TOKENS', default=512))
+            temperature = float(self.config.get_nested('QUERY.TEMPERATURE', default=0.2))
+            context_text = ""
+            tokens_used = 0
+            used_docs = set()
+            context_chunks = []
+            for src in filtered_sources:
+                if src.document in used_docs:
+                    continue
+                chunk = src.chunk
+                tokens_used += len(chunk.split())
+                if tokens_used > context_window:
+                    break
+                context_text += f"\n---\n{chunk}"
+                context_chunks.append((src.document, chunk[:80]))
+                used_docs.add(src.document)
+            self.logger.debug("Context chunks for Gemini:")
+            for doc, preview in context_chunks:
+                self.logger.debug(f"  - {doc}: {preview} ...")
+            prompt = (
+                "You are an expert assistant. Use the following context to answer the user's question. "
+                "If the answer is not directly in the context, use your best judgment to provide a helpful, accurate answer. "
+                "Cite sources if you use information from a specific document.\n\n"
+                f"Question: {query}\n\nContext:{context_text}"
+            )
+            gemini_response = self.gemini_client.models.generate_content(
+                model=self.gemini_model,
+                contents=prompt,
+                generation_config={
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens
+                }
+            )
+            response_text = getattr(gemini_response, 'text', None) or str(gemini_response)
+            confidence = filtered_sources[0].similarity if filtered_sources else 0.0
             processing_time = time.time() - start_time
             return QueryResponse(
                 text=response_text,
-                sources=sources,
+                sources=filtered_sources,
                 confidence=confidence,
                 processing_time=processing_time,
                 error=None,
                 success=True
             )
+        except TypeError as e:
+            if "unexpected keyword argument 'generation_config'" in str(e):
+                gemini_response = self.gemini_client.models.generate_content(
+                    model=self.gemini_model,
+                    contents=prompt
+                )
+                response_text = getattr(gemini_response, 'text', None) or str(gemini_response)
+                confidence = filtered_sources[0].similarity if filtered_sources else 0.0
+                processing_time = time.time() - start_time
+                return QueryResponse(
+                    text=response_text,
+                    sources=filtered_sources,
+                    confidence=confidence,
+                    processing_time=processing_time,
+                    error=None,
+                    success=True
+                )
+            else:
+                self.logger.error(f"Query processing failed: {e}")
+                return QueryResponse(
+                    text="",
+                    sources=[],
+                    confidence=0.0,
+                    processing_time=time.time() - start_time,
+                    error=str(e),
+                    success=False
+                )
         except Exception as e:
             self.logger.error(f"Query processing failed: {e}")
             return QueryResponse(
