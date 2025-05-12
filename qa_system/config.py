@@ -23,13 +23,14 @@ class Config:
         Returns:
             Configuration value or default if not found
         """
-        self.logger.info(f"Called Config.get_nested(path={path}, default={default})")
         current = self._config
         for key in path.split('.'):
             if isinstance(current, dict) and key in current:
                 current = current[key]
             else:
+                self.logger.info(f"Config.get_nested({path}) not found, returning default={default!r}")
                 return default
+        self.logger.info(f"Config.get_nested({path}) -> {current!r}")
         return current
 
 def get_config(config_path: str = "./config/config.yaml") -> Config:
