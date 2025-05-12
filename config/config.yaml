@@ -50,12 +50,14 @@ DOCUMENT_PROCESSING:
   PRESERVE_SENTENCES: true
   # Maximum number of characters (or tokens) per document chunk.
   # NOTE: This value should be less than or equal to EMBEDDING_MODEL.MAX_LENGTH (currently 8192)
-  MAX_CHUNK_SIZE: 8192
+  # MAX_CHUNK_SIZE: 8192
+  MAX_CHUNK_SIZE: 2048
   # Minimum number of characters (or tokens) per chunk.
-  # A ratio of 1/4 to 1/2 is recommended
+  # A ratio of 1/4 to 1/2 of MAX_CHUNK_SIZEis recommended
   # this also sets the minimum size of the document that will be chunked
   # Documents smaller than this will be retained as a single chunk
-  MIN_CHUNK_SIZE: 2048
+  # MIN_CHUNK_SIZE: 2048
+  MIN_CHUNK_SIZE: 1024
   # Number of characters (or tokens) that overlap between consecutive chunks (for context continuity).
   # Start with 10–20% of MAX_CHUNK_SIZE and <= MIN_CHUNK_SIZE.  Increase if retrievals are missing context.  
   CHUNK_OVERLAP: 1024
@@ -67,11 +69,14 @@ DOCUMENT_PROCESSING:
 # Embedding Model Configuration
 EMBEDDING_MODEL:
   # The name or identifier of the embedding model to use (e.g., "gemini-embedding-exp-03-07").
-  MODEL_NAME: "gemini-embedding-exp-03-07"
+  # MODEL_NAME: "gemini-embedding-exp-03-07"
+  MODEL_NAME: "text-embedding-004"
   # Maximum number of input tokens supported by this model (highest supported: 8192).
-  MAX_LENGTH: 8192
+  # MAX_LENGTH: 8192
+  MAX_LENGTH: 2048
   # The dimensionality of the output embedding vectors (highest supported: 3072).
-  DIMENSIONS: 3072
+  # DIMENSIONS: 3072
+  DIMENSIONS: 768
   # High batch size for throughput (adjust if you hit rate limits or memory issues).
   BATCH_SIZE: 64
 

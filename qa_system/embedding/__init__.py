@@ -53,10 +53,10 @@ class EmbeddingGenerator:
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i+batch_size]
                 # Gemini API expects a list of strings
-                result = self.client.embed_content(
+                result = self.client.models.embed_content(
                     model=self.model_name,
-                    content=batch,
-                    task_type="RETRIEVAL_DOCUMENT"
+                    contents=batch,
+                    config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
                 )
                 # result.embeddings is a list of Embedding objects, each with a .values attribute
                 # If only one input, result.embeddings may be a single Embedding object
