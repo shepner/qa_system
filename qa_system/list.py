@@ -17,7 +17,7 @@ class ListModule:
         docs = self.store.list_documents(pattern=pattern)
         seen = set()
         for doc in docs:
-            key = (doc.get('path'), doc.get('hash'))
+            key = (doc.get('path'), doc.get('checksum'))
             if key in seen:
                 continue
             seen.add(key)

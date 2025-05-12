@@ -329,7 +329,7 @@ def main() -> int:
             docs = list_module.list_documents(pattern=pattern)
             print(f"\nDocuments in vector store ({len(docs)} found):")
             for doc in docs:
-                print(f"- {doc.get('path', '[no path]')} (hash={doc.get('hash', '[no hash]')})")
+                print(f"- {doc.get('path', '[no path]')} (checksum={doc.get('checksum', '[no checksum]')})")
             stats = list_module.get_collection_stats()
             print(f"\nTotal documents: {stats['total_documents']}")
             print(f"Document types: {stats['document_types']}")
