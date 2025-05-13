@@ -8,6 +8,11 @@ import os
 from google import genai
 import time
 
+# Add a simple English stopword set for keyword filtering
+STOPWORDS = {
+    "the", "is", "at", "which", "on", "and", "a", "an", "to", "me", "what", "explain", "please", "of", "for", "in", "with", "by", "as", "it", "that", "this", "be", "are", "was", "were", "do", "does", "did", "can", "could", "should", "would", "will", "shall", "may", "might", "must", "i", "you", "he", "she", "we", "they", "my", "your", "his", "her", "our", "their"
+}
+
 class Source:
     def __init__(self, document: str, chunk: str, similarity: float, context: str = '', metadata: Optional[dict] = None):
         self.document = document
@@ -104,11 +109,14 @@ class QueryProcessor:
         start_time = time.time()
         try:
             if not query or not isinstance(query, str):
+                self.logger.info(f"process_query called with invalid query: {query!r} (type: {type(query)})")
                 raise QASystemError("Query must be a non-empty string.")
+            self.logger.info(f"process_query called with query: {query!r}")
             # Generate embedding for the query
             embedding_result = self.embedding_generator.generate_embeddings([query], metadata={"task_type": "RETRIEVAL_QUERY"})
             vectors = embedding_result.get('vectors', [])
             if not vectors or not isinstance(vectors, list):
+                self.logger.info(f"Embedding generation failed or returned no vectors for query: {query!r}")
                 raise EmbeddingError("Failed to generate embedding for query.")
             query_vector = vectors[0]
             # Query the vector store
@@ -144,7 +152,11 @@ class QueryProcessor:
             self.logger.debug(f"Sources before hybrid scoring: {[src.document for src in sources]}")
             # Hybrid scoring: extract keywords from query for tag boost
             import re
-            self._last_query_keywords = set(re.findall(r"\w+", query.lower()))
+            all_words = re.findall(r"\w+", query.lower())
+            self._last_query_keywords = set(w for w in all_words if w not in STOPWORDS)
+            self.logger.info(f"Extracted keywords from query (stopwords removed): {sorted(self._last_query_keywords)}")
+            if not self._last_query_keywords:
+                self.logger.info(f"No keywords extracted from query after stopword removal: {query!r}. This may indicate an empty, non-alphanumeric, or all-stopword query.")
             sources = self._apply_hybrid_scoring(sources)
             # Log similarity after hybrid scoring
             self.logger.debug("Similarities after hybrid scoring:")
@@ -161,11 +173,43 @@ class QueryProcessor:
                 filtered_sources = deduped_sources[:1] if deduped_sources else []
             # Log concise list of sources after deduplication/filtering
             self.logger.debug(f"Sources after deduplication/filtering: {[src.document for src in filtered_sources]}")
-            # Check for relevant document presence (example: look for 'access control' in document path or chunk)
-            relevant_keywords = [k for k in self._last_query_keywords if k in {'access', 'control', 'controls'}]
-            found_relevant = any(any(kw in (src.document.lower() + src.chunk.lower()) for kw in relevant_keywords) for src in filtered_sources)
+            # Check for relevant document presence: look for any extracted keyword in metadata fields or content
+            relevant_keywords = list(self._last_query_keywords)
+            found_relevant = False
+            for src in filtered_sources:
+                # Gather all searchable fields
+                fields = []
+                # tags (may be list or string)
+                tags = src.metadata.get('tags', [])
+                if isinstance(tags, str):
+                    tags = [t.strip() for t in tags.split(',') if t.strip()]
+                fields.extend([t.lower() for t in tags])
+                # path
+                path = src.metadata.get('path', '')
+                if path:
+                    fields.append(path.lower())
+                # filename_stem
+                filename_stem = src.metadata.get('filename_stem', '')
+                if filename_stem:
+                    fields.append(filename_stem.lower())
+                # url
+                url = src.metadata.get('url', '')
+                if url:
+                    fields.append(url.lower())
+                # document path and chunk text
+                fields.append(src.document.lower())
+                fields.append(src.chunk.lower())
+                # Check if any keyword is in any field
+                for kw in relevant_keywords:
+                    if any(kw in f for f in fields):
+                        found_relevant = True
+                        break
+                if found_relevant:
+                    break
             if not found_relevant:
-                self.logger.warning(f"Relevant document for keywords {relevant_keywords} not found in top results.")
+                self.logger.warning(
+                    f"Relevant document for keywords {relevant_keywords} not found in any of the following fields: tags, path, filename_stem, url, document, chunk. Extracted keywords: {sorted(self._last_query_keywords)}."
+                )
             # Assemble context for Gemini (at most one chunk per document, unless more needed to fill context window)
             context_window = int(self.config.get_nested('QUERY.CONTEXT_WINDOW', default=4096))
             max_tokens = int(self.config.get_nested('QUERY.MAX_TOKENS', default=512))

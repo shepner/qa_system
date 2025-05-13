@@ -53,6 +53,7 @@ secrets/
 *.pem
 *.key
 *.crt
+config_recommendations.md
 
 # Database
 data/
