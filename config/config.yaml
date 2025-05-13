@@ -51,20 +51,20 @@ DOCUMENT_PROCESSING:
   # Maximum number of characters (or tokens) per document chunk.
   # NOTE: This value should be less than or equal to EMBEDDING_MODEL.MAX_LENGTH (currently 8192)
   # MAX_CHUNK_SIZE: 8192
-  MAX_CHUNK_SIZE: 2048
+  MAX_CHUNK_SIZE: 512
   # Minimum number of characters (or tokens) per chunk.
   # A ratio of 1/4 to 1/2 of MAX_CHUNK_SIZEis recommended
   # this also sets the minimum size of the document that will be chunked
   # Documents smaller than this will be retained as a single chunk
   # MIN_CHUNK_SIZE: 2048
-  MIN_CHUNK_SIZE: 1024
+  MIN_CHUNK_SIZE: 256
   # Number of characters (or tokens) that overlap between consecutive chunks (for context continuity).
   # Start with 10–20% of MAX_CHUNK_SIZE and <= MIN_CHUNK_SIZE.  Increase if retrievals are missing context.  
-  CHUNK_OVERLAP: 1024
+  CHUNK_OVERLAP: 128
   # Number of parallel tasks to use for document processing (controls concurrency).
   CONCURRENT_TASKS: 6
   # Number of documents or chunks to process in a single batch.
-  BATCH_SIZE: 50
+  BATCH_SIZE: 100
 
 # Embedding Model Configuration
 EMBEDDING_MODEL:
@@ -79,6 +79,10 @@ EMBEDDING_MODEL:
   DIMENSIONS: 768
   # High batch size for throughput (adjust if you hit rate limits or memory issues).
   BATCH_SIZE: 100
+  # Rate limiter settings for embedding API calls
+  EMBEDDING_RATE_LIMITER:
+    MAX_CALLS: 160
+    PERIOD_SECONDS: 60.0
 
 # Vector Store Configuration
 VECTOR_STORE:
@@ -94,10 +98,18 @@ QUERY:
   MODEL_NAME: "gemini-2.5-pro-preview-05-06"
   # The similarity metric used for vector search (e.g., "cosine", "euclidean").
   DISTANCE_METRIC: "cosine"
-  # The number of top results to retrieve for each query.
-  TOP_K: 40
+  # TOP_K controls how many top-matching chunks are retrieved per query.
+  # Set based on:
+  # - Query type (fact lookup: lower; research/summarization: higher)
+  # - Corpus size (small <1000 docs: lower 5-20; large >10000 docs: higher 50-100)
+  # - Chunk size (large: lower; small: higher)
+  # - LLM context window (avoid exceeding input limits)
+  # - Performance (higher values may slow response and increase cost)
+  TOP_K: 50
   # The minimum similarity threshold (0.0–1.0) for including a source in the results.
-  MIN_SIMILARITY: 0.01
+  # Small Corpus: Lower threshold (e.g., 0.01–0.05)
+  # Large/Noisy Corpus: Higher threshold (e.g., 0.1–0.3)
+  MIN_SIMILARITY: 0.1
 
   # Multiplier to boost the score of more recent documents (1.0 = neutral, >1.0 = boost, <1.0 = penalty).
   RECENCY_BOOST: 1.0

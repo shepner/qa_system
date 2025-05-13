@@ -51,9 +51,6 @@ class _RateLimiter:
                 sleep_time = max(0.01, self.period / self.max_calls)
             time.sleep(sleep_time)
 
-# Singleton limiter: 1500 requests/minute = 25/sec
-_embedding_rate_limiter = _RateLimiter(max_calls=500, period_seconds=60.0)
-
 class EmbeddingGenerator:
     """
     EmbeddingGenerator generates vector embeddings for document chunks and images.
@@ -79,6 +76,12 @@ class EmbeddingGenerator:
             raise ImportError("google-genai is not installed. Please install the google-generativeai package.")
         self.client = genai.Client(api_key=self.gemini_api_key)
 
+        # Rate limiter settings from config
+        rate_limiter_cfg = self.config.get_nested('EMBEDDING_MODEL.EMBEDDING_RATE_LIMITER', {})
+        max_calls = rate_limiter_cfg.get('MAX_CALLS', 500)
+        period_seconds = rate_limiter_cfg.get('PERIOD_SECONDS', 60.0)
+        self._embedding_rate_limiter = _RateLimiter(max_calls=max_calls, period_seconds=period_seconds)
+
     def generate_embeddings(self, texts: List[str], metadata: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate embeddings for a list of text chunks using Gemini API.
@@ -101,7 +104,7 @@ class EmbeddingGenerator:
                     try:
                         # --- Rate limiting before each API call ---
                         start_wait = time.monotonic()
-                        _embedding_rate_limiter.acquire()
+                        self._embedding_rate_limiter.acquire()
                         waited = time.monotonic() - start_wait
                         if waited > 0.01:
                             self.logger.info(f"Rate limiter: waited {waited:.3f}s before Gemini API call to stay under limit.")
