@@ -34,10 +34,12 @@ class _RateLimiter:
             with self._lock:
                 now = time.monotonic()
                 elapsed = now - self._last_refill
-                refill = int(elapsed * (self.max_calls / self.period))
-                if refill > 0:
-                    self._tokens = min(self.max_calls, self._tokens + refill)
-                    self._last_refill = now
+                rate_per_sec = self.max_calls / self.period
+                tokens_to_add = elapsed * rate_per_sec
+                if tokens_to_add >= 1:
+                    tokens_to_add_int = int(tokens_to_add)
+                    self._tokens = min(self.max_calls, self._tokens + tokens_to_add_int)
+                    self._last_refill += tokens_to_add_int / rate_per_sec
                 if self._tokens > 0:
                     self._tokens -= 1
                     # --- Logging requests per minute ---
