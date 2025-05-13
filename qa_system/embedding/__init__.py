@@ -2,12 +2,57 @@ import logging
 from typing import List, Dict, Any
 import os
 from qa_system.exceptions import EmbeddingError
+import threading
+import time
 
 try:
     from google import genai
     from google.genai import types
 except ImportError:
     genai = None  # Will error at runtime if used
+
+# --- Rate Limiter (Standard Library, Process-wide) ---
+class _RateLimiter:
+    """
+    Thread-safe token bucket rate limiter for process-wide API call limiting.
+    Allows up to max_calls per period_seconds.
+    """
+    def __init__(self, max_calls: int, period_seconds: float):
+        self.max_calls = max_calls
+        self.period = period_seconds
+        self._lock = threading.Lock()
+        self._tokens = max_calls
+        self._last_refill = time.monotonic()
+        # For logging requests per minute
+        self._window_start = time.monotonic()
+        self._request_count = 0
+
+    def acquire(self):
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                elapsed = now - self._last_refill
+                refill = int(elapsed * (self.max_calls / self.period))
+                if refill > 0:
+                    self._tokens = min(self.max_calls, self._tokens + refill)
+                    self._last_refill = now
+                if self._tokens > 0:
+                    self._tokens -= 1
+                    # --- Logging requests per minute ---
+                    window_now = time.monotonic()
+                    if window_now - self._window_start >= 60.0:
+                        logging.info(f"[RateLimiter] Requests in last minute: {self._request_count}")
+                        self._window_start = window_now
+                        self._request_count = 0
+                    self._request_count += 1
+                    logging.debug(f"[RateLimiter] Request count this minute: {self._request_count}")
+                    return
+                # Not enough tokens, must wait
+                sleep_time = max(0.01, self.period / self.max_calls)
+            time.sleep(sleep_time)
+
+# Singleton limiter: 1500 requests/minute = 25/sec
+_embedding_rate_limiter = _RateLimiter(max_calls=500, period_seconds=60.0)
 
 class EmbeddingGenerator:
     """
@@ -52,24 +97,42 @@ class EmbeddingGenerator:
         try:
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i+batch_size]
-                # Gemini API expects a list of strings
-                result = self.client.models.embed_content(
-                    model=self.model_name,
-                    contents=batch,
-                    config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
-                )
-                # result.embeddings is a list of Embedding objects, each with a .values attribute
-                # If only one input, result.embeddings may be a single Embedding object
-                if hasattr(result, 'embeddings'):
-                    embeddings = result.embeddings
-                    # If only one embedding, wrap in list
-                    if not isinstance(embeddings, list):
-                        embeddings = [embeddings]
-                    for emb in embeddings:
-                        # emb.values is the vector
-                        vectors.append(list(emb.values))
-                else:
-                    raise EmbeddingError("No embeddings returned from Gemini API.")
+                while True:
+                    try:
+                        # --- Rate limiting before each API call ---
+                        start_wait = time.monotonic()
+                        _embedding_rate_limiter.acquire()
+                        waited = time.monotonic() - start_wait
+                        if waited > 0.01:
+                            self.logger.info(f"Rate limiter: waited {waited:.3f}s before Gemini API call to stay under limit.")
+                        # Gemini API expects a list of strings
+                        result = self.client.models.embed_content(
+                            model=self.model_name,
+                            contents=batch,
+                            config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
+                        )
+                        # result.embeddings is a list of Embedding objects, each with a .values attribute
+                        # If only one input, result.embeddings may be a single Embedding object
+                        if hasattr(result, 'embeddings'):
+                            embeddings = result.embeddings
+                            # If only one embedding, wrap in list
+                            if not isinstance(embeddings, list):
+                                embeddings = [embeddings]
+                            for emb in embeddings:
+                                # emb.values is the vector
+                                vectors.append(list(emb.values))
+                        else:
+                            raise EmbeddingError("No embeddings returned from Gemini API.")
+                        break  # Success, exit retry loop
+                    except Exception as e:
+                        # Check for 429/resource exhausted
+                        msg = str(e)
+                        if (hasattr(e, 'args') and e.args and 'RESOURCE_EXHAUSTED' in str(e.args[0])) or 'RESOURCE_EXHAUSTED' in msg or '429' in msg:
+                            self.logger.warning("Rate limit hit (429/RESOURCE_EXHAUSTED). Sleeping for 60 seconds before retrying batch.")
+                            time.sleep(60)
+                            continue  # Retry the same batch
+                        else:
+                            raise  # Not a rate limit error, re-raise
         except Exception as e:
             self.logger.error(f"Failed to generate embeddings: {e}")
             raise EmbeddingError(f"Failed to generate embeddings: {e}")
