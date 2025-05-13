@@ -78,7 +78,7 @@ EMBEDDING_MODEL:
   # DIMENSIONS: 3072
   DIMENSIONS: 768
   # High batch size for throughput (adjust if you hit rate limits or memory issues).
-  BATCH_SIZE: 64
+  BATCH_SIZE: 100
 
 # Vector Store Configuration
 VECTOR_STORE:
