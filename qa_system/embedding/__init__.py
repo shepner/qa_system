@@ -26,6 +26,8 @@ class _RateLimiter:
         # For logging requests per minute
         self._window_start = time.monotonic()
         self._request_count = 0
+        self._total_requests = 0
+        self._period_start = time.monotonic()
 
     def acquire(self):
         while True:
@@ -45,11 +47,23 @@ class _RateLimiter:
                         self._window_start = window_now
                         self._request_count = 0
                     self._request_count += 1
+                    self._total_requests += 1
+                    # Reset period if needed
+                    if now - self._period_start >= self.period:
+                        self._period_start = now
+                        self._total_requests = 1  # This request
                     logging.debug(f"[RateLimiter] Request count this minute: {self._request_count}")
                     return
                 # Not enough tokens, must wait
                 sleep_time = max(0.01, self.period / self.max_calls)
             time.sleep(sleep_time)
+
+    def get_period_request_count(self):
+        """
+        Return the number of requests submitted in the current rate limiter period.
+        """
+        with self._lock:
+            return self._total_requests, self.period, self._period_start
 
 class EmbeddingGenerator:
     """
@@ -81,6 +95,15 @@ class EmbeddingGenerator:
         max_calls = rate_limiter_cfg.get('MAX_CALLS', 500)
         period_seconds = rate_limiter_cfg.get('PERIOD_SECONDS', 60.0)
         self._embedding_rate_limiter = _RateLimiter(max_calls=max_calls, period_seconds=period_seconds)
+
+    def report_rate_limiter_usage(self):
+        """
+        Log the number of requests submitted in the current rate limiter period.
+        """
+        count, period, period_start = self._embedding_rate_limiter.get_period_request_count()
+        now = time.monotonic()
+        elapsed = now - period_start
+        self.logger.info(f"[EmbeddingGenerator] Requests in current period: {count} / {self._embedding_rate_limiter.max_calls} (period: {period:.1f}s, elapsed: {elapsed:.1f}s)")
 
     def generate_embeddings(self, texts: List[str], metadata: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -136,6 +159,8 @@ class EmbeddingGenerator:
                             continue  # Retry the same batch
                         else:
                             raise  # Not a rate limit error, re-raise
+                # After each batch, log rate limiter usage
+                self.report_rate_limiter_usage()
         except Exception as e:
             self.logger.error(f"Failed to generate embeddings: {e}")
             raise EmbeddingError(f"Failed to generate embeddings: {e}")
