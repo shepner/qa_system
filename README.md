@@ -21,27 +21,43 @@ A powerful document processing and question-answering system that uses Google's 
 
 ## Installation
 
+The recommended way to install and set up the QA System is to use the provided `run.sh` script, which automates environment preparation and dependency installation.
+
 1. Clone the repository:
 ```bash
 git clone https://github.com/yourusername/qa_system.git
 cd qa_system
 ```
 
-2. Create and activate a virtual environment:
+2. Run the setup script from the project folder:
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+./run.sh
 ```
 
-3. Install dependencies:
+This script will:
+- Create required directories (`logs`, `data/vector_store`, `config`, `secrets`)
+- Set up and activate a Python virtual environment (`.venv`)
+- Install all dependencies from `requirements.txt`
+- Check for and copy the example config if needed
+- Load environment variables from `secrets/.env` if present
+
+> **Note:** If you need to pass arguments to the main program, you can do so with `./run.sh [arguments]` (e.g., `./run.sh --add path/to/document`).
+
+## Initial Configuration Recommendations
+
+Before using the QA System, it is recommended to analyze your document corpus and generate configuration recommendations. This helps optimize chunking, embedding, and query settings for your specific data.
+
+1. **Run the configuration recommendation tool:**
+
 ```bash
-pip install -r requirements.txt
+python tools/recommend_config.py
 ```
 
-4. Set up configuration:
-   - Copy `config/config.yaml.example` to `config/config.yaml`
-   - Update configuration values as needed
-   - Set required environment variables in `.env` file
+- This script scans your document directory (as set in `config/config.yaml` under `FILE_SCANNER.DOCUMENT_PATH`) and generates a report at `config/config_recommendations.md`.
+- The report provides recommended values for `DOCUMENT_PROCESSING`, `EMBEDDING_MODEL`, and `QUERY` settings based on your corpus statistics and current config strategies.
+- Review the generated `config/config_recommendations.md` and update your `config/config.yaml` accordingly for best results.
+
+> **Note:** The script does not modify your config automatically. You must manually review and apply the recommended settings.
 
 ## Configuration
 
@@ -56,6 +72,8 @@ Required environment variables:
 - `GOOGLE_VISION_API_KEY`: (Optional) Google Vision API key
 
 ## Usage
+
+After configuring your system (see above), you can use the following commands:
 
 ### Adding Documents
 
@@ -87,64 +105,4 @@ python -m qa_system --query  # Enter interactive chat mode
 
 ## Architecture
 
-The system follows a modular architecture with clear separation of concerns:
-
-1. **Common Components**
-   - Main Module: Command-line interface
-   - Configuration Module: System settings
-   - Logging Setup: Centralized logging
-   - Vector Database: ChromaDB integration
-
-2. **Document Processing**
-   - File Scanner: File discovery and validation
-   - Document Processors: Format-specific processing
-   - Embedding Generator: Gemini model integration
-   - Metadata Management: Document tracking
-
-3. **Vector Operations**
-   - Storage: ChromaDB operations
-   - Querying: Semantic search
-   - Collection Management: Database lifecycle
-
 For detailed architecture information, see [ARCHITECTURE.md](ARCHITECTURE.md).
-
-## Development
-
-### Running Tests
-
-```bash
-pytest
-pytest --cov=qa_system  # With coverage
-```
-
-### Code Style
-
-The project uses:
-- Black for code formatting
-- isort for import sorting
-- flake8 for linting
-- mypy for type checking
-
-Run all checks:
-```bash
-black .
-isort .
-flake8
-mypy .
-```
-
-## License
-
-[Your License Here]
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and style checks
-5. Submit a pull request
-
-## Support
-
-[Your Support Information] 
