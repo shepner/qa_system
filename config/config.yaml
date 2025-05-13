@@ -116,13 +116,15 @@ QUERY:
   # Multiplier to boost the score of documents with matching tags.
   TAG_BOOST: 1.5
   # Multiplier to boost the score of documents from preferred sources.
-  SOURCE_BOOST: 2.0
+  SOURCE_BOOST: 1.1
   # List of glob patterns for files or sources that should be preferred in search results.
   PREFERRED_SOURCES:
-    - "Library/Archive/**/*.md"
+    - "Library/Artifacts/**/*.md"
 
   # Controls the randomness of generated text from the LLM (0.0 = deterministic, 1.0 = highly creative).
-  TEMPERATURE: 0.95
+  # Start with 0.3–0.5 for most question-answering and summarization tasks.
+  # Increase to 0.7+ only if you want more creative or less predictable answers.
+  TEMPERATURE: 0.5
   # Maximum number of tokens to generate in the model's response.
   MAX_TOKENS: 1024
   # Number of tokens of context to provide to the model for each query.

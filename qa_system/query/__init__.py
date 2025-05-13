@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import os
 from google import genai
 import time
+import fnmatch
 
 # Add a simple English stopword set for keyword filtering
 STOPWORDS = {
@@ -14,12 +15,14 @@ STOPWORDS = {
 }
 
 class Source:
-    def __init__(self, document: str, chunk: str, similarity: float, context: str = '', metadata: Optional[dict] = None):
+    def __init__(self, document: str, chunk: str, similarity: float, context: str = '', metadata: Optional[dict] = None, original_similarity: float = None, boost: float = None):
         self.document = document
         self.chunk = chunk
         self.similarity = similarity
         self.context = context
         self.metadata = metadata or {}
+        self.original_similarity = original_similarity
+        self.boost = boost
 
 class QueryResponse:
     def __init__(self, text: str, sources: List[Source], confidence: float = 1.0, processing_time: float = 0.0, error: Optional[str] = None, success: bool = True):
@@ -55,15 +58,16 @@ class QueryProcessor:
         tag_boost = float(self.config.get_nested('QUERY.TAG_BOOST', default=1.5))  # More aggressive by default
         source_boost = float(self.config.get_nested('QUERY.SOURCE_BOOST', default=1.0))
         now = time.time()
-        # Fetch preferred sources ONCE
         preferred_sources = self.config.get_nested('QUERY.PREFERRED_SOURCES', default=[])
         for src in sources:
+            # Clamp similarity to [0, 1] before boosting
+            original_similarity = src.similarity
+            src.similarity = max(0.0, min(1.0, src.similarity))
             boost = 1.0
             # Recency boost (if 'date' in metadata)
             date = src.metadata.get('date')
             if date:
                 try:
-                    # Assume date is ISO8601 or epoch seconds
                     if isinstance(date, (int, float)):
                         age_days = (now - float(date)) / 86400
                     else:
@@ -74,16 +78,24 @@ class QueryProcessor:
                         boost *= recency_boost
                 except Exception:
                     pass
-            # Tag boost (if tags overlap with query keywords)
             tags = src.metadata.get('tags', [])
             if tags and hasattr(self, '_last_query_keywords'):
                 if any(tag.lower() in self._last_query_keywords for tag in tags):
                     boost *= tag_boost
-            # Source boost (if preferred source substring in document path)
-            if preferred_sources and any(pref in src.document for pref in preferred_sources):
+            matched = False
+            for pref in preferred_sources:
+                if fnmatch.fnmatch(src.document, pref):
+                    matched = True
+                    break
+            self.logger.debug(f"Hybrid scoring: src.document={src.document}, preferred_sources={preferred_sources}, matched={matched}")
+            if matched:
+                self.logger.debug(f"SOURCE BOOST APPLIED: {src.document} matched {preferred_sources}, boost={source_boost}")
                 boost *= source_boost
-            src.similarity *= boost
-        # Re-rank by new similarity
+            final_similarity = src.similarity * boost
+            self.logger.debug(f"Scoring: {src.document} | original={original_similarity:.4f} | clamped={src.similarity:.4f} | boost={boost:.2f} | final={final_similarity:.4f}")
+            src.original_similarity = original_similarity
+            src.boost = boost
+            src.similarity = final_similarity
         return sorted(sources, key=lambda s: s.similarity, reverse=True)
 
     def _deduplicate_sources(self, sources: List[Source]) -> List[Source]:
@@ -139,12 +151,22 @@ class QueryProcessor:
                 self.logger.debug(f"  metadata: {safe_meta}")
             # Build sources list
             sources = []
+            # Get docs root for relative path calculation
+            docs_root = self.config.get_nested('FILE_SCANNER.DOCUMENT_PATH', './docs')
+            docs_root = os.path.abspath(docs_root)
             for i, doc_id in enumerate(ids):
                 doc = docs[i] if i < len(docs) else ''
                 meta = metadatas[i] if i < len(metadatas) else {}
                 sim = 1.0 - distances[i] if i < len(distances) else 0.0
                 context = doc[:200]  # Truncate for context
-                sources.append(Source(document=meta.get('path', doc_id), chunk=doc, similarity=sim, context=context, metadata=meta))
+                abs_path = os.path.abspath(meta.get('path', doc_id))
+                if abs_path.startswith(docs_root):
+                    rel_path = os.path.relpath(abs_path, docs_root)
+                else:
+                    rel_path = abs_path
+                # Clamp sim to [0, 1] here as well for consistency
+                clamped_sim = max(0.0, min(1.0, sim))
+                sources.append(Source(document=rel_path, chunk=doc, similarity=clamped_sim, context=context, metadata=meta, original_similarity=sim))
             # Log similarity before hybrid scoring
             self.logger.debug("Similarities before hybrid scoring:")
             for src in sources:
@@ -293,3 +315,12 @@ class QueryProcessor:
                 error=str(e),
                 success=False
             )
+
+def print_response(response):
+    print("\nAnswer:")
+    print("-" * 80)
+    print(response.text)
+    print("\nSources:")
+    print("-" * 80)
+    for source in response.sources:
+        print(f"- {source.document} (original: {source.original_similarity:.4f}, boost: {source.boost}, final: {source.similarity:.4f})")
