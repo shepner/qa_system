@@ -71,6 +71,42 @@ Required environment variables:
 - `GOOGLE_CLOUD_PROJECT`: Google Cloud project ID
 - `GOOGLE_VISION_API_KEY`: (Optional) Google Vision API key
 
+## Setting Up Secrets (.env)
+
+To use the QA System, you must provide required secrets and API keys in a `secrets/.env` file. This file is used to securely store sensitive environment variables needed for authentication and API access.
+
+1. **Create the secrets directory if it does not exist:**
+   ```bash
+   mkdir -p secrets
+   ```
+
+2. **Create a file named `.env` inside the `secrets/` directory:**
+   ```bash
+   touch secrets/.env
+   ```
+
+3. **Copy and fill in the following template with your actual credentials:**
+
+   ```env
+   # Google Cloud service account credentials file path (absolute or relative path to your JSON key)
+   GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account.json
+
+   # Google Cloud region (e.g., us-central1)
+   GOOGLE_CLOUD_REGION=us-central1
+
+   # Google Cloud project ID
+   GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+
+   # Google Vision API key
+   GOOGLE_VISION_API_KEY=your-google-vision-api-key
+
+   # Gemini API key (for generative AI/embedding)
+   # Create the Google gemini API key here: https://aistudio.google.com/app/apikey
+   GEMINI_API_KEY=your-gemini-api-key
+   ```
+
+> **Note:** Never commit your real `secrets/.env` file to version control. You may provide a `secrets/.env.example` with placeholder values for collaborators.
+
 ## Usage
 
 After configuring your system (see above), you can use the following commands:
