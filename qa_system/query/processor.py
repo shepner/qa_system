@@ -12,7 +12,12 @@ from qa_system.vector_store import ChromaVectorStore
 from qa_system.exceptions import QASystemError, QueryError, EmbeddingError
 from .models import Source, QueryResponse
 from .constants import STOPWORDS
-from .hybrid_scoring import apply_hybrid_scoring
+from .scoring import apply_scoring, deduplicate_sources, extract_tag_matching_keywords
+from .source_utils import build_sources_from_vector_results
+from .keywords import extract_keywords
+from .source_filter import filter_sources
+from .context_builder import build_context_window
+from .prompts import build_llm_prompt
 
 class QueryProcessor:
     """
@@ -32,33 +37,6 @@ class QueryProcessor:
             raise RuntimeError("GEMINI_API_KEY not set in environment.")
         self.gemini_client = genai.Client(api_key=self.gemini_api_key)
         self.gemini_model = self.config.get_nested('QUERY.MODEL_NAME', 'gemini-2.0-flash')
-
-    def _deduplicate_sources(self, sources: List[Source]) -> List[Source]:
-        seen = {}
-        for src in sources:
-            doc = src.document
-            if doc not in seen or src.similarity > seen[doc].similarity:
-                seen[doc] = src
-        return list(seen.values())
-
-    def _extract_tag_matching_keywords(self, query: str, fuzzy_cutoff: float = 0.75) -> set:
-        all_tags = self.vector_store.get_all_tags()
-        all_words = re.findall(r"\w+", query.lower())
-        concept_keywords = [w for w in all_words if w not in STOPWORDS]
-        concept_to_tags = {}
-        matched_tags = set()
-        for concept in concept_keywords:
-            exact_matches = [tag for tag in all_tags if tag == concept]
-            fuzzy_matches = difflib.get_close_matches(concept, all_tags, n=5, cutoff=fuzzy_cutoff)
-            all_matches = set(exact_matches + fuzzy_matches)
-            if all_matches:
-                concept_to_tags[concept] = sorted(all_matches)
-                matched_tags.update(all_matches)
-        self.logger.info(f"Concept keywords from query: {concept_keywords}")
-        for concept, tags in concept_to_tags.items():
-            self.logger.info(f"Tag matches for '{concept}': {tags}")
-        self.logger.info(f"Final tag-matching keywords: {sorted(matched_tags)}")
-        return matched_tags
 
     def process_query(self, query: str) -> QueryResponse:
         # ... existing code ...
@@ -88,57 +66,45 @@ class QueryProcessor:
                 self.logger.debug(f"  distance: {distances[i] if i < len(distances) else 'N/A'}")
                 safe_meta = {k: v for k, v in (metadatas[i] if i < len(metadatas) else {}).items() if k != 'chunk' and k != 'document' and k != 'text'}
                 self.logger.debug(f"  metadata: {safe_meta}")
-            sources = []
             docs_root = self.config.get_nested('FILE_SCANNER.DOCUMENT_PATH', './docs')
             docs_root = os.path.abspath(docs_root)
-            for i, doc_id in enumerate(ids):
-                doc = docs[i] if i < len(docs) else ''
-                meta = metadatas[i] if i < len(metadatas) else {}
-                sim = 1.0 - distances[i] if i < len(distances) else 0.0
-                context = doc[:200]
-                abs_path = os.path.abspath(meta.get('path', doc_id))
-                if abs_path.startswith(docs_root):
-                    rel_path = os.path.relpath(abs_path, docs_root)
-                else:
-                    rel_path = abs_path
-                clamped_sim = max(0.0, min(1.0, sim))
-                sources.append(Source(document=rel_path, chunk=doc, similarity=clamped_sim, context=context, metadata=meta, original_similarity=sim))
+            sources = build_sources_from_vector_results(
+                ids=ids,
+                docs=docs,
+                metadatas=metadatas,
+                distances=distances,
+                docs_root=docs_root,
+                context_length=200
+            )
             self.logger.debug("Similarities before hybrid scoring:")
             for src in sources:
                 self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
             self.logger.debug(f"Sources before hybrid scoring: {[src.document for src in sources]}")
-            all_words = re.findall(r"\w+", query.lower())
-            self._last_query_keywords = set(w for w in all_words if w not in STOPWORDS)
+            self._last_query_keywords = extract_keywords(query, STOPWORDS)
             self.logger.info(f"Extracted keywords from query (stopwords removed): {sorted(self._last_query_keywords)}")
             if not self._last_query_keywords:
                 self.logger.info(f"No keywords extracted from query after stopword removal: {query!r}. This may indicate an empty, non-alphanumeric, or all-stopword query.")
-            self._last_tag_matching_keywords = self._extract_tag_matching_keywords(query)
+            all_tags = self.vector_store.get_all_tags()
+            self._last_tag_matching_keywords = extract_tag_matching_keywords(
+                query,
+                all_tags=all_tags,
+                stopwords=STOPWORDS,
+                logger=self.logger
+            )
             self.logger.info(f"Tag-matching keywords from query: {sorted(self._last_tag_matching_keywords)}")
-            sources = apply_hybrid_scoring(self, sources)
+            sources = apply_scoring(self, sources)
             self.logger.debug("Similarities after hybrid scoring:")
             for src in sources:
                 self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
             self.logger.debug(f"Sources after hybrid scoring: {[src.document for src in sources]}")
-            deduped_sources = self._deduplicate_sources(sources)
-            min_similarity = float(self.config.get_nested('QUERY.MIN_SIMILARITY', default=0.2))
-            tag_min_similarity = float(self.config.get_nested('QUERY.TAG_MATCH_MIN_SIMILARITY', default=0.1))
-            filtered_sources = []
-            tag_matched_sources = []
-            for src in deduped_sources:
-                tags = src.metadata.get('tags', [])
-                if isinstance(tags, str):
-                    tags = [t.strip() for t in tags.split(',') if t.strip()]
-                tag_match = any(t.lower() in self._last_tag_matching_keywords for t in tags)
-                if src.similarity >= min_similarity:
-                    filtered_sources.append(src)
-                elif tag_match and src.similarity >= tag_min_similarity:
-                    tag_matched_sources.append(src)
-            if not filtered_sources:
-                self.logger.warning(f"No sources above similarity threshold {min_similarity}. Returning top result anyway.")
-                filtered_sources = deduped_sources[:1] if deduped_sources else []
-            for src in tag_matched_sources:
-                if src not in filtered_sources:
-                    filtered_sources.append(src)
+            deduped_sources = deduplicate_sources(sources, logger=self.logger)
+            filtered_sources, tag_matched_sources = filter_sources(
+                deduped_sources,
+                tag_matching_keywords=self._last_tag_matching_keywords,
+                min_similarity=float(self.config.get_nested('QUERY.MIN_SIMILARITY', default=0.2)),
+                tag_min_similarity=float(self.config.get_nested('QUERY.TAG_MATCH_MIN_SIMILARITY', default=0.1)),
+                logger=self.logger
+            )
             self.logger.info(f"Sources included due to tag-matching: {[src.document for src in tag_matched_sources]}")
             relevant_keywords = list(self._last_query_keywords)
             found_relevant = False
@@ -170,37 +136,20 @@ class QueryProcessor:
                     f"Relevant document for keywords {relevant_keywords} not found in any of the following fields: tags, path, filename_stem, url, document, chunk. Extracted keywords: {sorted(self._last_query_keywords)}."
                 )
             context_window = int(self.config.get_nested('QUERY.CONTEXT_WINDOW', default=4096))
-            max_tokens = int(self.config.get_nested('QUERY.MAX_TOKENS', default=512))
-            temperature = float(self.config.get_nested('QUERY.TEMPERATURE', default=0.2))
-            context_text = ""
-            tokens_used = 0
-            used_docs = set()
-            context_chunks = []
-            for src in filtered_sources:
-                if src.document in used_docs:
-                    continue
-                chunk = src.chunk
-                tokens_used += len(chunk.split())
-                if tokens_used > context_window:
-                    break
-                context_text += f"\n---\n{chunk}"
-                context_chunks.append(src.document)
-                used_docs.add(src.document)
+            context_text, tokens_used, context_chunks = build_context_window(
+                filtered_sources,
+                context_window=context_window
+            )
             self.logger.debug("Context documents for Gemini:")
             for doc in context_chunks:
                 self.logger.debug(f"  - {doc}")
-            prompt = (
-                "You are an expert assistant. Use the following context to answer the user's question. "
-                "If the answer is not directly in the context, use your best judgment to provide a helpful, accurate answer. "
-                "Cite sources if you use information from a specific document.\n\n"
-                f"Question: {query}\n\nContext:{context_text}"
-            )
+            prompt = build_llm_prompt(query, context_text)
             gemini_response = self.gemini_client.models.generate_content(
                 model=self.gemini_model,
                 contents=prompt,
                 generation_config={
-                    "temperature": temperature,
-                    "max_output_tokens": max_tokens
+                    "temperature": float(self.config.get_nested('QUERY.TEMPERATURE', default=0.2)),
+                    "max_output_tokens": int(self.config.get_nested('QUERY.MAX_TOKENS', default=512))
                 }
             )
             response_text = getattr(gemini_response, 'text', None) or str(gemini_response)
