@@ -8,6 +8,8 @@ import os
 from google import genai
 import time
 import fnmatch
+import difflib
+import re
 
 # Add a simple English stopword set for keyword filtering
 STOPWORDS = {
@@ -109,6 +111,43 @@ class QueryProcessor:
                 seen[doc] = src
         return list(seen.values())
 
+    def _get_all_tags(self):
+        """Return a set of all unique tags in the vector store."""
+        if hasattr(self, '_all_tags_cache'):
+            return self._all_tags_cache
+        all_tags = set()
+        for meta in self.vector_store.list_documents():
+            tags = meta.get('tags', [])
+            if isinstance(tags, str):
+                tags = [t.strip() for t in tags.split(',') if t.strip()]
+            all_tags.update(t.lower() for t in tags)
+        self._all_tags_cache = all_tags
+        return all_tags
+
+    def _extract_tag_matching_keywords(self, query: str, fuzzy_cutoff: float = 0.75) -> set:
+        """Return set of tags from the tag set that best match the query concepts (fuzzy or exact)."""
+        all_tags = self._get_all_tags()
+        # Extract concept keywords from query (stopwords removed)
+        all_words = re.findall(r"\w+", query.lower())
+        concept_keywords = [w for w in all_words if w not in STOPWORDS]
+        concept_to_tags = {}
+        matched_tags = set()
+        for concept in concept_keywords:
+            # Exact match
+            exact_matches = [tag for tag in all_tags if tag == concept]
+            # Fuzzy matches
+            fuzzy_matches = difflib.get_close_matches(concept, all_tags, n=5, cutoff=fuzzy_cutoff)
+            all_matches = set(exact_matches + fuzzy_matches)
+            if all_matches:
+                concept_to_tags[concept] = sorted(all_matches)
+                matched_tags.update(all_matches)
+        # Logging
+        self.logger.info(f"Concept keywords from query: {concept_keywords}")
+        for concept, tags in concept_to_tags.items():
+            self.logger.info(f"Tag matches for '{concept}': {tags}")
+        self.logger.info(f"Final tag-matching keywords: {sorted(matched_tags)}")
+        return matched_tags
+
     def process_query(self, query: str) -> QueryResponse:
         """
         Process a semantic search query and return a response object.
@@ -173,12 +212,13 @@ class QueryProcessor:
                 self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
             self.logger.debug(f"Sources before hybrid scoring: {[src.document for src in sources]}")
             # Hybrid scoring: extract keywords from query for tag boost
-            import re
             all_words = re.findall(r"\w+", query.lower())
             self._last_query_keywords = set(w for w in all_words if w not in STOPWORDS)
             self.logger.info(f"Extracted keywords from query (stopwords removed): {sorted(self._last_query_keywords)}")
             if not self._last_query_keywords:
                 self.logger.info(f"No keywords extracted from query after stopword removal: {query!r}. This may indicate an empty, non-alphanumeric, or all-stopword query.")
+            self._last_tag_matching_keywords = self._extract_tag_matching_keywords(query)
+            self.logger.info(f"Tag-matching keywords from query: {sorted(self._last_tag_matching_keywords)}")
             sources = self._apply_hybrid_scoring(sources)
             # Log similarity after hybrid scoring
             self.logger.debug("Similarities after hybrid scoring:")
@@ -189,12 +229,26 @@ class QueryProcessor:
             deduped_sources = self._deduplicate_sources(sources)
             # Minimum similarity threshold
             min_similarity = float(self.config.get_nested('QUERY.MIN_SIMILARITY', default=0.2))
-            filtered_sources = [src for src in deduped_sources if src.similarity >= min_similarity]
+            tag_min_similarity = float(self.config.get_nested('QUERY.TAG_MATCH_MIN_SIMILARITY', default=0.1))
+            filtered_sources = []
+            tag_matched_sources = []
+            for src in deduped_sources:
+                tags = src.metadata.get('tags', [])
+                if isinstance(tags, str):
+                    tags = [t.strip() for t in tags.split(',') if t.strip()]
+                tag_match = any(t.lower() in self._last_tag_matching_keywords for t in tags)
+                if src.similarity >= min_similarity:
+                    filtered_sources.append(src)
+                elif tag_match and src.similarity >= tag_min_similarity:
+                    tag_matched_sources.append(src)
             if not filtered_sources:
                 self.logger.warning(f"No sources above similarity threshold {min_similarity}. Returning top result anyway.")
                 filtered_sources = deduped_sources[:1] if deduped_sources else []
-            # Log concise list of sources after deduplication/filtering
-            self.logger.debug(f"Sources after deduplication/filtering: {[src.document for src in filtered_sources]}")
+            # Add tag-matched sources (if not already included)
+            for src in tag_matched_sources:
+                if src not in filtered_sources:
+                    filtered_sources.append(src)
+            self.logger.info(f"Sources included due to tag-matching: {[src.document for src in tag_matched_sources]}")
             # Check for relevant document presence: look for any extracted keyword in metadata fields or content
             relevant_keywords = list(self._last_query_keywords)
             found_relevant = False
