@@ -1,6 +1,7 @@
 from .models import Source, QueryResponse
 from .processor import QueryProcessor
 from .print_utils import print_response
+from .hybrid_scoring import apply_hybrid_scoring
 
 import logging
 from typing import List, Optional, Any, Dict

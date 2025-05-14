@@ -12,6 +12,7 @@ from qa_system.vector_store import ChromaVectorStore
 from qa_system.exceptions import QASystemError, QueryError, EmbeddingError
 from .models import Source, QueryResponse
 from .constants import STOPWORDS
+from .hybrid_scoring import apply_hybrid_scoring
 
 class QueryProcessor:
     """
@@ -31,50 +32,6 @@ class QueryProcessor:
             raise RuntimeError("GEMINI_API_KEY not set in environment.")
         self.gemini_client = genai.Client(api_key=self.gemini_api_key)
         self.gemini_model = self.config.get_nested('QUERY.MODEL_NAME', 'gemini-2.0-flash')
-
-    def _apply_hybrid_scoring(self, sources: List[Source]) -> List[Source]:
-        # ... existing code ...
-        recency_boost = float(self.config.get_nested('QUERY.RECENCY_BOOST', default=1.0))
-        tag_boost = float(self.config.get_nested('QUERY.TAG_BOOST', default=1.5))
-        source_boost = float(self.config.get_nested('QUERY.SOURCE_BOOST', default=1.0))
-        now = time.time()
-        preferred_sources = self.config.get_nested('QUERY.PREFERRED_SOURCES', default=[])
-        for src in sources:
-            original_similarity = src.similarity
-            src.similarity = max(0.0, min(1.0, src.similarity))
-            boost = 1.0
-            date = src.metadata.get('date')
-            if date:
-                try:
-                    if isinstance(date, (int, float)):
-                        age_days = (now - float(date)) / 86400
-                    else:
-                        from dateutil.parser import parse
-                        dt = parse(date)
-                        age_days = (now - dt.timestamp()) / 86400
-                    if age_days < 365:
-                        boost *= recency_boost
-                except Exception:
-                    pass
-            tags = src.metadata.get('tags', [])
-            if tags and hasattr(self, '_last_query_keywords'):
-                if any(tag.lower() in self._last_query_keywords for tag in tags):
-                    boost *= tag_boost
-            matched = False
-            for pref in preferred_sources:
-                if fnmatch.fnmatch(src.document, pref):
-                    matched = True
-                    break
-            self.logger.debug(f"Hybrid scoring: src.document={src.document}, preferred_sources={preferred_sources}, matched={matched}")
-            if matched:
-                self.logger.debug(f"SOURCE BOOST APPLIED: {src.document} matched {preferred_sources}, boost={source_boost}")
-                boost *= source_boost
-            final_similarity = src.similarity * boost
-            self.logger.debug(f"Scoring: {src.document} | original={original_similarity:.4f} | clamped={src.similarity:.4f} | boost={boost:.2f} | final={final_similarity:.4f}")
-            src.original_similarity = original_similarity
-            src.boost = boost
-            src.similarity = final_similarity
-        return sorted(sources, key=lambda s: s.similarity, reverse=True)
 
     def _deduplicate_sources(self, sources: List[Source]) -> List[Source]:
         seen = {}
@@ -169,7 +126,7 @@ class QueryProcessor:
                 self.logger.info(f"No keywords extracted from query after stopword removal: {query!r}. This may indicate an empty, non-alphanumeric, or all-stopword query.")
             self._last_tag_matching_keywords = self._extract_tag_matching_keywords(query)
             self.logger.info(f"Tag-matching keywords from query: {sorted(self._last_tag_matching_keywords)}")
-            sources = self._apply_hybrid_scoring(sources)
+            sources = apply_hybrid_scoring(self, sources)
             self.logger.debug("Similarities after hybrid scoring:")
             for src in sources:
                 self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
