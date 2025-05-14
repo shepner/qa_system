@@ -18,28 +18,22 @@ from .keywords import extract_keywords
 from .source_filter import filter_sources
 from .context_builder import build_context_window
 from .prompts import build_llm_prompt
+from .gemini_llm import GeminiLLM
 
 class QueryProcessor:
     """
     Handles semantic search queries and generates contextual responses using embeddings, vector store, and Gemini LLM.
     Implements hybrid scoring (semantic + metadata boosts) and config-driven parameters.
     """
-    def __init__(self, config, embedding_generator=None, vector_store=None):
+    def __init__(self, config, embedding_generator=None, vector_store=None, llm=None):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.debug(f"Called QueryProcessor.__init__(config={config})")
         self.config = config
         self.embedding_generator = embedding_generator if embedding_generator is not None else EmbeddingGenerator(config)
         self.vector_store = vector_store if vector_store is not None else ChromaVectorStore(config)
-        # Gemini setup
-        load_dotenv()
-        self.gemini_api_key = os.getenv("GEMINI_API_KEY")
-        if not self.gemini_api_key:
-            raise RuntimeError("GEMINI_API_KEY not set in environment.")
-        self.gemini_client = genai.Client(api_key=self.gemini_api_key)
-        self.gemini_model = self.config.get_nested('QUERY.MODEL_NAME', 'gemini-2.0-flash')
+        self.llm = llm if llm is not None else GeminiLLM(config)
 
-    def process_query(self, query: str) -> QueryResponse:
-        # ... existing code ...
+    def process_query(self, query: str, system_prompt: str = None) -> QueryResponse:
         start_time = time.time()
         try:
             if not query or not isinstance(query, str):
@@ -143,16 +137,18 @@ class QueryProcessor:
             self.logger.debug("Context documents for Gemini:")
             for doc in context_chunks:
                 self.logger.debug(f"  - {doc}")
-            prompt = build_llm_prompt(query, context_text)
-            gemini_response = self.gemini_client.models.generate_content(
-                model=self.gemini_model,
-                contents=prompt,
-                generation_config={
-                    "temperature": float(self.config.get_nested('QUERY.TEMPERATURE', default=0.2)),
-                    "max_output_tokens": int(self.config.get_nested('QUERY.MAX_TOKENS', default=512))
-                }
-            )
-            response_text = getattr(gemini_response, 'text', None) or str(gemini_response)
+            prompt = build_llm_prompt(query, context_text, system_prompt=system_prompt)
+            # Use GeminiLLM abstraction
+            try:
+                response_text = self.llm.generate_response(
+                    user_prompt=prompt,
+                    system_prompt=system_prompt,
+                    temperature=float(self.config.get_nested('QUERY.TEMPERATURE', default=0.2)),
+                    max_output_tokens=int(self.config.get_nested('QUERY.MAX_TOKENS', default=512))
+                )
+            except Exception as e:
+                self.logger.error(f"LLM call failed: {e}")
+                response_text = ""
             confidence = filtered_sources[0].similarity if filtered_sources else 0.0
             processing_time = time.time() - start_time
             return QueryResponse(
@@ -164,32 +160,15 @@ class QueryProcessor:
                 success=True
             )
         except TypeError as e:
-            if "unexpected keyword argument 'generation_config'" in str(e):
-                gemini_response = self.gemini_client.models.generate_content(
-                    model=self.gemini_model,
-                    contents=prompt
-                )
-                response_text = getattr(gemini_response, 'text', None) or str(gemini_response)
-                confidence = filtered_sources[0].similarity if filtered_sources else 0.0
-                processing_time = time.time() - start_time
-                return QueryResponse(
-                    text=response_text,
-                    sources=filtered_sources,
-                    confidence=confidence,
-                    processing_time=processing_time,
-                    error=None,
-                    success=True
-                )
-            else:
-                self.logger.error(f"Query processing failed: {e}")
-                return QueryResponse(
-                    text="",
-                    sources=[],
-                    confidence=0.0,
-                    processing_time=time.time() - start_time,
-                    error=str(e),
-                    success=False
-                )
+            self.logger.error(f"Query processing failed: {e}")
+            return QueryResponse(
+                text="",
+                sources=[],
+                confidence=0.0,
+                processing_time=time.time() - start_time,
+                error=str(e),
+                success=False
+            )
         except Exception as e:
             self.logger.error(f"Query processing failed: {e}")
             return QueryResponse(

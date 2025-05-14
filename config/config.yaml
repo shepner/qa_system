@@ -124,7 +124,7 @@ QUERY:
   # Controls the randomness of generated text from the LLM (0.0 = deterministic, 1.0 = highly creative).
   # Start with 0.3–0.5 for most question-answering and summarization tasks.
   # Increase to 0.7+ only if you want more creative or less predictable answers.
-  TEMPERATURE: 0.5
+  TEMPERATURE: 0.7
   # Maximum number of tokens to generate in the model's response.
   MAX_TOKENS: 1024
   # Number of tokens of context to provide to the model for each query.
