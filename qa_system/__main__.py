@@ -177,7 +177,7 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
         from qa_system.document_processors import ListHandler
         
         handler = ListHandler(config)
-        documents = handler.list_documents(filter_pattern)
+        documents = handler.list_metadata(filter_pattern)
         
         if not documents:
             print("No documents found")
@@ -326,7 +326,7 @@ def main() -> int:
         elif args.list is not None:
             list_module = get_list_module(config)
             pattern = args.list if args.list != '*' else None
-            docs = list_module.list_documents(pattern=pattern)
+            docs = list_module.list_metadata(pattern=pattern)
             print(f"\nDocuments in vector store ({len(docs)} found):")
             for doc in docs:
                 print(f"- {doc.get('path', '[no path]')} (checksum={doc.get('checksum', '[no checksum]')})")

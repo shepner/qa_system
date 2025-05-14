@@ -38,14 +38,14 @@ def test_list_handler_init():
     handler = ListHandler(DummyConfig())
     assert handler is not None
 
-def test_list_handler_list_documents_no_filter():
+def test_list_handler_list_metadata_no_filter():
     handler = ListHandler(DummyConfig())
-    result = handler.list_documents()
+    result = handler.list_metadata()
     assert result == []
 
-def test_list_handler_list_documents_with_filter():
+def test_list_handler_list_metadata_with_filter():
     handler = ListHandler(DummyConfig())
-    result = handler.list_documents(filter_pattern='*.txt')
+    result = handler.list_metadata(filter_pattern='*.txt')
     assert result == []
 
 def test_get_processor_for_file_type_csv(tmp_path):

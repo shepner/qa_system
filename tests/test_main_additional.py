@@ -61,7 +61,7 @@ def test_process_list_empty():
 
 @patch('qa_system.document_processors.ListHandler')
 def test_process_list_with_documents(mock_handler):
-    mock_handler.return_value.list_documents.return_value = [
+    mock_handler.return_value.list_metadata.return_value = [
         {
             'path': 'test.txt',
             'metadata': {

@@ -12,9 +12,9 @@ class ListModule:
         self.store = ChromaVectorStore(self.config)
         # No debug/info logging at init
 
-    def list_documents(self, pattern: Optional[str] = None) -> List[Dict]:
+    def list_metadata(self, pattern: Optional[str] = None) -> List[Dict]:
         """Return list of document metadata, optionally filtered by glob pattern. Print each unique metadata dict nicely formatted."""
-        docs = self.store.list_documents(pattern=pattern)
+        docs = self.store.list_metadata(pattern=pattern)
         seen = set()
         for doc in docs:
             key = (doc.get('path'), doc.get('checksum'))
@@ -26,7 +26,7 @@ class ListModule:
 
     def get_collection_stats(self) -> Dict:
         """Return statistics about the document collection."""
-        docs = self.store.list_documents()
+        docs = self.store.list_metadata()
         types = {}
         for doc in docs:
             ext = doc.get('path', '').split('.')[-1] if 'path' in doc else 'unknown'
@@ -40,7 +40,7 @@ class ListModule:
 
     def get_document_count(self) -> int:
         """Return total number of documents in the collection."""
-        count = len(self.store.list_documents())
+        count = len(self.store.list_metadata())
         # No info/debug logging
         return count
 

@@ -30,6 +30,6 @@ class ListHandler:
     def __init__(self, config):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info(f"Called ListHandler.__init__(config={config})")
-    def list_documents(self, filter_pattern=None):
-        self.logger.info(f"Called ListHandler.list_documents(filter_pattern={filter_pattern})")
+    def list_metadata(self, filter_pattern=None):
+        self.logger.info(f"Called ListHandler.list_metadata(filter_pattern={filter_pattern})")
         return []

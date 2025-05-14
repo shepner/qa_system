@@ -35,7 +35,7 @@ class RemoveHandler:
             patterns = [pattern]
         else:
             patterns = pattern
-        all_docs = self.vector_store.list_documents()
+        all_docs = self.vector_store.list_metadata()
         matches = []
         for pat in patterns:
             # Only normalize to absolute path if not a glob

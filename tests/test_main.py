@@ -205,7 +205,7 @@ class TestProcessList:
         """Test successful document listing"""
         mock_handler = Mock()
         mock_list_handler.return_value = mock_handler
-        mock_handler.list_documents.return_value = [{
+        mock_handler.list_metadata.return_value = [{
             'path': 'test.txt',
             'metadata': {
                 'file_type': 'txt',
@@ -226,7 +226,7 @@ class TestProcessList:
         """Test listing with no documents"""
         mock_handler = Mock()
         mock_list_handler.return_value = mock_handler
-        mock_handler.list_documents.return_value = []
+        mock_handler.list_metadata.return_value = []
         
         result = process_list(None, TEST_CONFIG)
         
@@ -238,7 +238,7 @@ class TestProcessList:
         """Test handling of listing error"""
         mock_handler = Mock()
         mock_list_handler.return_value = mock_handler
-        mock_handler.list_documents.side_effect = Exception("Listing failed")
+        mock_handler.list_metadata.side_effect = Exception("Listing failed")
         
         result = process_list(None, TEST_CONFIG)
         
@@ -304,21 +304,21 @@ class TestMain:
         with patch('qa_system.__main__.get_list_module') as mock_get_list_module:
             mock_list_module = Mock()
             mock_get_list_module.return_value = mock_list_module
-            mock_list_module.list_documents.return_value = []
+            mock_list_module.list_metadata.return_value = []
             mock_list_module.get_collection_stats.return_value = {'total_documents': 0, 'document_types': {}}
             with patch('sys.argv', ['qa_system', '--list']):
                 result = main()
                 assert result == 0
                 mock_config.assert_called_once()
                 mock_setup_logging.assert_called_once()
-                mock_list_module.list_documents.assert_called_once()
+                mock_list_module.list_metadata.assert_called_once()
 
     def test_qa_system_error(self, mock_config, mock_setup_logging, mock_logger):
         """Test handling of QASystemError"""
         with patch('qa_system.__main__.get_list_module') as mock_get_list_module:
             mock_list_module = Mock()
             mock_get_list_module.return_value = mock_list_module
-            mock_list_module.list_documents.side_effect = QASystemError("Test error")
+            mock_list_module.list_metadata.side_effect = QASystemError("Test error")
             with patch('sys.argv', ['qa_system', '--list']):
                 result = main()
                 assert result == 1
@@ -329,7 +329,7 @@ class TestMain:
         with patch('qa_system.__main__.get_list_module') as mock_get_list_module:
             mock_list_module = Mock()
             mock_get_list_module.return_value = mock_list_module
-            mock_list_module.list_documents.side_effect = Exception("Unexpected error")
+            mock_list_module.list_metadata.side_effect = Exception("Unexpected error")
             with patch('sys.argv', ['qa_system', '--list']):
                 result = main()
                 assert result == 1

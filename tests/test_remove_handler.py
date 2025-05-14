@@ -23,7 +23,7 @@ def handler():
     config = DummyConfig()
     with patch('qa_system.remove_handler.ChromaVectorStore') as MockVS:
         vs = MockVS.return_value
-        vs.list_documents.return_value = make_docs([
+        vs.list_metadata.return_value = make_docs([
             '/docs/a.pdf', '/docs/b.pdf', '/docs/c.md', '/docs/d.txt'
         ])
         vs.delete.return_value = None
@@ -35,7 +35,7 @@ def test_find_matches(handler):
     assert len(matches) == 2
 
 def test_remove_documents_success(handler):
-    with patch.object(handler.vector_store, 'list_documents', side_effect=[
+    with patch.object(handler.vector_store, 'list_metadata', side_effect=[
         make_docs(['/docs/a.pdf', '/docs/b.pdf', '/docs/c.md', '/docs/d.txt']),
         []
     ]):
@@ -46,7 +46,7 @@ def test_remove_documents_success(handler):
         assert not result['not_found']
 
 def test_remove_documents_not_found(handler):
-    handler.vector_store.list_documents.return_value = make_docs(['/docs/x.md'])
+    handler.vector_store.list_metadata.return_value = make_docs(['/docs/x.md'])
     result = handler.remove_documents('*.pdf')
     assert result['not_found']
     assert not result['removed']
@@ -59,9 +59,9 @@ def test_remove_documents_batch_failure(handler):
         handler.remove_documents('*.pdf')
 
 def test_verify_removal(handler):
-    handler.vector_store.list_documents.return_value = make_docs(['/docs/x.md'])
+    handler.vector_store.list_metadata.return_value = make_docs(['/docs/x.md'])
     assert handler.verify_removal(['/docs/a.pdf'])
-    handler.vector_store.list_documents.return_value = make_docs(['/docs/a.pdf'])
+    handler.vector_store.list_metadata.return_value = make_docs(['/docs/a.pdf'])
     assert not handler.verify_removal(['/docs/a.pdf'])
 
 def test_cleanup_failed_removal(handler):

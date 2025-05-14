@@ -41,20 +41,8 @@ class QueryProcessor:
                 seen[doc] = src
         return list(seen.values())
 
-    def _get_all_tags(self):
-        if hasattr(self, '_all_tags_cache'):
-            return self._all_tags_cache
-        all_tags = set()
-        for meta in self.vector_store.list_documents():
-            tags = meta.get('tags', [])
-            if isinstance(tags, str):
-                tags = [t.strip() for t in tags.split(',') if t.strip()]
-            all_tags.update(t.lower() for t in tags)
-        self._all_tags_cache = all_tags
-        return all_tags
-
     def _extract_tag_matching_keywords(self, query: str, fuzzy_cutoff: float = 0.75) -> set:
-        all_tags = self._get_all_tags()
+        all_tags = self.vector_store.get_all_tags()
         all_words = re.findall(r"\w+", query.lower())
         concept_keywords = [w for w in all_words if w not in STOPWORDS]
         concept_to_tags = {}
