@@ -1,24 +1,17 @@
-from .models import Source, QueryResponse
-from .processor import QueryProcessor
-from .print_utils import print_response
-
 import logging
-from typing import List, Optional, Any, Dict
-from qa_system.embedding import EmbeddingGenerator
-from qa_system.vector_store import ChromaVectorStore
-from qa_system.exceptions import QASystemError, QueryError, EmbeddingError
-from dotenv import load_dotenv
 import os
-from google import genai
 import time
 import fnmatch
 import difflib
 import re
-
-# Add a simple English stopword set for keyword filtering
-STOPWORDS = {
-    "the", "is", "at", "which", "on", "and", "a", "an", "to", "me", "what", "explain", "please", "of", "for", "in", "with", "by", "as", "it", "that", "this", "be", "are", "was", "were", "do", "does", "did", "can", "could", "should", "would", "will", "shall", "may", "might", "must", "i", "you", "he", "she", "we", "they", "my", "your", "his", "her", "our", "their"
-}
+from typing import List, Optional, Any, Dict
+from dotenv import load_dotenv
+from google import genai
+from qa_system.embedding import EmbeddingGenerator
+from qa_system.vector_store import ChromaVectorStore
+from qa_system.exceptions import QASystemError, QueryError, EmbeddingError
+from .models import Source, QueryResponse
+from .constants import STOPWORDS
 
 class QueryProcessor:
     """
@@ -40,18 +33,16 @@ class QueryProcessor:
         self.gemini_model = self.config.get_nested('QUERY.MODEL_NAME', 'gemini-2.0-flash')
 
     def _apply_hybrid_scoring(self, sources: List[Source]) -> List[Source]:
-        # Configurable boosts
+        # ... existing code ...
         recency_boost = float(self.config.get_nested('QUERY.RECENCY_BOOST', default=1.0))
-        tag_boost = float(self.config.get_nested('QUERY.TAG_BOOST', default=1.5))  # More aggressive by default
+        tag_boost = float(self.config.get_nested('QUERY.TAG_BOOST', default=1.5))
         source_boost = float(self.config.get_nested('QUERY.SOURCE_BOOST', default=1.0))
         now = time.time()
         preferred_sources = self.config.get_nested('QUERY.PREFERRED_SOURCES', default=[])
         for src in sources:
-            # Clamp similarity to [0, 1] before boosting
             original_similarity = src.similarity
             src.similarity = max(0.0, min(1.0, src.similarity))
             boost = 1.0
-            # Recency boost (if 'date' in metadata)
             date = src.metadata.get('date')
             if date:
                 try:
@@ -86,9 +77,6 @@ class QueryProcessor:
         return sorted(sources, key=lambda s: s.similarity, reverse=True)
 
     def _deduplicate_sources(self, sources: List[Source]) -> List[Source]:
-        """
-        Deduplicate sources by document path. Keep only the highest-similarity chunk per document.
-        """
         seen = {}
         for src in sources:
             doc = src.document
@@ -97,7 +85,6 @@ class QueryProcessor:
         return list(seen.values())
 
     def _get_all_tags(self):
-        """Return a set of all unique tags in the vector store."""
         if hasattr(self, '_all_tags_cache'):
             return self._all_tags_cache
         all_tags = set()
@@ -110,23 +97,18 @@ class QueryProcessor:
         return all_tags
 
     def _extract_tag_matching_keywords(self, query: str, fuzzy_cutoff: float = 0.75) -> set:
-        """Return set of tags from the tag set that best match the query concepts (fuzzy or exact)."""
         all_tags = self._get_all_tags()
-        # Extract concept keywords from query (stopwords removed)
         all_words = re.findall(r"\w+", query.lower())
         concept_keywords = [w for w in all_words if w not in STOPWORDS]
         concept_to_tags = {}
         matched_tags = set()
         for concept in concept_keywords:
-            # Exact match
             exact_matches = [tag for tag in all_tags if tag == concept]
-            # Fuzzy matches
             fuzzy_matches = difflib.get_close_matches(concept, all_tags, n=5, cutoff=fuzzy_cutoff)
             all_matches = set(exact_matches + fuzzy_matches)
             if all_matches:
                 concept_to_tags[concept] = sorted(all_matches)
                 matched_tags.update(all_matches)
-        # Logging
         self.logger.info(f"Concept keywords from query: {concept_keywords}")
         for concept, tags in concept_to_tags.items():
             self.logger.info(f"Tag matches for '{concept}': {tags}")
@@ -134,69 +116,52 @@ class QueryProcessor:
         return matched_tags
 
     def process_query(self, query: str) -> QueryResponse:
-        """
-        Process a semantic search query and return a response object.
-        Implements hybrid scoring and Gemini LLM response generation.
-        Args:
-            query: The user query string
-        Returns:
-            QueryResponse object with answer, sources, and metadata
-        """
+        # ... existing code ...
         start_time = time.time()
         try:
             if not query or not isinstance(query, str):
                 self.logger.info(f"process_query called with invalid query: {query!r} (type: {type(query)})")
                 raise QASystemError("Query must be a non-empty string.")
             self.logger.info(f"process_query called with query: {query!r}")
-            # Generate embedding for the query
             embedding_result = self.embedding_generator.generate_embeddings([query], metadata={"task_type": "RETRIEVAL_QUERY"})
             vectors = embedding_result.get('vectors', [])
             if not vectors or not isinstance(vectors, list):
                 self.logger.info(f"Embedding generation failed or returned no vectors for query: {query!r}")
                 raise EmbeddingError("Failed to generate embedding for query.")
             query_vector = vectors[0]
-            # Query the vector store
             top_k = int(self.config.get_nested('QUERY.TOP_K', default=40))
             results = self.vector_store.query(query_vector, top_k=top_k)
             ids = results.get('ids', [[]])[0]
             docs = results.get('documents', [[]])[0]
             metadatas = results.get('metadatas', [[]])[0]
             distances = results.get('distances', [[]])[0] if 'distances' in results else []
-            # Log concise list of sources after vector search
             source_paths = [meta.get('path', doc_id) for meta, doc_id in zip(metadatas, ids)]
             self.logger.debug(f"Initial sources after vector search for query '{query}': {source_paths}")
-            # Detailed logging for vector store results (no document excerpts, no document content, no full results dump)
             self.logger.debug(f"Vector store returned {len(ids)} results.")
             for i, doc_id in enumerate(ids):
                 self.logger.debug(f"  id: {doc_id}")
                 self.logger.debug(f"  distance: {distances[i] if i < len(distances) else 'N/A'}")
-                # Only log safe metadata fields (never log 'documents' or any content)
                 safe_meta = {k: v for k, v in (metadatas[i] if i < len(metadatas) else {}).items() if k != 'chunk' and k != 'document' and k != 'text'}
                 self.logger.debug(f"  metadata: {safe_meta}")
-            # Build sources list
             sources = []
-            # Get docs root for relative path calculation
             docs_root = self.config.get_nested('FILE_SCANNER.DOCUMENT_PATH', './docs')
             docs_root = os.path.abspath(docs_root)
             for i, doc_id in enumerate(ids):
                 doc = docs[i] if i < len(docs) else ''
                 meta = metadatas[i] if i < len(metadatas) else {}
                 sim = 1.0 - distances[i] if i < len(distances) else 0.0
-                context = doc[:200]  # Truncate for context
+                context = doc[:200]
                 abs_path = os.path.abspath(meta.get('path', doc_id))
                 if abs_path.startswith(docs_root):
                     rel_path = os.path.relpath(abs_path, docs_root)
                 else:
                     rel_path = abs_path
-                # Clamp sim to [0, 1] here as well for consistency
                 clamped_sim = max(0.0, min(1.0, sim))
                 sources.append(Source(document=rel_path, chunk=doc, similarity=clamped_sim, context=context, metadata=meta, original_similarity=sim))
-            # Log similarity before hybrid scoring
             self.logger.debug("Similarities before hybrid scoring:")
             for src in sources:
                 self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
             self.logger.debug(f"Sources before hybrid scoring: {[src.document for src in sources]}")
-            # Hybrid scoring: extract keywords from query for tag boost
             all_words = re.findall(r"\w+", query.lower())
             self._last_query_keywords = set(w for w in all_words if w not in STOPWORDS)
             self.logger.info(f"Extracted keywords from query (stopwords removed): {sorted(self._last_query_keywords)}")
@@ -205,14 +170,11 @@ class QueryProcessor:
             self._last_tag_matching_keywords = self._extract_tag_matching_keywords(query)
             self.logger.info(f"Tag-matching keywords from query: {sorted(self._last_tag_matching_keywords)}")
             sources = self._apply_hybrid_scoring(sources)
-            # Log similarity after hybrid scoring
             self.logger.debug("Similarities after hybrid scoring:")
             for src in sources:
                 self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
             self.logger.debug(f"Sources after hybrid scoring: {[src.document for src in sources]}")
-            # Deduplicate sources by document path (keep highest similarity chunk per doc)
             deduped_sources = self._deduplicate_sources(sources)
-            # Minimum similarity threshold
             min_similarity = float(self.config.get_nested('QUERY.MIN_SIMILARITY', default=0.2))
             tag_min_similarity = float(self.config.get_nested('QUERY.TAG_MATCH_MIN_SIMILARITY', default=0.1))
             filtered_sources = []
@@ -229,38 +191,29 @@ class QueryProcessor:
             if not filtered_sources:
                 self.logger.warning(f"No sources above similarity threshold {min_similarity}. Returning top result anyway.")
                 filtered_sources = deduped_sources[:1] if deduped_sources else []
-            # Add tag-matched sources (if not already included)
             for src in tag_matched_sources:
                 if src not in filtered_sources:
                     filtered_sources.append(src)
             self.logger.info(f"Sources included due to tag-matching: {[src.document for src in tag_matched_sources]}")
-            # Check for relevant document presence: look for any extracted keyword in metadata fields or content
             relevant_keywords = list(self._last_query_keywords)
             found_relevant = False
             for src in filtered_sources:
-                # Gather all searchable fields
                 fields = []
-                # tags (may be list or string)
                 tags = src.metadata.get('tags', [])
                 if isinstance(tags, str):
                     tags = [t.strip() for t in tags.split(',') if t.strip()]
                 fields.extend([t.lower() for t in tags])
-                # path
                 path = src.metadata.get('path', '')
                 if path:
                     fields.append(path.lower())
-                # filename_stem
                 filename_stem = src.metadata.get('filename_stem', '')
                 if filename_stem:
                     fields.append(filename_stem.lower())
-                # url
                 url = src.metadata.get('url', '')
                 if url:
                     fields.append(url.lower())
-                # document path and chunk text
                 fields.append(src.document.lower())
                 fields.append(src.chunk.lower())
-                # Check if any keyword is in any field
                 for kw in relevant_keywords:
                     if any(kw in f for f in fields):
                         found_relevant = True
@@ -271,7 +224,6 @@ class QueryProcessor:
                 self.logger.warning(
                     f"Relevant document for keywords {relevant_keywords} not found in any of the following fields: tags, path, filename_stem, url, document, chunk. Extracted keywords: {sorted(self._last_query_keywords)}."
                 )
-            # Assemble context for Gemini (at most one chunk per document, unless more needed to fill context window)
             context_window = int(self.config.get_nested('QUERY.CONTEXT_WINDOW', default=4096))
             max_tokens = int(self.config.get_nested('QUERY.MAX_TOKENS', default=512))
             temperature = float(self.config.get_nested('QUERY.TEMPERATURE', default=0.2))
@@ -353,13 +305,4 @@ class QueryProcessor:
                 processing_time=time.time() - start_time,
                 error=str(e),
                 success=False
-            )
-
-def print_response(response):
-    print("\nAnswer:")
-    print("-" * 80)
-    print(response.text)
-    print("\nSources:")
-    print("-" * 80)
-    for source in response.sources:
-        print(f"- {source.document} (original: {source.original_similarity:.4f}, boost: {source.boost}, final: {source.similarity:.4f})")
+            ) 
