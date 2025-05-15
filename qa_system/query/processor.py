@@ -112,9 +112,9 @@ class QueryProcessor:
             doc_ids = [doc_id for doc_id in doc_ids if doc_id]
             # Fetch all embeddings and docs in one call
             collection_results = self.vector_store.collection.get(ids=doc_ids)
-            all_embeddings = collection_results.get('embeddings', [])
-            all_docs = collection_results.get('documents', [])
-            all_metadatas = collection_results.get('metadatas', [])
+            all_embeddings = collection_results.get('embeddings') or []
+            all_docs = collection_results.get('documents') or []
+            all_metadatas = collection_results.get('metadatas') or []
             # Compute distances
             distances = [cosine(query_vector, emb) if emb is not None else 1.0 for emb in all_embeddings]
             # --- Build Source objects from candidates ---

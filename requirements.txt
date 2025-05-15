@@ -87,3 +87,4 @@ pypdf>=3.17.0
 reportlab
 coverage>=7.8.0
 dotenv
+scipy
