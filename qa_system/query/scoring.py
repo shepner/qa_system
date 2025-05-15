@@ -20,29 +20,6 @@ def deduplicate_sources(sources: List[Source], logger: Optional[Any] = None) -> 
     return list(seen.values())
 
 
-def extract_tag_matching_keywords(query: str, all_tags: List[str], stopwords: Set[str], logger: Optional[Any] = None, fuzzy_cutoff: float = 0.75) -> Set[str]:
-    """
-    Extract keywords from query and match them to tags using exact and fuzzy matching.
-    """
-    all_words = re.findall(r"\w+", query.lower())
-    concept_keywords = [w for w in all_words if w not in stopwords]
-    concept_to_tags = {}
-    matched_tags = set()
-    for concept in concept_keywords:
-        exact_matches = [tag for tag in all_tags if tag == concept]
-        fuzzy_matches = difflib.get_close_matches(concept, all_tags, n=5, cutoff=fuzzy_cutoff)
-        all_matches = set(exact_matches + fuzzy_matches)
-        if all_matches:
-            concept_to_tags[concept] = sorted(all_matches)
-            matched_tags.update(all_matches)
-    if logger:
-        logger.info(f"Concept keywords from query: {concept_keywords}")
-        for concept, tags in concept_to_tags.items():
-            logger.info(f"Tag matches for '{concept}': {tags}")
-        logger.info(f"Final tag-matching keywords: {sorted(matched_tags)}")
-    return matched_tags
-
-
 def apply_scoring(processor, sources: List[Source]) -> List[Source]:
     """
     Applies scoring to sources using semantic similarity and metadata boosts.
