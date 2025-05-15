@@ -31,4 +31,30 @@ class ChromaVectorStore:
     def get_all_tags(self):
         return _get_all_tags_impl(self)
 
+    def list_metadata_by_tag_or_keyword(self, value: str) -> list[dict]:
+        """
+        List all document metadata where the tag, path, filename_stem, or url matches the given value (case-insensitive).
+        Args:
+            value (str): Tag or keyword to match (case-insensitive).
+        Returns:
+            list[dict]: List of document metadata dicts matching the tag or keyword.
+        """
+        value_norm = value.strip().lower()
+        matches = []
+        for meta in self.list_metadata():
+            # Tag matching (normalize as in _get_all_tags_impl)
+            tags = meta.get('tags', [])
+            if isinstance(tags, str):
+                tags = [t.strip() for t in tags.split(',') if t.strip()]
+            if any(t.lower() == value_norm for t in tags):
+                matches.append(meta)
+                continue
+            # Path, filename_stem, url matching (substring, case-insensitive)
+            for field in ('path', 'filename_stem', 'url'):
+                field_val = meta.get(field, '')
+                if isinstance(field_val, str) and value_norm in field_val.lower():
+                    matches.append(meta)
+                    break
+        return matches
+
 __all__ = ["ChromaVectorStore"]

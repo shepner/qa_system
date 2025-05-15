@@ -12,9 +12,9 @@ from qa_system.vector_store import ChromaVectorStore
 from qa_system.exceptions import QASystemError, QueryError, EmbeddingError
 from .models import Source, QueryResponse
 from .constants import STOPWORDS
-from .scoring import apply_scoring, deduplicate_sources, extract_tag_matching_keywords
+from .scoring import apply_scoring, deduplicate_sources
+from .keywords import derive_keywords
 from .source_utils import build_sources_from_vector_results
-from .keywords import extract_keywords
 from .source_filter import filter_sources
 from .context_builder import build_context_window
 from .prompts import build_llm_prompt
@@ -34,17 +34,60 @@ class QueryProcessor:
         self.llm = llm if llm is not None else GeminiLLM(config)
 
     def process_query(self, query: str, system_prompt: str = None) -> QueryResponse:
+        # Start timing for performance metrics
         start_time = time.time()
         try:
+            # --- Input validation ---
             if not query or not isinstance(query, str):
                 self.logger.info(f"process_query called with invalid query: {query!r} (type: {type(query)})")
                 raise QASystemError("Query must be a non-empty string.")
             self.logger.info(f"process_query called with query: {query!r}")
+
+            # --- Derive keywords and tag-matching keywords from query ---
+            self._last_query_keywords = derive_keywords(
+                self,
+                query=query,
+                mode='keywords',
+                logger=self.logger
+            )
+            self.logger.info(f"Keywords derived from query: {sorted(self._last_query_keywords)}")
+            if not self._last_query_keywords:
+                self.logger.info(f"No keywords derived from query: {query!r}.")
+            self._last_tag_matching_keywords = derive_keywords(
+                self,
+                query=query,
+                mode='tags',
+                logger=self.logger
+            )
+            self.logger.info(f"Tag-matching keywords derived from query: {sorted(self._last_tag_matching_keywords)}")
+
+            # --- Hybrid-first: Gather candidate docs by tag/keyword ---
+            candidate_metas = []
+            seen_doc_ids = set()
+            # Tag-matching
+            for tag in self._last_tag_matching_keywords:
+                matches = self.vector_store.list_metadata_by_tag_or_keyword(tag)
+                for meta in matches:
+                    doc_id = meta.get('id') or meta.get('path')
+                    if doc_id and doc_id not in seen_doc_ids:
+                        candidate_metas.append(meta)
+                        seen_doc_ids.add(doc_id)
+            # Keyword-matching
+            for kw in self._last_query_keywords:
+                matches = self.vector_store.list_metadata_by_tag_or_keyword(kw)
+                for meta in matches:
+                    doc_id = meta.get('id') or meta.get('path')
+                    if doc_id and doc_id not in seen_doc_ids:
+                        candidate_metas.append(meta)
+                        seen_doc_ids.add(doc_id)
+            self.logger.info(f"Hybrid-first: Found {len(candidate_metas)} unique candidate docs by tag/keyword matching.")
+
+            # --- Optionally, add top_k semantic search for recall boost ---
             embedding_result = self.embedding_generator.generate_embeddings([query], metadata={"task_type": "RETRIEVAL_QUERY"})
             vectors = embedding_result.get('vectors', [])
             if not vectors or not isinstance(vectors, list):
-                self.logger.info(f"Embedding generation failed or returned no vectors for query: {query!r}")
-                raise EmbeddingError("Failed to generate embedding for query.")
+                self.logger.info(f"Query embedding generation failed or returned no vectors for query: {query!r}")
+                raise EmbeddingError("Failed to generate query embedding.")
             query_vector = vectors[0]
             top_k = int(self.config.get_nested('QUERY.TOP_K', default=40))
             results = self.vector_store.query(query_vector, top_k=top_k)
@@ -52,83 +95,55 @@ class QueryProcessor:
             docs = results.get('documents', [[]])[0]
             metadatas = results.get('metadatas', [[]])[0]
             distances = results.get('distances', [[]])[0] if 'distances' in results else []
-            source_paths = [meta.get('path', doc_id) for meta, doc_id in zip(metadatas, ids)]
-            self.logger.debug(f"Initial sources after vector search for query '{query}': {source_paths}")
-            self.logger.debug(f"Vector store returned {len(ids)} results.")
-            for i, doc_id in enumerate(ids):
-                self.logger.debug(f"  id: {doc_id}")
-                self.logger.debug(f"  distance: {distances[i] if i < len(distances) else 'N/A'}")
-                safe_meta = {k: v for k, v in (metadatas[i] if i < len(metadatas) else {}).items() if k != 'chunk' and k != 'document' and k != 'text'}
-                self.logger.debug(f"  metadata: {safe_meta}")
+            recall_added = 0
+            for i, meta in enumerate(metadatas):
+                doc_id = meta.get('id') or meta.get('path')
+                if doc_id and doc_id not in seen_doc_ids:
+                    candidate_metas.append(meta)
+                    seen_doc_ids.add(doc_id)
+                    recall_added += 1
+            self.logger.info(f"Hybrid-first: Added {recall_added} docs from top_k semantic search for recall boost.")
+
+            # --- For each candidate, get embedding and compute distance ---
+            # We'll use the vector store's collection.get() to fetch embeddings for all doc ids
+            doc_ids = [meta.get('id') or meta.get('path') for meta in candidate_metas]
+            # Remove any None
+            doc_ids = [doc_id for doc_id in doc_ids if doc_id]
+            # Fetch all embeddings and docs in one call
+            collection_results = self.vector_store.collection.get(ids=doc_ids)
+            all_embeddings = collection_results.get('embeddings', [])
+            all_docs = collection_results.get('documents', [])
+            all_metadatas = collection_results.get('metadatas', [])
+            # Compute distances
+            from scipy.spatial.distance import cosine
+            distances = [cosine(query_vector, emb) if emb is not None else 1.0 for emb in all_embeddings]
+            # --- Build Source objects from candidates ---
             docs_root = self.config.get_nested('FILE_SCANNER.DOCUMENT_PATH', './docs')
             docs_root = os.path.abspath(docs_root)
             sources = build_sources_from_vector_results(
-                ids=ids,
-                docs=docs,
-                metadatas=metadatas,
+                ids=doc_ids,
+                docs=all_docs,
+                metadatas=all_metadatas,
                 distances=distances,
                 docs_root=docs_root,
                 context_length=200
             )
-            self.logger.debug("Similarities before hybrid scoring:")
-            for src in sources:
-                self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
-            self.logger.debug(f"Sources before hybrid scoring: {[src.document for src in sources]}")
-            self._last_query_keywords = extract_keywords(query, STOPWORDS)
-            self.logger.info(f"Extracted keywords from query (stopwords removed): {sorted(self._last_query_keywords)}")
-            if not self._last_query_keywords:
-                self.logger.info(f"No keywords extracted from query after stopword removal: {query!r}. This may indicate an empty, non-alphanumeric, or all-stopword query.")
-            all_tags = self.vector_store.get_all_tags()
-            self._last_tag_matching_keywords = extract_tag_matching_keywords(
-                query,
-                all_tags=all_tags,
-                stopwords=STOPWORDS,
-                logger=self.logger
-            )
-            self.logger.info(f"Tag-matching keywords from query: {sorted(self._last_tag_matching_keywords)}")
+
+            # --- Apply hybrid scoring and deduplicate sources ---
             sources = apply_scoring(self, sources)
-            self.logger.debug("Similarities after hybrid scoring:")
-            for src in sources:
-                self.logger.debug(f"  {src.document}: {src.similarity:.3f}")
-            self.logger.debug(f"Sources after hybrid scoring: {[src.document for src in sources]}")
-            deduped_sources = deduplicate_sources(sources, logger=self.logger)
+            sources = deduplicate_sources(sources, logger=self.logger)
+
+            # --- Filter sources based on similarity and tag-matching ---
             filtered_sources, tag_matched_sources = filter_sources(
-                deduped_sources,
+                sources,
                 tag_matching_keywords=self._last_tag_matching_keywords,
                 min_similarity=float(self.config.get_nested('QUERY.MIN_SIMILARITY', default=0.2)),
                 tag_min_similarity=float(self.config.get_nested('QUERY.TAG_MATCH_MIN_SIMILARITY', default=0.1)),
                 logger=self.logger
             )
             self.logger.info(f"Sources included due to tag-matching: {[src.document for src in tag_matched_sources]}")
-            relevant_keywords = list(self._last_query_keywords)
-            found_relevant = False
-            for src in filtered_sources:
-                fields = []
-                tags = src.metadata.get('tags', [])
-                if isinstance(tags, str):
-                    tags = [t.strip() for t in tags.split(',') if t.strip()]
-                fields.extend([t.lower() for t in tags])
-                path = src.metadata.get('path', '')
-                if path:
-                    fields.append(path.lower())
-                filename_stem = src.metadata.get('filename_stem', '')
-                if filename_stem:
-                    fields.append(filename_stem.lower())
-                url = src.metadata.get('url', '')
-                if url:
-                    fields.append(url.lower())
-                fields.append(src.document.lower())
-                fields.append(src.chunk.lower())
-                for kw in relevant_keywords:
-                    if any(kw in f for f in fields):
-                        found_relevant = True
-                        break
-                if found_relevant:
-                    break
-            if not found_relevant:
-                self.logger.warning(
-                    f"Relevant document for keywords {relevant_keywords} not found in any of the following fields: tags, path, filename_stem, url, document, chunk. Extracted keywords: {sorted(self._last_query_keywords)}."
-                )
+
+            # --- Build context window for LLM prompt ---
             context_window = int(self.config.get_nested('QUERY.CONTEXT_WINDOW', default=4096))
             context_text, tokens_used, context_chunks = build_context_window(
                 filtered_sources,
@@ -137,8 +152,9 @@ class QueryProcessor:
             self.logger.debug("Context documents for Gemini:")
             for doc in context_chunks:
                 self.logger.debug(f"  - {doc}")
+
+            # --- Build LLM prompt and call LLM ---
             prompt = build_llm_prompt(query, context_text, system_prompt=system_prompt)
-            # Use GeminiLLM abstraction
             try:
                 response_text = self.llm.generate_response(
                     user_prompt=prompt,
@@ -149,6 +165,8 @@ class QueryProcessor:
             except Exception as e:
                 self.logger.error(f"LLM call failed: {e}")
                 response_text = ""
+
+            # --- Prepare and return QueryResponse ---
             confidence = filtered_sources[0].similarity if filtered_sources else 0.0
             processing_time = time.time() - start_time
             return QueryResponse(
@@ -159,6 +177,8 @@ class QueryProcessor:
                 error=None,
                 success=True
             )
+
+        # --- Error handling ---
         except TypeError as e:
             self.logger.error(f"Query processing failed: {e}")
             return QueryResponse(
