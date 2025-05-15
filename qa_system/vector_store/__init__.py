@@ -4,7 +4,7 @@ from ._add_embeddings_impl import _add_embeddings_impl
 from ._query_impl import _query_impl
 from ._delete_impl import _delete_impl
 from ._has_file_impl import _has_file_impl
-from ._list_documents_impl import _list_metadata_impl
+from ._list_documents_impl import _list_metadata_impl, _search_metadata_impl
 from ._get_all_tags_impl import _get_all_tags_impl
 
 class ChromaVectorStore:
@@ -39,10 +39,24 @@ class ChromaVectorStore:
         Returns:
             list[dict]: List of document metadata dicts matching the tag or keyword.
         """
+        import logging
+        logger = logging.getLogger(__name__)
         value_norm = value.strip().lower()
+        # Try to use backend filtering if possible
+        try:
+            # Attempt to use the vector store's filtering capabilities
+            filter_criteria = {"tags": value_norm}
+            logger.debug(f"Attempting fast tag filter with filter_criteria={filter_criteria}")
+            results = self.collection.get(where=filter_criteria)
+            metadatas = results.get('metadatas', [])
+            logger.info(f"[FAST TAG FILTER] Tag '{value_norm}' matched {len(metadatas)} documents using backend filter.")
+            return metadatas
+        except Exception as e:
+            logger.warning(f"[FALLBACK] Backend tag filter failed for tag '{value_norm}': {e}. Falling back to in-memory filtering.")
+        # Fallback: in-memory filtering
         matches = []
-        for meta in self.list_metadata():
-            # Tag matching (normalize as in _get_all_tags_impl)
+        all_metas = self.list_metadata()
+        for meta in all_metas:
             tags = meta.get('tags', [])
             if isinstance(tags, str):
                 tags = [t.strip() for t in tags.split(',') if t.strip()]
@@ -55,6 +69,21 @@ class ChromaVectorStore:
                 if isinstance(field_val, str) and value_norm in field_val.lower():
                     matches.append(meta)
                     break
+        logger.info(f"[FALLBACK] Tag/keyword '{value_norm}' matched {len(matches)} documents using in-memory filtering (total scanned: {len(all_metas)}).");
         return matches
+
+    def search_metadata(self, search_string: str, metadata_keys: Optional[list[str]] = None) -> list[str]:
+        """
+        Search for a string in specified metadata keys (or all keys if none provided),
+        and return the contents of the 'path' metadata key for matches.
+
+        Args:
+            search_string (str): The string to search for (case-insensitive substring match).
+            metadata_keys (Optional[list[str]]): List of metadata keys to search in. If None, search all keys.
+
+        Returns:
+            list[str]: List of 'path' values for matching documents.
+        """
+        return _search_metadata_impl(self, search_string, metadata_keys)
 
 __all__ = ["ChromaVectorStore"]

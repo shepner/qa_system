@@ -104,11 +104,15 @@ class GeminiLLM:
         gen_config.update(kwargs)
 
         try:
+            # --- INFO log before model call ---
+            self.logger.info(f"Calling Gemini model '{self.model_name}' with prompt (user length: {len(str(user_prompt))} chars, system: {bool(system_prompt)})")
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=contents,
                 generation_config=gen_config
             )
+            # --- INFO log after model call ---
+            self.logger.info(f"Gemini model '{self.model_name}' call complete. Response type: {type(response)}, response: {str(response)[:200]}...")
             return getattr(response, 'text', None) or str(response)
         except TypeError as e:
             # Fallback for older google-genai versions
