@@ -19,6 +19,7 @@ from .source_filter import filter_sources
 from .context_builder import build_context_window
 from .prompts import build_llm_prompt
 from .gemini_llm import GeminiLLM
+from scipy.spatial.distance import cosine
 
 class QueryProcessor:
     """
@@ -115,7 +116,6 @@ class QueryProcessor:
             all_docs = collection_results.get('documents', [])
             all_metadatas = collection_results.get('metadatas', [])
             # Compute distances
-            from scipy.spatial.distance import cosine
             distances = [cosine(query_vector, emb) if emb is not None else 1.0 for emb in all_embeddings]
             # --- Build Source objects from candidates ---
             docs_root = self.config.get_nested('FILE_SCANNER.DOCUMENT_PATH', './docs')
