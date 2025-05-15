@@ -132,7 +132,10 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                     chunk_text = '\n'.join(chunk_lines).strip()
                     if chunk_text:
                         # --- Extract hashtags ---
-                        hashtags = set(re.findall(r'(?<![\w-])#([\w-]+)', chunk_text))
+                        hashtags = set(
+                            re.sub(r'\[\^\d+\]$', '', tag)
+                            for tag in re.findall(r'(?<!#)(?<!\w)#([A-Za-z0-9_-]+)\b', chunk_text)
+                        )
                         # --- Extract URLs (markdown links and raw URLs) ---
                         urls = set()
                         url_contexts = []
