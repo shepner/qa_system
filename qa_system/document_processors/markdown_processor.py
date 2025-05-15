@@ -1,3 +1,34 @@
+"""
+@file: markdown_processor.py
+Processor for Markdown (.md) files in the QA system.
+
+This module defines the MarkdownDocumentProcessor class, which extracts metadata, splits text into structured chunks, and serializes metadata for vector store compatibility. It supports YAML frontmatter, hashtags, and URL extraction, and assigns chunk-level metadata including section hierarchy and summaries.
+
+Major Components:
+- MarkdownDocumentProcessor: Main processor class for .md files
+- _list_to_csv: Utility for serializing lists as CSV
+- _parse_headers: Utility for extracting markdown headers
+- process: Main entry point for processing a markdown file
+
+Dependencies:
+- PyYAML for YAML frontmatter parsing
+- csv, io, re for parsing and serialization
+
+Usage Example:
+    processor = MarkdownDocumentProcessor()
+    result = processor.process("example.md")
+    print(result['metadata'])
+    print(result['chunks'][0]['text'])
+
+Limitations:
+- Only basic YAML frontmatter is supported
+- Chunking is based on headers and may not match all use cases
+- Topics extraction is a placeholder
+
+Version History:
+- 1.0: Initial version
+"""
+
 from .base_processor import BaseDocumentProcessor
 import re
 import yaml
@@ -6,20 +37,37 @@ import io
 
 class MarkdownDocumentProcessor(BaseDocumentProcessor):
     """
-    Processor for Markdown (.md) files. Extracts metadata, chunks text, and returns results.
-    Attempts to preserve markdown structure in chunking.
-    Also extracts tags (YAML frontmatter and hashtags) and URLs (markdown links and raw URLs).
-    Serializes tags and urls as CSV strings in metadata for vector store compatibility.
-    Now assigns chunk-level metadata for tags, URLs, section headers, section hierarchy, and chunk position.
+    Processor for Markdown (.md) files.
+    
+    Extracts document-level and chunk-level metadata, splits text into logical chunks based on headers, and serializes tags and URLs for vector store compatibility.
+    
+    Features:
+    - Extracts YAML frontmatter tags and hashtags
+    - Extracts URLs from markdown links and raw URLs
+    - Assigns chunk-level metadata: tags, urls, section headers, section hierarchy, chunk position, and summary
+    - Returns a dictionary with 'chunks' and 'metadata' keys
     """
     def _list_to_csv(self, items):
+        """
+        Serialize a list of items as a single CSV string.
+        Args:
+            items (list): List of items to serialize
+        Returns:
+            str: CSV-formatted string
+        """
         output = io.StringIO()
         writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
         writer.writerow(items)
         return output.getvalue().strip()  # Remove trailing newline
 
     def _parse_headers(self, lines):
-        # Returns a list of (line_idx, header_level, header_text)
+        """
+        Parse markdown headers from a list of lines.
+        Args:
+            lines (list): List of lines from the markdown body
+        Returns:
+            list: List of (line_idx, header_level, header_text) tuples
+        """
         headers = []
         for idx, line in enumerate(lines):
             m = re.match(r'^(#+)\s+(.*)$', line)
@@ -28,12 +76,25 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         return headers
 
     def process(self, file_path, metadata=None):
+        """
+        Process a markdown file, extracting metadata and splitting into structured chunks.
+        Args:
+            file_path (str): Path to the markdown file
+            metadata (dict, optional): Additional metadata to include
+        Returns:
+            dict: {
+                'chunks': List of chunk dicts with 'text' and 'metadata',
+                'metadata': Document-level metadata
+            }
+        """
         self.logger.debug(f"Processing markdown file: {file_path}")
+        # Extract or merge metadata
         if metadata is None:
             metadata = self.extract_metadata(file_path)
         else:
             extracted = self.extract_metadata(file_path)
             metadata = {**extracted, **metadata}
+        # Read file content
         with open(file_path, 'r', encoding='utf-8') as f:
             text = f.read()
         # --- Extract document-level tags (YAML frontmatter) ---
@@ -55,23 +116,24 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         # Remove YAML frontmatter from body
         body = text[yaml_match.end():] if yaml_match else text
         lines = body.splitlines()
+        # Parse headers for sectioning
         headers = self._parse_headers(lines)
         chunk_dicts = []
         chunk_index = 0
-        section_hierarchy = []
+        section_hierarchy = []  # Stack of (line_idx, header_level, header_text)
         start_offset = 0
-        last_header_idx = -1
+        # Iterate through lines, splitting at headers
         for idx, line in enumerate(lines + ['']):  # Add sentinel for last chunk
-            m = re.match(r'^(#+)\s+(.*)$', line) if idx < len(lines) else None
-            if m or idx == len(lines):
+            header_match = re.match(r'^(#+)\s+(.*)$', line) if idx < len(lines) else None
+            if header_match or idx == len(lines):
                 # Process previous chunk (if any), up to but not including this header
                 if start_offset < idx:
                     chunk_lines = lines[start_offset:idx]
                     chunk_text = '\n'.join(chunk_lines).strip()
                     if chunk_text:
-                        # Find hashtags in this chunk
+                        # --- Extract hashtags ---
                         hashtags = set(re.findall(r'(?<![\w-])#([\w-]+)', chunk_text))
-                        # Find URLs in this chunk (markdown links and raw URLs)
+                        # --- Extract URLs (markdown links and raw URLs) ---
                         urls = set()
                         url_contexts = []
                         for m_url in re.finditer(r'\[[^\]]+\]\(([^)\s]+)\)', chunk_text):
@@ -80,7 +142,7 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                         for m_url in re.finditer(r'(https?://[^\s)\]"\'<>]+|ftp://[^\s)\]"\'<>]+)', chunk_text):
                             urls.add(m_url.group(1))
                             url_contexts.append({'url': m_url.group(1), 'context': 'raw_url'})
-                        # Compose chunk metadata
+                        # --- Compose chunk metadata ---
                         chunk_meta = dict(metadata)  # inherit document-level metadata
                         chunk_meta['tags'] = self._list_to_csv(sorted(doc_tags | hashtags))
                         chunk_meta['urls'] = self._list_to_csv(sorted(urls))
@@ -94,22 +156,25 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                         else:
                             chunk_meta['section_header'] = ''
                             chunk_meta['section_hierarchy'] = []
-                        chunk_meta['topics'] = ["Unknown"]
+                        chunk_meta['topics'] = ["Unknown"]  # Placeholder for topic extraction
+                        # --- Generate summary ---
                         summary = chunk_text.split(". ")[0]
                         if len(summary.split()) < 5:
                             summary = " ".join(chunk_text.split()[:20])
                         chunk_meta['summary'] = summary.strip()
                         chunk_dicts.append({'text': chunk_text, 'metadata': chunk_meta})
                         chunk_index += 1
-                # Update section hierarchy for new header
-                if m:
-                    header_level = len(m.group(1))
-                    header_text = m.group(2).strip()
+                # --- Update section hierarchy for new header ---
+                if header_match:
+                    header_level = len(header_match.group(1))
+                    header_text = header_match.group(2).strip()
+                    # Pop higher/equal level headers
                     while section_hierarchy and section_hierarchy[-1][1] >= header_level:
                         section_hierarchy.pop()
                     section_hierarchy.append((idx, header_level, header_text))
                 # Set start_offset to idx (the header line), so next chunk starts at the header
                 start_offset = idx
+        # --- Compose document-level metadata ---
         document_metadata = dict(metadata)
         document_metadata['tags'] = self._list_to_csv(sorted(doc_tags))
         document_metadata['chunk_count'] = len(chunk_dicts)
