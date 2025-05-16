@@ -33,6 +33,15 @@ FILE_SCANNER:
     - "txt"
     - "md"
     - "pdf"
+    - "jpg"
+    - "jpeg"
+    - "png"
+    - "gif"
+    - "bmp"
+    - "tiff"
+    - "webp"
+    - "svg"
+    - "heic"
   # List of glob or regex patterns for files/directories to exclude from scanning (e.g., hidden files, cache, templates).
   EXCLUDE_PATTERNS:
     - ".*"
