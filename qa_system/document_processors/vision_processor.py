@@ -1,6 +1,12 @@
+"""
+@file: vision_processor.py
+Image document processor for extracting metadata and simulating Vision API results.
+
+This module defines VisionDocumentProcessor, a subclass of BaseDocumentProcessor, for handling image files (jpg, jpeg, png, gif, bmp, webp). It extracts image metadata, simulates Vision API fields, and produces chunked outputs for downstream processing.
+"""
+
 from .base_processor import BaseDocumentProcessor
 from PIL import Image
-import os
 from datetime import datetime, timezone
 import csv
 import io
@@ -8,16 +14,37 @@ import re
 
 class VisionDocumentProcessor(BaseDocumentProcessor):
     """
-    Processor for image files (jpg, jpeg, png, gif, bmp, webp). Extracts metadata and image-specific fields.
-    Simulates Vision API results for testing.
+    Processor for image files (jpg, jpeg, png, gif, bmp, webp).
+    Extracts image metadata and simulates Vision API results for testing.
+    
+    Methods:
+        process(file_path, metadata=None):
+            Process an image file, extract metadata, and simulate Vision API fields.
     """
     def _list_to_csv(self, items):
+        """
+        Convert a list of items to a CSV string.
+
+        Args:
+            items (list): List of items to convert.
+        Returns:
+            str: CSV-formatted string of items.
+        """
         output = io.StringIO()
         writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
         writer.writerow(items)
         return output.getvalue().strip()
 
     def process(self, file_path, metadata=None):
+        """
+        Process an image file, extract metadata, and simulate Vision API fields.
+
+        Args:
+            file_path (str or Path): Path to the image file.
+            metadata (dict, optional): Additional metadata to merge.
+        Returns:
+            dict: Dictionary with 'chunks' (list of chunk dicts) and 'metadata' (document-level metadata).
+        """
         self.logger.debug(f"Processing image file: {file_path}")
         if metadata is None:
             metadata = self.extract_metadata(file_path)
@@ -31,8 +58,8 @@ class VisionDocumentProcessor(BaseDocumentProcessor):
                 metadata['image_format'] = img.format
                 metadata['color_profile'] = img.mode
         except Exception as e:
+            # If image cannot be opened, record error and ensure all required fields are present
             metadata['error_states'] = [str(e)]
-            # Ensure all required fields are present, even if empty
             for key, default in [
                 ('image_dimensions', {}),
                 ('image_format', ''),
@@ -49,7 +76,8 @@ class VisionDocumentProcessor(BaseDocumentProcessor):
                 if key not in metadata:
                     metadata[key] = default
             return {'chunks': []}
-        # Simulate Vision API fields
+
+        # Simulate Vision API fields for demonstration/testing
         metadata['vision_labels'] = ['label1', 'label2']
         metadata['ocr_text'] = 'Simulated OCR text.'
         metadata['face_detection'] = []
@@ -57,6 +85,7 @@ class VisionDocumentProcessor(BaseDocumentProcessor):
         metadata['feature_confidence'] = {'label1': 0.95, 'label2': 0.88}
         metadata['processing_timestamp'] = datetime.now(timezone.utc).isoformat()
         metadata['error_states'] = []
+
         # For images, the "chunk" is just the OCR text and label summary
         chunks = [metadata['ocr_text'], ', '.join(metadata['vision_labels'])]
         chunk_dicts = []
@@ -85,6 +114,7 @@ class VisionDocumentProcessor(BaseDocumentProcessor):
                 summary = " ".join(chunk.split()[:20])
             chunk_meta['summary'] = summary.strip()
             chunk_dicts.append({'text': chunk, 'metadata': chunk_meta})
+
         document_metadata = dict(metadata)
         document_metadata['chunk_count'] = len(chunk_dicts)
         document_metadata['total_tokens'] = sum(len(chunk['text']) for chunk in chunk_dicts)
