@@ -13,6 +13,9 @@ LOGS_DIR="logs"
 DATA_DIR="data/vector_store"
 SECRETS_DIR="secrets"
 
+# Set the log level for the application (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+LOG_LEVEL="WARNING"  # Change this to control the default log level for the app
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -94,10 +97,10 @@ main() {
 
     if [ $# -eq 0 ]; then
         log_info "No arguments provided. Starting interactive mode..."
-        python -m qa_system --query
+        python -m qa_system --query --log-level "$LOG_LEVEL"
     else
         log_info "Running with arguments: $@"
-        python -m qa_system "$@"
+        python -m qa_system "$@" --log-level "$LOG_LEVEL"
     fi
 }
 
