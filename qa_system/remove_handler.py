@@ -1,25 +1,48 @@
 """
+@file: remove_handler.py
 RemoveHandler module for safe deletion of files and their associated data from the system.
-Implements pattern matching, batch removal, verification, and error handling.
+
+This module provides the RemoveHandler class, which implements pattern matching, batch removal,
+verification, and error handling for document deletion from the vector store.
+
+Classes:
+    RemoveHandler: Handles finding and removing documents from the vector store based on patterns or paths.
+
+Example usage:
+    handler = RemoveHandler(config)
+    result = handler.remove_documents(pattern="*.md")
+
+Raises:
+    RemovalError: If document removal fails unexpectedly.
+    ValidationError: If input validation fails.
+    DocumentNotFoundError: If no matching documents are found.
+    VectorStoreError: For vector store operation errors.
 """
 
 import logging
 from typing import List, Union, Dict, Any
-from pathlib import Path
+import os
 import fnmatch
 from qa_system.vector_store import ChromaVectorStore
 from qa_system.exceptions import (
     DocumentNotFoundError, RemovalError, ValidationError, VectorStoreError
 )
-import os
 
 logger = logging.getLogger(__name__)
 
-print("LOADED qa_system/remove_handler.py")
-print("MODULE FILE PATH:", __file__)
-
 class RemoveHandler:
+    """
+    Handles safe removal of documents and their associated data from the vector store.
+
+    Supports pattern matching, batch removal, verification, and error handling.
+    """
     def __init__(self, config):
+        """
+        Initialize RemoveHandler with configuration.
+
+        Args:
+            config: Application configuration object.
+        """
         self.config = config
         self.vector_store = ChromaVectorStore(config)
         remover_config = config.get_nested('DATA_REMOVER', {})
@@ -30,7 +53,15 @@ class RemoveHandler:
         self.verify_removal_flag = remover_config.get('VERIFY_REMOVAL', True)
 
     def find_matches(self, pattern: Union[str, List[str]]) -> List[Dict[str, Any]]:
-        """Find documents matching the given pattern(s) in the vector store."""
+        """
+        Find documents matching the given pattern(s) in the vector store.
+
+        Args:
+            pattern: A string or list of strings representing file path patterns or globs.
+
+        Returns:
+            List of document metadata dicts matching the pattern(s).
+        """
         if isinstance(pattern, str):
             patterns = [pattern]
         else:
@@ -51,47 +82,65 @@ class RemoveHandler:
                     matches.append(doc)
         return matches
 
-    def remove_documents(self, pattern: Union[str, List[str]] = None, paths: Union[str, List[str]] = None, recursive: bool = None, verify_removal: bool = None, require_confirmation: bool = None) -> Dict[str, Any]:
-        print("IN REMOVE_DOCUMENTS: pattern=", pattern, "paths=", paths, "recursive=", recursive, "verify_removal=", verify_removal, "require_confirmation=", require_confirmation)
+    def remove_documents(
+        self,
+        pattern: Union[str, List[str]] = None,
+        paths: Union[str, List[str]] = None,
+        recursive: bool = None,
+        verify_removal: bool = None,
+        require_confirmation: bool = None
+    ) -> Dict[str, Any]:
+        """
+        Remove documents from the vector store matching the given pattern or paths.
+
+        Args:
+            pattern: File path pattern(s) or glob(s) to match for removal.
+            paths: Alternative to pattern; direct file path(s) to remove.
+            recursive: Whether to remove recursively (default from config).
+            verify_removal: Whether to verify removal after deletion (default from config).
+            require_confirmation: Whether to require confirmation before deletion (default from config).
+
+        Returns:
+            Dictionary with lists of 'removed', 'failed', 'not_found', and 'errors'.
+
+        Raises:
+            RemovalError: If an unexpected error occurs during removal.
+            ValidationError: If input validation fails.
+        """
         logger.info(f"Entered remove_documents with pattern={pattern}, paths={paths}, recursive={recursive}, verify_removal={verify_removal}, require_confirmation={require_confirmation}")
         # Normalize input: if pattern is None and paths is provided, use paths as pattern
         if pattern is None and paths is not None:
-            # Accept a single string or a list for paths
             if isinstance(paths, str):
                 pattern = [paths]
             elif isinstance(paths, list):
                 pattern = paths
             else:
-                print("WARNING: 'paths' argument is not a string or list.")
+                logger.warning("'paths' argument is not a string or list.")
                 return {'removed': [], 'failed': [], 'not_found': [], 'errors': ["Invalid 'paths' argument type"]}
         elif pattern is not None:
-            # Accept a single string or a list for pattern
             if isinstance(pattern, str):
                 pattern = [pattern]
             elif not isinstance(pattern, list):
-                print("WARNING: 'pattern' argument is not a string or list.")
+                logger.warning("'pattern' argument is not a string or list.")
                 return {'removed': [], 'failed': [], 'not_found': [], 'errors': ["Invalid 'pattern' argument type"]}
         else:
-            print("WARNING: Both 'pattern' and 'paths' are None. Nothing to remove.")
+            logger.warning("Both 'pattern' and 'paths' are None. Nothing to remove.")
             return {'removed': [], 'failed': [], 'not_found': [], 'errors': ["No pattern or paths provided"]}
-        print("Normalized pattern for matching:", pattern)
+
         recursive = self.recursive if recursive is None else recursive
         verify_removal = self.verify_removal_flag if verify_removal is None else verify_removal
         require_confirmation = self.require_confirmation if require_confirmation is None else require_confirmation
         result = {'removed': [], 'failed': [], 'not_found': [], 'errors': []}
         try:
             matches = self.find_matches(pattern)
-            print(f"After find_matches: found {len(matches)} matches for pattern {pattern}: {[doc.get('id') for doc in matches]}")
             logger.debug(f"After find_matches: found {len(matches)} matches for pattern {pattern}: {[doc.get('id') for doc in matches]}")
             if not matches:
                 result['not_found'].append(pattern)
                 return result
             # Collect all matching ids
             ids = [doc.get('id') for doc in matches if doc.get('id')]
-            print("IDs to be deleted:", ids)
             logger.debug(f"IDs to be deleted: {ids}")
             if ids:
-                print(f"Deleting ids: {ids}")
                 logger.info(f"Deleting ids: {ids}")
                 self.vector_store.delete(ids=ids, require_confirmation=require_confirmation)
                 if verify_removal:
@@ -103,28 +152,38 @@ class RemoveHandler:
                 else:
                     result['removed'].extend([doc.get('path') for doc in matches])
             else:
-                print("No valid ids found for deletion.")
                 logger.error("No valid ids found for deletion.")
                 result['failed'].extend([doc.get('path') for doc in matches])
         except ValidationError as e:
-            print("Validation error:", e)
             logger.error(f"Validation error: {e}")
             result['errors'].append({'exception': str(e), 'type': 'ValidationError'})
             raise
         except Exception as e:
-            print("Unexpected error:", e)
             logger.error(f"Unexpected error: {e}")
             result['errors'].append({'exception': str(e), 'type': 'Unknown'})
             raise RemovalError(f"Failed to remove documents: {e}")
         return result
 
     def verify_removal(self, paths: List[str]) -> bool:
-        """Verify that the given paths are no longer present in the vector store."""
+        """
+        Verify that the given paths are no longer present in the vector store.
+
+        Args:
+            paths: List of file paths to check.
+
+        Returns:
+            True if none of the paths are present, False otherwise.
+        """
         matches = self.find_matches(paths)
         return len(matches) == 0
 
     def cleanup_failed_removal(self, doc_id: str):
-        """Attempt to clean up after a failed removal."""
+        """
+        Attempt to clean up after a failed removal.
+
+        Args:
+            doc_id: Document ID to attempt to remove from the vector store.
+        """
         try:
             self.vector_store.delete({'id': doc_id}, require_confirmation=False)
         except Exception as e:
