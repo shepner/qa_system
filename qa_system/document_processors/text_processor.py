@@ -1,3 +1,10 @@
+"""
+@file: text_processor.py
+Processor for plain text (.txt) files. Extracts metadata, chunks text, and returns results.
+
+This module defines TextDocumentProcessor, a subclass of BaseDocumentProcessor, for handling plain text files. It extracts URLs, stores them as CSV in metadata, and provides chunk-level metadata including URL context, topics, and summaries.
+"""
+
 from .base_processor import BaseDocumentProcessor
 import re
 import csv
@@ -5,16 +12,41 @@ import io
 
 class TextDocumentProcessor(BaseDocumentProcessor):
     """
-    Processor for plain text (.txt) files. Extracts metadata, chunks text, and returns results.
-    Extracts URLs from text and stores as CSV string in metadata.
+    Document processor for plain text (.txt) files.
+
+    Features:
+        - Extracts file and content metadata
+        - Extracts and stores URLs as CSV in metadata
+        - Chunks text using inherited chunking logic
+        - Provides chunk-level metadata: URLs, URL contexts, chunk indices, offsets, topics, and summaries
     """
     def _list_to_csv(self, items):
+        """
+        Convert a list of items to a single CSV string.
+
+        Args:
+            items (list): List of items to convert.
+        Returns:
+            str: CSV-formatted string of items.
+        """
         output = io.StringIO()
         writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
         writer.writerow(items)
         return output.getvalue().strip()
 
     def process(self, file_path, metadata=None):
+        """
+        Process a plain text file, extracting metadata, chunking text, and extracting URLs.
+
+        Args:
+            file_path (str or Path): Path to the text file.
+            metadata (dict, optional): Additional or overriding metadata.
+        Returns:
+            dict: {
+                'chunks': List of chunk dicts with text and metadata,
+                'metadata': Document-level metadata
+            }
+        """
         self.logger.debug(f"Processing text file: {file_path}")
         if metadata is None:
             metadata = self.extract_metadata(file_path)
@@ -25,9 +57,7 @@ class TextDocumentProcessor(BaseDocumentProcessor):
         with open(file_path, 'r', encoding='utf-8') as f:
             text = f.read()
         # Extract URLs from text
-        urls = set()
-        for m in re.finditer(r'(https?://[^\s)\]\'\"<>]+|ftp://[^\s)\]\'\"<>]+)', text):
-            urls.add(m.group(1))
+        urls = set(m.group(1) for m in re.finditer(r'(https?://[^\s)\'\"<>]+|ftp://[^\s)\'\"<>]+)', text))
         metadata['urls'] = self._list_to_csv(sorted(urls))
         # Ensure all required fields are present, even if empty
         if 'urls' not in metadata:
@@ -38,7 +68,7 @@ class TextDocumentProcessor(BaseDocumentProcessor):
         for chunk_index, chunk in enumerate(chunks):
             chunk_urls = set()
             url_contexts = []
-            for m in re.finditer(r'(https?://[^\s)\]\'\"<>]+|ftp://[^\s)\]\'\"<>]+)', chunk):
+            for m in re.finditer(r'(https?://[^\s)\'\"<>]+|ftp://[^\s)\'\"<>]+)', chunk):
                 chunk_urls.add(m.group(1))
                 url_contexts.append({'url': m.group(1), 'context': 'paragraph'})
             chunk_meta = dict(metadata)
