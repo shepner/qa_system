@@ -24,11 +24,6 @@ from qa_system.exceptions import QASystemError
 from qa_system.logging_setup import setup_logging
 from qa_system.list import get_list_module
 
-# Set up a basic logger for early-stage logging (overridden by setup_logging later)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
@@ -332,6 +327,9 @@ def main() -> int:
             LOG_FILE=config.get_nested('LOGGING.LOG_FILE', 'logs/qa_system.log'),
             LEVEL=log_level
         )
+        # Ensure all loggers inherit the root logger's level
+        for name in logging.root.manager.loggerDict:
+            logging.getLogger(name).setLevel(logging.NOTSET)
         
         # Process command
         if args.add:
