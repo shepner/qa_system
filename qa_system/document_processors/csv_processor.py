@@ -1,3 +1,10 @@
+"""
+@file: csv_processor.py
+CSVDocumentProcessor: Processes CSV files for document ingestion.
+
+This module defines CSVDocumentProcessor, a subclass of BaseDocumentProcessor, for handling CSV (.csv) files. It extracts metadata, finds URLs, chunks text, and returns structured results for downstream processing.
+"""
+
 from .base_processor import BaseDocumentProcessor
 import csv
 import io
@@ -5,22 +12,49 @@ import re
 
 class CSVDocumentProcessor(BaseDocumentProcessor):
     """
-    Processor for CSV (.csv) files. Extracts metadata, chunks text, and returns results.
-    Extracts URLs from all cell values and stores as CSV string in metadata.
+    Processor for CSV (.csv) files.
+
+    Responsibilities:
+        - Extracts file and CSV metadata (header fields, row count, etc.)
+        - Extracts all URLs from cell values and stores as CSV string in metadata
+        - Chunks the CSV content for downstream processing
+        - Ensures all required metadata fields are present in output
     """
     def _list_to_csv(self, items):
+        """
+        Convert a list of items to a single CSV-formatted string.
+
+        Args:
+            items (list): List of items to join as CSV.
+        Returns:
+            str: CSV-formatted string of items.
+        """
         output = io.StringIO()
         writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
         writer.writerow(items)
         return output.getvalue().strip()
 
     def process(self, file_path, metadata=None):
+        """
+        Process a CSV file, extracting metadata, URLs, and chunked text.
+
+        Args:
+            file_path (str or Path): Path to the CSV file.
+            metadata (dict, optional): Additional metadata to merge.
+        Returns:
+            dict: {
+                'chunks': List of chunk dicts with text and metadata,
+                'metadata': Document-level metadata
+            }
+        """
         self.logger.debug(f"Processing CSV file: {file_path}")
+        # Extract or merge metadata
         if metadata is None:
             metadata = self.extract_metadata(file_path)
         else:
             extracted = self.extract_metadata(file_path)
             metadata = {**extracted, **metadata}
+        # Read CSV rows
         with open(file_path, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
             rows = list(reader)
