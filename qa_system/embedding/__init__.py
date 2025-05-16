@@ -1,9 +1,35 @@
+"""
+@file: embedding/__init__.py
+Embedding generation utilities for the QA System.
+
+This module provides a thread-safe, process-wide rate limiter and an EmbeddingGenerator class
+for generating vector embeddings for document chunks using the Gemini API. It is designed to be
+configurable, robust, and suitable for high-throughput embedding generation with proper rate limiting.
+
+Classes:
+    _RateLimiter: Thread-safe token bucket rate limiter for API call limiting.
+    EmbeddingGenerator: Generates vector embeddings for text using Gemini API.
+
+Exceptions:
+    EmbeddingError: Raised for embedding generation failures.
+
+Dependencies:
+    - google-generativeai (google-genai)
+    - Configuration object with get_nested method
+    - GEMINI_API_KEY environment variable
+
+Example usage:
+    config = ...  # Your configuration object
+    generator = EmbeddingGenerator(config)
+    result = generator.generate_embeddings(["text1", "text2"], metadata={...})
+"""
+
 import logging
 from typing import List, Dict, Any
 import os
-from qa_system.exceptions import EmbeddingError
 import threading
 import time
+from qa_system.exceptions import EmbeddingError
 
 try:
     from google import genai
@@ -11,11 +37,14 @@ try:
 except ImportError:
     genai = None  # Will error at runtime if used
 
-# --- Rate Limiter (Standard Library, Process-wide) ---
 class _RateLimiter:
     """
     Thread-safe token bucket rate limiter for process-wide API call limiting.
     Allows up to max_calls per period_seconds.
+    
+    Args:
+        max_calls (int): Maximum number of calls allowed per period.
+        period_seconds (float): Time window for rate limiting in seconds.
     """
     def __init__(self, max_calls: int, period_seconds: float):
         self.max_calls = max_calls
@@ -23,13 +52,15 @@ class _RateLimiter:
         self._lock = threading.Lock()
         self._tokens = max_calls
         self._last_refill = time.monotonic()
-        # For logging requests per minute
         self._window_start = time.monotonic()
         self._request_count = 0
         self._total_requests = 0
         self._period_start = time.monotonic()
 
     def acquire(self):
+        """
+        Acquire a token for making an API call. Blocks if rate limit is exceeded.
+        """
         while True:
             with self._lock:
                 now = time.monotonic()
@@ -63,18 +94,28 @@ class _RateLimiter:
     def get_period_request_count(self):
         """
         Return the number of requests submitted in the current rate limiter period.
+        Returns:
+            tuple: (request_count, period_seconds, period_start_time)
         """
         with self._lock:
             return self._total_requests, self.period, self._period_start
 
 class EmbeddingGenerator:
     """
-    EmbeddingGenerator generates vector embeddings for document chunks and images.
-    Integrates with configuration for model settings and batching.
+    EmbeddingGenerator generates vector embeddings for document chunks using the Gemini API.
+    Integrates with configuration for model settings, batching, and rate limiting.
+
+    Args:
+        config: Configuration object (must support get_nested)
+
+    Raises:
+        RuntimeError: If GEMINI_API_KEY is not set in the environment.
+        ImportError: If google-genai is not installed.
     """
     def __init__(self, config):
         """
         Initialize the EmbeddingGenerator with configuration.
+
         Args:
             config: Configuration object (must support get_nested)
         """
@@ -110,11 +151,16 @@ class EmbeddingGenerator:
     def generate_embeddings(self, texts: List[str], metadata: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate embeddings for a list of text chunks using Gemini API.
+
         Args:
-            texts: List of text chunks to embed
-            metadata: Metadata dictionary for the document
+            texts (List[str]): List of text chunks to embed.
+            metadata (Dict[str, Any]): Metadata dictionary for the document.
+
         Returns:
-            Dictionary with keys: 'vectors', 'texts', 'metadata'
+            dict: Dictionary with keys: 'vectors', 'texts', 'metadata'.
+
+        Raises:
+            EmbeddingError: If embedding generation fails.
         """
         self.logger.debug(f"Called EmbeddingGenerator.generate_embeddings(texts=<len {len(texts)}>, metadata={metadata})")
         if not texts:
