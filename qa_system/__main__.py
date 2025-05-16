@@ -1,3 +1,16 @@
+"""
+@file: __main__.py
+Main entry point for the QA System CLI.
+
+This module provides a command-line interface for document processing and question-answering operations, including:
+- Adding documents to the vector store
+- Listing documents (with optional filtering)
+- Removing documents
+- Querying the system (single or interactive mode)
+
+It handles argument parsing, configuration loading, logging setup, and delegates to the appropriate handlers for each operation.
+"""
+
 #!/usr/bin/env python3
 
 import argparse
@@ -11,15 +24,15 @@ from qa_system.exceptions import QASystemError
 from qa_system.logging_setup import setup_logging
 from qa_system.list import get_list_module
 
+# Set up a basic logger for early-stage logging (overridden by setup_logging later)
 logging.basicConfig(
-    level=logging.INFO,  # Default to INFO; can be overridden by setup_logging()
+    level=logging.INFO,
     format="%(levelname)s - %(message)s"
 )
-
 logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
-    """Parse command line arguments.
+    """Parse command line arguments for the QA System CLI.
     
     Returns:
         argparse.Namespace: Parsed command line arguments
@@ -29,7 +42,7 @@ def parse_args() -> argparse.Namespace:
         description="QA System - Document processing and question-answering system"
     )
     
-    # Add operation group
+    # Mutually exclusive operation group
     operation_group = parser.add_mutually_exclusive_group(required=True)
     operation_group.add_argument(
         "--add",
@@ -54,20 +67,20 @@ def parse_args() -> argparse.Namespace:
         help="Query the system. If no query is provided, enters interactive mode."
     )
     
-    # Add filter option for list operation
+    # Optional filter for list/remove
     parser.add_argument(
         "--filter",
         help="Filter pattern for list operation (e.g., '*.pdf')"
     )
     
-    # Add debug flag
+    # Debug flag
     parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging"
     )
     
-    # Add config file option
+    # Config file option
     parser.add_argument(
         "--config",
         help="Path to configuration file"
@@ -81,11 +94,11 @@ def process_add_files(files: List[str], config: dict) -> int:
     Args:
         files: List of file paths to process
         config: Configuration dictionary
-        
+    
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
-    logger.info(f"Called process_add_files(files={files}, config={config})")
+    logger.info(f"Called process_add_files(files={files}, config={{...}})")
     try:
         from qa_system.document_processors import FileScanner, get_processor_for_file_type
         from qa_system.embedding import EmbeddingGenerator
@@ -168,11 +181,11 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
     Args:
         filter_pattern: Optional pattern to filter documents
         config: Configuration dictionary
-        
+    
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
-    logger.info(f"Called process_list(filter_pattern={filter_pattern}, config={config})")
+    logger.info(f"Called process_list(filter_pattern={filter_pattern}, config={{...}})")
     try:
         from qa_system.document_processors import ListHandler
         
@@ -196,7 +209,7 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
                 f"{doc['metadata'].get('chunk_count', '-'):<8} "
                 f"{doc['metadata'].get('last_modified', '-'):<20}"
             )
-            
+        
         return 0
         
     except Exception as e:
@@ -210,11 +223,11 @@ def process_remove(paths: List[str], filter_pattern: Optional[str], config: dict
         paths: List of paths to remove
         filter_pattern: Optional pattern to filter documents
         config: Configuration dictionary
-        
+    
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
-    logger.info(f"Called process_remove(paths={paths}, filter_pattern={filter_pattern}, config={config})")
+    logger.info(f"Called process_remove(paths={paths}, filter_pattern={filter_pattern}, config={{...}})")
     if not paths and not filter_pattern:
         logger.error("No paths or filter pattern provided for removal")
         return 1
@@ -253,11 +266,11 @@ def process_query(query: Optional[str], config: dict) -> int:
     Args:
         query: Query string or None for interactive mode
         config: Configuration dictionary
-        
+    
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
-    logger.info(f"Called process_query(query={query}, config={config})")
+    logger.info(f"Called process_query(query={query}, config={{...}})")
     try:
         from qa_system.query import QueryProcessor
         
@@ -301,7 +314,7 @@ def process_query(query: Optional[str], config: dict) -> int:
         return 1
 
 def main() -> int:
-    """Main entry point.
+    """Main entry point for the QA System CLI.
     
     Returns:
         int: Exit code (0 for success, 1 for failure)
