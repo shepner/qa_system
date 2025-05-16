@@ -5,6 +5,7 @@ Utilities for constructing and normalizing Source objects from vector store resu
 from typing import List, Dict, Any
 import os
 from .models import Source
+import logging
 
 def build_sources_from_vector_results(
     ids: List[str],
@@ -26,6 +27,12 @@ def build_sources_from_vector_results(
     Returns:
         List[Source]: List of constructed Source objects
     """
+    logger = logging.getLogger(__name__)
+    logger.debug(f"build_sources_from_vector_results: lengths - ids: {len(ids)}, docs: {len(docs)}, metadatas: {len(metadatas)}, distances: {len(distances)}")
+    logger.debug(f"Sample ids: {ids[:5]}")
+    logger.debug(f"Sample docs: {docs[:1]}")
+    logger.debug(f"Sample metadatas: {metadatas[:1]}")
+    logger.debug(f"Sample distances: {distances[:5]}")
     sources = []
     docs_root = os.path.abspath(docs_root)
     for i, doc_id in enumerate(ids):

@@ -106,34 +106,15 @@ class QueryProcessor:
             docs = results.get('documents', [[]])[0]
             metadatas = results.get('metadatas', [[]])[0]
             distances = results.get('distances', [[]])[0] if 'distances' in results else []
-            recall_added = 0
-            for i, meta in enumerate(metadatas):
-                doc_id = meta.get('id') or meta.get('path')
-                if doc_id and doc_id not in seen_doc_ids:
-                    candidate_metas.append(meta)
-                    seen_doc_ids.add(doc_id)
-                    recall_added += 1
-            self.logger.info(f"Hybrid-first: Added {recall_added} docs from top_k semantic search for recall boost.")
+            self.logger.info(f"Hybrid-first: Using {len(ids)} docs from top_k semantic search for scoring and context.")
 
-            # --- For each candidate, get embedding and compute distance ---
-            # We'll use the vector store's collection.get() to fetch embeddings for all doc ids
-            doc_ids = [meta.get('id') or meta.get('path') for meta in candidate_metas]
-            # Remove any None
-            doc_ids = [doc_id for doc_id in doc_ids if doc_id]
-            # Fetch all embeddings and docs in one call
-            collection_results = self.vector_store.collection.get(ids=doc_ids)
-            all_embeddings = collection_results.get('embeddings') or []
-            all_docs = collection_results.get('documents') or []
-            all_metadatas = collection_results.get('metadatas') or []
-            # Compute distances
-            distances = [cosine(query_vector, emb) if emb is not None else 1.0 for emb in all_embeddings]
-            # --- Build Source objects from candidates ---
+            # --- Build Source objects from vector search results only ---
             docs_root = self.config.get_nested('FILE_SCANNER.DOCUMENT_PATH', './docs')
             docs_root = os.path.abspath(docs_root)
             sources = build_sources_from_vector_results(
-                ids=doc_ids,
-                docs=all_docs,
-                metadatas=all_metadatas,
+                ids=ids,
+                docs=docs,
+                metadatas=metadatas,
                 distances=distances,
                 docs_root=docs_root,
                 context_length=200
