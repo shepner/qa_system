@@ -1,3 +1,29 @@
+"""
+@file: file_scanner.py
+FileScanner module for scanning directories and files with inclusion/exclusion rules and hashing.
+
+This module provides the FileScanner class, which is responsible for scanning a directory tree or a single file,
+applying extension and exclusion rules, and computing file hashes for downstream processing (e.g., document embedding).
+
+Key Features:
+- Configurable document root, allowed extensions, and exclusion patterns
+- Hashing with configurable algorithm
+- Skips files based on extension and exclusion rules
+- Returns file metadata (path, size, checksum)
+
+Example usage:
+    config = {
+        'FILE_SCANNER': {
+            'DOCUMENT_PATH': './docs',
+            'ALLOWED_EXTENSIONS': ['md', 'txt', 'pdf'],
+            'EXCLUDE_PATTERNS': ['*.tmp', '.*', '__pycache__'],
+            'HASH_ALGORITHM': 'sha256',
+            'SKIP_EXISTING': True,
+        }
+    }
+    scanner = FileScanner(config)
+    files = scanner.scan_files()
+"""
 import os
 import fnmatch
 import hashlib
@@ -11,8 +37,19 @@ logger = logging.getLogger(__name__)
 class FileScanner:
     """
     Scans directories for files to be embedded, applying inclusion/exclusion rules and hashing.
+
+    Args:
+        config: Configuration object or dict. Must contain a 'FILE_SCANNER' section with keys:
+            - DOCUMENT_PATH (str): Root directory to scan (default: './docs')
+            - ALLOWED_EXTENSIONS (list[str]): File extensions to include (e.g., ['md', 'txt'])
+            - EXCLUDE_PATTERNS (list[str]): Patterns to exclude (e.g., ['*.tmp', '.*'])
+            - HASH_ALGORITHM (str): Hash algorithm to use (default: 'sha256')
+            - SKIP_EXISTING (bool): Whether to skip files that already exist (default: True)
     """
     def __init__(self, config: Any):
+        """
+        Initialize the FileScanner with configuration.
+        """
         logger.info(f"Called FileScanner.__init__(config={config})")
         self.config = config.get_nested('FILE_SCANNER') if hasattr(config, 'get_nested') else config.get('FILE_SCANNER', {})
         self.document_path = Path(self.config.get('DOCUMENT_PATH', './docs'))
@@ -24,8 +61,9 @@ class FileScanner:
     def scan_files(self, path: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Scan for files to process, applying extension and exclusion rules.
+
         Args:
-            path: Optional override for root directory or file to scan.
+            path: Optional override for root directory or file to scan. If None, uses self.document_path.
         Returns:
             List of dicts with file metadata (path, hash, size, etc.)
         Raises:
@@ -71,10 +109,26 @@ class FileScanner:
         return found_files
 
     def _is_allowed(self, file_path: Path) -> bool:
+        """
+        Check if the file extension is allowed.
+
+        Args:
+            file_path: Path object for the file.
+        Returns:
+            True if the file extension is in the allowed list, False otherwise.
+        """
         logger.debug(f"Called FileScanner._is_allowed(file_path={file_path})")
         return file_path.suffix.lstrip('.').lower() in self.allowed_extensions
 
     def _is_excluded(self, file_path: Path) -> bool:
+        """
+        Check if the file matches any exclusion pattern.
+
+        Args:
+            file_path: Path object for the file.
+        Returns:
+            True if the file matches any exclusion pattern, False otherwise.
+        """
         logger.debug(f"Called FileScanner._is_excluded(file_path={file_path})")
         rel_path = str(file_path.relative_to(self.document_path))
         # Check all parts of the relative path for exclusion
@@ -89,6 +143,16 @@ class FileScanner:
         return False
 
     def _compute_hash(self, file_path: Path) -> str:
+        """
+        Compute the hash of a file using the configured hash algorithm.
+
+        Args:
+            file_path: Path object for the file.
+        Returns:
+            Hex digest of the file's hash.
+        Raises:
+            QASystemError: If the hash algorithm is unsupported.
+        """
         logger.debug(f"Called FileScanner._compute_hash(file_path={file_path})")
         hash_func = getattr(hashlib, self.hash_algorithm, None)
         if not hash_func:
