@@ -1,17 +1,11 @@
 import logging
 import os
 import time
-import fnmatch
-import difflib
-import re
 import uuid
-from typing import List, Optional, Any, Dict
-from dotenv import load_dotenv
-from google import genai
 from qa_system.embedding import EmbeddingGenerator
 from qa_system.vector_store import ChromaVectorStore
-from qa_system.exceptions import QASystemError, QueryError, EmbeddingError
-from .models import Source, QueryResponse
+from qa_system.exceptions import QASystemError, EmbeddingError
+from .models import QueryResponse
 from .scoring import apply_scoring, deduplicate_sources
 from .keywords import derive_keywords
 from .source_utils import build_sources_from_vector_results
@@ -19,14 +13,62 @@ from .source_filter import filter_sources
 from .context_builder import build_context_window
 from .prompts import build_llm_prompt
 from .gemini_llm import GeminiLLM
-from scipy.spatial.distance import cosine
+
+"""
+@file: processor.py
+Semantic Query Processor for QA System
+
+This module implements the QueryProcessor class, which handles semantic search queries and generates contextual responses using document embeddings, a vector store, and a large language model (LLM). It supports hybrid scoring (semantic + metadata boosts), tag/keyword matching, and config-driven parameters for flexible, high-quality question answering over a document corpus.
+
+Main Components:
+- QueryProcessor: Main class for processing queries and generating responses.
+- Hybrid search: Combines tag/keyword and semantic search for candidate document selection.
+- Scoring and filtering: Applies hybrid scoring, deduplication, and similarity filtering.
+- Context window: Builds context for LLM prompt from filtered sources.
+- LLM integration: Calls Gemini LLM to generate a final answer.
+
+Usage:
+    processor = QueryProcessor(config)
+    response = processor.process_query("What is data governance?")
+    print(response.text)
+
+Dependencies:
+- EmbeddingGenerator, ChromaVectorStore, GeminiLLM, and related QA system modules.
+- Configuration must provide paths and parameters for vector store and LLM.
+
+Raises:
+- QASystemError, EmbeddingError for various error conditions.
+
+"""
 
 class QueryProcessor:
     """
     Handles semantic search queries and generates contextual responses using embeddings, vector store, and Gemini LLM.
     Implements hybrid scoring (semantic + metadata boosts) and config-driven parameters.
+
+    Args:
+        config (Any): Configuration object with required settings for embeddings, vector store, and LLM.
+        embedding_generator (Optional[EmbeddingGenerator]): Custom embedding generator (for testing or extension).
+        vector_store (Optional[ChromaVectorStore]): Custom vector store (for testing or extension).
+        llm (Optional[GeminiLLM]): Custom LLM interface (for testing or extension).
+
+    Attributes:
+        logger (logging.Logger): Logger for this processor.
+        config (Any): Configuration object.
+        embedding_generator (EmbeddingGenerator): Embedding generator instance.
+        vector_store (ChromaVectorStore): Vector store instance.
+        llm (GeminiLLM): LLM interface instance.
     """
     def __init__(self, config, embedding_generator=None, vector_store=None, llm=None):
+        """
+        Initialize the QueryProcessor.
+
+        Args:
+            config (Any): Configuration object with required settings.
+            embedding_generator (Optional[EmbeddingGenerator]): Custom embedding generator.
+            vector_store (Optional[ChromaVectorStore]): Custom vector store.
+            llm (Optional[GeminiLLM]): Custom LLM interface.
+        """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.debug(f"Called QueryProcessor.__init__(config={config})")
         self.config = config
@@ -35,6 +77,25 @@ class QueryProcessor:
         self.llm = llm if llm is not None else GeminiLLM(config)
 
     def process_query(self, query: str, system_prompt: str = None) -> QueryResponse:
+        """
+        Process a user query and generate a contextual response using hybrid search and LLM.
+
+        Args:
+            query (str): The user query string to process.
+            system_prompt (str, optional): Optional system prompt to guide the LLM.
+
+        Returns:
+            QueryResponse: Structured response containing the answer, sources, confidence, timing, and error info.
+
+        Raises:
+            QASystemError: If the query is invalid or empty.
+            EmbeddingError: If embedding generation fails.
+            Exception: For other unexpected errors (returned in QueryResponse.error).
+
+        Side Effects:
+            - Logs query processing steps and errors.
+            - Tracks timing and query/session IDs for correlation.
+        """
         # Start timing for performance metrics
         start_time = time.time()
         # Generate a unique query/session id for correlation
