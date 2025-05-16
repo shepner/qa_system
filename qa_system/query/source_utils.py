@@ -1,11 +1,16 @@
 """
-source_utils.py
+@file: source_utils.py
 Utilities for constructing and normalizing Source objects from vector store results.
+
+This module provides functions to transform raw vector store query results into standardized
+Source objects for downstream use in the QA system. It ensures consistent path handling,
+similarity normalization, and context extraction for each source.
 """
 from typing import List, Dict, Any
 import os
-from .models import Source
 import logging
+from .models import Source
+
 
 def build_sources_from_vector_results(
     ids: List[str],
@@ -17,24 +22,31 @@ def build_sources_from_vector_results(
 ) -> List[Source]:
     """
     Construct Source objects from vector store query results.
+
     Args:
-        ids: List of document IDs
-        docs: List of document chunks
-        metadatas: List of metadata dicts
-        distances: List of distance floats
-        docs_root: Root directory for document paths
-        context_length: Number of characters to use for context
+        ids (List[str]): List of document IDs.
+        docs (List[str]): List of document chunks (text excerpts).
+        metadatas (List[Dict[str, Any]]): List of metadata dictionaries for each chunk.
+        distances (List[float]): List of distance/similarity floats (lower is more similar).
+        docs_root (str): Root directory for document paths (used for relative path calculation).
+        context_length (int, optional): Number of characters to use for context. Defaults to 200.
+
     Returns:
-        List[Source]: List of constructed Source objects
+        List[Source]: List of constructed Source objects, each representing a document chunk.
     """
     logger = logging.getLogger(__name__)
-    logger.debug(f"build_sources_from_vector_results: lengths - ids: {len(ids)}, docs: {len(docs)}, metadatas: {len(metadatas)}, distances: {len(distances)}")
-    logger.debug(f"Sample ids: {ids[:5]}")
-    logger.debug(f"Sample docs: {docs[:1]}")
-    logger.debug(f"Sample metadatas: {metadatas[:1]}")
-    logger.debug(f"Sample distances: {distances[:5]}")
+    logger.debug(
+        "build_sources_from_vector_results: lengths - ids: %d, docs: %d, metadatas: %d, distances: %d",
+        len(ids), len(docs), len(metadatas), len(distances)
+    )
+    logger.debug("Sample ids: %s", ids[:5])
+    logger.debug("Sample docs: %s", docs[:1])
+    logger.debug("Sample metadatas: %s", metadatas[:1])
+    logger.debug("Sample distances: %s", distances[:5])
+
     sources = []
     docs_root = os.path.abspath(docs_root)
+
     for i, doc_id in enumerate(ids):
         doc = docs[i] if i < len(docs) else ''
         meta = metadatas[i] if i < len(metadatas) else {}
