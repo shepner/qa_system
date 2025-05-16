@@ -1,4 +1,9 @@
-"""Configuration module for the QA system."""
+"""
+Configuration module for the QA system.
+
+This module provides a Config class for loading and accessing configuration values
+from a YAML file, with support for environment variable substitution in the SECURITY section.
+"""
 
 import os
 from pathlib import Path
@@ -6,22 +11,32 @@ import yaml
 import logging
 
 class Config:
-    """Configuration class that provides access to configuration values."""
-    
+    """
+    Provides access to configuration values loaded from a dictionary.
+
+    Supports nested access using dot notation (e.g., 'LOGGING.LEVEL').
+    """
     def __init__(self, config_data: dict):
+        """
+        Initialize the Config object.
+
+        Args:
+            config_data: Dictionary containing configuration data.
+        """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info(f"Called Config.__init__(config_data={config_data})")
         self._config = config_data
         
     def get_nested(self, path: str, default=None):
-        """Get a nested configuration value using dot notation.
-        
+        """
+        Retrieve a nested configuration value using dot notation.
+
         Args:
-            path: Configuration path using dot notation (e.g., 'LOGGING.LEVEL')
-            default: Default value if path doesn't exist
-            
+            path: Configuration path using dot notation (e.g., 'LOGGING.LEVEL').
+            default: Value to return if the path does not exist.
+
         Returns:
-            Configuration value or default if not found
+            The configuration value at the specified path, or the default if not found.
         """
         current = self._config
         for key in path.split('.'):
@@ -34,17 +49,18 @@ class Config:
         return current
 
 def get_config(config_path: str = "./config/config.yaml") -> Config:
-    """Load configuration from file.
-    
+    """
+    Load configuration from a YAML file and return a Config object.
+
     Args:
-        config_path: Path to configuration file
-        
+        config_path: Path to the configuration YAML file.
+
     Returns:
-        Config object
-        
+        Config: An instance of the Config class with loaded configuration data.
+
     Raises:
-        FileNotFoundError: If configuration file doesn't exist
-        yaml.YAMLError: If configuration file is invalid
+        FileNotFoundError: If the configuration file does not exist.
+        yaml.YAMLError: If the configuration file is invalid YAML.
     """
     logger = logging.getLogger(__name__)
     logger.info(f"Called get_config(config_path={config_path})")
@@ -56,7 +72,7 @@ def get_config(config_path: str = "./config/config.yaml") -> Config:
     with open(config_path) as f:
         config_data = yaml.safe_load(f)
         
-    # Load environment variables
+    # Substitute environment variables in the SECURITY section
     if 'SECURITY' in config_data:
         for key, value in config_data['SECURITY'].items():
             if isinstance(value, str) and value.startswith('${') and value.endswith('}'):
