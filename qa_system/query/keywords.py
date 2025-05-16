@@ -1,24 +1,31 @@
 """
 keywords.py
-Utilities for extracting keywords from queries, with stopword removal.
+Utilities for extracting keywords or tags from queries using an LLM.
 """
-import re
-from typing import Set, List
 
 
 def derive_keywords(processor, query: str, mode: str = 'keywords', logger: None = None) -> set:
     """
-    Derive keywords or tags from the query using different modes.
+    Extract keywords or tags from a user query using an LLM.
+
     Modes:
-        - 'keywords': Extract keywords from the query (ignoring tags).
-        - 'tags': Use Gemini LLM to extract relevant tags for the query, restricted to those in the vector store.
+        - 'keywords': Uses the LLM to extract relevant keywords from the query for search purposes.
+        - 'tags': Uses the LLM to extract relevant tags from a predefined set (from the vector store), restricting output to only allowed tags.
+
     Args:
-        processor: QueryProcessor instance (must have .vector_store and .llm)
-        query: The user query string
-        mode: Extraction mode ('keywords' or 'tags')
-        logger: Optional logger
+        processor: QueryProcessor instance (must have .vector_store and .llm attributes).
+        query: The user query string.
+        mode: Extraction mode ('keywords' or 'tags'). Defaults to 'keywords'.
+        logger: Optional logger for debug and error messages.
+
     Returns:
-        Set[str]: Set of keywords or tags relevant to the query
+        Set[str]: A set of extracted keywords or tags relevant to the query.
+                  Returns an empty set if extraction fails or the LLM response is invalid.
+
+    Notes:
+        - Both modes use the LLM for extraction, but with different prompts and constraints.
+        - The function expects the LLM to return a comma-separated string of keywords or tags.
+        - Handles and logs errors gracefully, returning an empty set on failure.
     """
     if mode == 'keywords':
         # Use Gemini LLM to extract keywords from the query
