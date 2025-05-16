@@ -16,6 +16,36 @@ SECRETS_DIR="secrets"
 # Set the log level for the application (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 LOG_LEVEL="WARNING"  # Change this to control the default log level for the app
 
+# Log level priorities
+LOG_LEVELS=("DEBUG" "INFO" "WARNING" "ERROR" "CRITICAL")
+
+# Function to get log level index
+get_log_level_index() {
+    local level="$1"
+    for i in "${!LOG_LEVELS[@]}"; do
+        if [[ "${LOG_LEVELS[$i]}" == "$level" ]]; then
+            echo "$i"
+            return
+        fi
+    done
+    # Default to highest if not found
+    echo "4"
+}
+
+# Function to check if a message should be logged
+should_log() {
+    local msg_level="$1"
+    local msg_index
+    local log_index
+    msg_index=$(get_log_level_index "$msg_level")
+    log_index=$(get_log_level_index "$LOG_LEVEL")
+    if (( msg_index >= log_index )); then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -24,15 +54,21 @@ NC='\033[0m' # No Color
 
 # Helper functions
 log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+    if should_log "INFO"; then
+        echo -e "${GREEN}[INFO]${NC} $1"
+    fi
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+    if should_log "WARNING"; then
+        echo -e "${YELLOW}[WARN]${NC} $1"
+    fi
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    if should_log "ERROR"; then
+        echo -e "${RED}[ERROR]${NC} $1"
+    fi
 }
 
 # Create required directories
@@ -55,7 +91,7 @@ setup_venv() {
 # Install/upgrade dependencies
 install_dependencies() {
     log_info "Installing/upgrading dependencies..."
-    pip install --upgrade pip
+    pip install --upgrade pip > /dev/null 2>&1
     pip install -q -r requirements.txt
 }
 
@@ -95,12 +131,19 @@ main() {
     check_config
     load_env  # Load any updated environment variables
 
+    # Check if --log-level is supported
+    if python -m qa_system --help 2>&1 | grep -q -- '--log-level'; then
+        LOG_LEVEL_ARG=(--log-level "$LOG_LEVEL")
+    else
+        LOG_LEVEL_ARG=()
+    fi
+
     if [ $# -eq 0 ]; then
         log_info "No arguments provided. Starting interactive mode..."
-        python -m qa_system --query --log-level "$LOG_LEVEL"
+        python -m qa_system --query "${LOG_LEVEL_ARG[@]}"
     else
         log_info "Running with arguments: $@"
-        python -m qa_system "$@" --log-level "$LOG_LEVEL"
+        python -m qa_system "$@" "${LOG_LEVEL_ARG[@]}"
     fi
 }
 
