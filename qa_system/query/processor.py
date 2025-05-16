@@ -12,7 +12,6 @@ from qa_system.embedding import EmbeddingGenerator
 from qa_system.vector_store import ChromaVectorStore
 from qa_system.exceptions import QASystemError, QueryError, EmbeddingError
 from .models import Source, QueryResponse
-from .constants import STOPWORDS
 from .scoring import apply_scoring, deduplicate_sources
 from .keywords import derive_keywords
 from .source_utils import build_sources_from_vector_results
