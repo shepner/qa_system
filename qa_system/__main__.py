@@ -267,18 +267,9 @@ def process_query(query: Optional[str], config: dict) -> int:
     """
     logger.info(f"Called process_query(query={query}, config={{...}})")
     try:
-        from qa_system.query import QueryProcessor
+        from qa_system.query import QueryProcessor, print_response
         
         processor = QueryProcessor(config)
-        
-        def print_response(response):
-            print("\nAnswer:")
-            print("-" * 80)
-            print(response.text)
-            print("\nSources:")
-            print("-" * 80)
-            for source in response.sources:
-                print(f"- {source.document} (similarity: {source.similarity:.2f})")
         
         if query:
             # Single query mode
