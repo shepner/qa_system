@@ -7,6 +7,7 @@ across all documents managed by the vector store. Tags are returned as a sorted 
 of unique, lowercased values for consistency and ease of use.
 """
 
+
 def _get_all_tags_impl(self):
     """
     Retrieve all unique tags from the documents in the vector store.
@@ -19,14 +20,20 @@ def _get_all_tags_impl(self):
     Returns:
         list[str]: Sorted list of unique, lowercased tags across all documents.
     """
+    # Return cached result if available
     if self._all_tags_cache is not None:
         return self._all_tags_cache
+
     all_tags = set()
+    # Iterate over all document metadata entries
     for meta in self.list_metadata():
         tags = meta.get('tags', [])
+        # Support both comma-separated string and list of tags
         if isinstance(tags, str):
             tags = [t.strip() for t in tags.split(',') if t.strip()]
+        # Normalize tags to lowercase and add to the set
         all_tags.update(t.lower() for t in tags)
+
     result = sorted(all_tags)
-    self._all_tags_cache = result
+    self._all_tags_cache = result  # Cache the result for future calls
     return result 
