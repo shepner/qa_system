@@ -104,6 +104,7 @@ def process_add_files(files: List[str], config: dict) -> int:
         generator = EmbeddingGenerator(config)
         
         for file_path in files:
+            print(f"\nScanning: {file_path}")
             logger.info(f"Processing file: {file_path}")
             
             # Scan files and check if they need processing
@@ -114,6 +115,10 @@ def process_add_files(files: List[str], config: dict) -> int:
                 hash_exists = store.has_file(result['checksum'])
                 logger.info(f"Checksum check for {result['path']} (checksum={result['checksum']}): {'FOUND' if hash_exists else 'NOT FOUND'} in vector DB")
                 result['needs_processing'] = not hash_exists
+                if not result['needs_processing']:
+                    print('.', end='', flush=True)
+                else:
+                    print(f"\n{result['path']}")
             
             for result in scan_results:
                 if not result['needs_processing']:
@@ -128,6 +133,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                 
                 # If the file was skipped (e.g., encrypted PDF), log and continue
                 if processed['metadata'].get('skipped'):
+                    print(f"Skipping (processing issue): {result['path']} (reason: {processed['metadata'].get('skip_reason')})")
                     logger.warning(f"Skipping file due to processing issue: {result['path']} (reason: {processed['metadata'].get('skip_reason')})")
                     continue
                 
@@ -139,6 +145,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                     meta['checksum'] = result['checksum']  # Ensure checksum is present in every chunk's metadata
                     chunk_metadatas.append(meta)
                 
+                print(f"Generating embeddings for: {result['path']}")
                 # Generate embeddings
                 embeddings = generator.generate_embeddings(
                     texts=[chunk['text'] for chunk in processed['chunks']],
@@ -149,9 +156,11 @@ def process_add_files(files: List[str], config: dict) -> int:
                 
                 # Defensive check before adding to vector store
                 if not embeddings['vectors'] or not embeddings['texts'] or not embeddings['metadata']:
+                    print(f"No embeddings generated for: {result['path']}, skipping add to vector store.")
                     logger.warning(f"No embeddings generated for {result['path']}, skipping add to vector store.")
                     continue
                 if not (len(embeddings['vectors']) == len(embeddings['texts']) == len(embeddings['metadata'])):
+                    print(f"Mismatch in number of vectors, texts, and metadatas for: {result['path']}, skipping.")
                     logger.error(f"Mismatch in number of vectors, texts, and metadatas for {result['path']}, skipping.")
                     continue
 
@@ -162,11 +171,13 @@ def process_add_files(files: List[str], config: dict) -> int:
                     metadatas=embeddings['metadata']
                 )
                 
+                print(f"Added to vector store: {result['path']}")
                 logger.info(f"Successfully processed and added: {result['path']}")
                 
         return 0
         
     except Exception as e:
+        print(f"Error processing files: {str(e)}")
         logger.error(f"Error processing files: {str(e)}")
         return 1
 
