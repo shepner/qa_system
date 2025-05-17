@@ -44,7 +44,7 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
     - Extracts file metadata and all URLs
     - Detects section headers and propagates section hierarchy
     - Assigns chunk-level metadata: urls, url contexts, section headers, section hierarchy, chunk position, and summary
-    - Skips password-protected or encrypted PDFs with a warning
+    - Gracefully skips truly password-protected PDFs (cannot be decrypted), but processes encrypted PDFs that can be opened with an empty password
     - Returns a dictionary with 'chunks', 'metadata', and 'page_texts' keys
     """
     def _list_to_csv(self, items):
@@ -86,6 +86,9 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
                 'metadata': Document-level metadata,
                 'page_texts': List of text per page
             }
+        Notes:
+            - Encrypted PDFs are only skipped if they cannot be decrypted (i.e., truly password-protected).
+            - Encrypted PDFs that can be opened with an empty password are processed normally.
         """
         self.logger.debug(f"Processing PDF file: {file_path}")
         try:
@@ -114,14 +117,28 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
                     }
                 raise
             if reader.is_encrypted:
-                self.logger.warning(f"File {file_path} is password-protected and will be skipped.")
-                metadata['skipped'] = True
-                metadata['skip_reason'] = 'password-protected'
-                return {
-                    'metadata': metadata,
-                    'chunks': [],
-                    'page_texts': []
-                }
+                try:
+                    decrypt_result = reader.decrypt("")
+                    if decrypt_result == 1:
+                        self.logger.info(f"File {file_path} was encrypted but opened with empty password.")
+                    else:
+                        self.logger.warning(f"File {file_path} is password-protected and will be skipped.")
+                        metadata['skipped'] = True
+                        metadata['skip_reason'] = 'password-protected'
+                        return {
+                            'metadata': metadata,
+                            'chunks': [],
+                            'page_texts': []
+                        }
+                except Exception as e:
+                    self.logger.warning(f"File {file_path} could not be decrypted: {e}")
+                    metadata['skipped'] = True
+                    metadata['skip_reason'] = 'password-protected'
+                    return {
+                        'metadata': metadata,
+                        'chunks': [],
+                        'page_texts': []
+                    }
             all_text = []
             chunk_dicts = []
             section_hierarchy = []

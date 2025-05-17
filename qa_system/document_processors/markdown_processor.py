@@ -86,6 +86,8 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                 'chunks': List of chunk dicts with 'text' and 'metadata',
                 'metadata': Document-level metadata
             }
+        Notes:
+            - If the file only contains a YAML header and no body, no chunks/embeddings will be generated, and a warning will be logged explaining this.
         """
         self.logger.debug(f"Processing markdown file: {file_path}")
         # Extract or merge metadata
@@ -116,6 +118,13 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         # Remove YAML frontmatter from body
         body = text[yaml_match.end():] if yaml_match else text
         lines = body.splitlines()
+        # If the file only contains a YAML header and no body, log a clear warning
+        if not lines or all(not line.strip() for line in lines):
+            self.logger.warning(f"No embeddings generated for {file_path}: file only contains a YAML header and no body text.")
+            return {
+                'chunks': [],
+                'metadata': metadata
+            }
         # Parse headers for sectioning
         headers = self._parse_headers(lines)
         chunk_dicts = []
