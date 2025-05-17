@@ -155,10 +155,24 @@ def process_add_files(files: List[str], config: dict) -> int:
                 embeddings['metadata'] = chunk_metadatas
                 
                 # Defensive check before adding to vector store
+                nonempty_texts = [t for t in embeddings['texts'] if t and t.strip()]
                 if not embeddings['vectors'] or not embeddings['texts'] or not embeddings['metadata']:
-                    print(f"No embeddings generated for: {result['path']}, skipping add to vector store.")
-                    logger.warning(f"No embeddings generated for {result['path']}, skipping add to vector store.")
-                    continue
+                    if nonempty_texts:
+                        print(f"No embeddings generated for: {result['path']}, but chunk texts were non-empty. Likely rejected by embedding model (all filetypes). Indexing metadata only.")
+                        logger.warning(f"No embeddings generated for {result['path']}, but chunk texts were non-empty. Likely rejected by embedding model (all filetypes). Indexing metadata only.")
+                        zero_vector = [0.0] * generator.dimensions
+                        store.add_embeddings(
+                            embeddings=[zero_vector for _ in nonempty_texts],
+                            texts=nonempty_texts,
+                            metadatas=[m for t, m in zip(embeddings['texts'], embeddings['metadata']) if t and t.strip()]
+                        )
+                        print(f"Added to vector store (metadata only): {result['path']}")
+                        logger.info(f"Added to vector store (metadata only): {result['path']}")
+                        continue
+                    else:
+                        print(f"No embeddings generated for: {result['path']}, skipping add to vector store. All chunk texts empty or whitespace.")
+                        logger.warning(f"No embeddings generated for {result['path']}, skipping add to vector store. All chunk texts empty or whitespace.")
+                        continue
                 if not (len(embeddings['vectors']) == len(embeddings['texts']) == len(embeddings['metadata'])):
                     print(f"Mismatch in number of vectors, texts, and metadatas for: {result['path']}, skipping.")
                     logger.error(f"Mismatch in number of vectors, texts, and metadatas for {result['path']}, skipping.")
