@@ -16,7 +16,7 @@ from .text_processor import TextDocumentProcessor
 from .markdown_processor import MarkdownDocumentProcessor
 from .pdf_processor import PDFDocumentProcessor
 from .csv_processor import CSVDocumentProcessor
-from .vision_processor import VisionDocumentProcessor
+from .image_processor import ImageDocumentProcessor
 
 def get_processor_for_file_type(path, config):
     """
@@ -42,7 +42,7 @@ def get_processor_for_file_type(path, config):
     if ext == 'csv':
         return CSVDocumentProcessor(config)
     if ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
-        return VisionDocumentProcessor(config)
+        return ImageDocumentProcessor()
     class DummyProcessor:
         """Fallback processor for unsupported file types."""
         def process(self):

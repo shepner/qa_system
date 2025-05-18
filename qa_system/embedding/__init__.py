@@ -30,6 +30,7 @@ import os
 import threading
 import time
 from qa_system.exceptions import EmbeddingError
+from PIL import Image
 
 try:
     from google import genai
@@ -217,3 +218,43 @@ class EmbeddingGenerator:
             'texts': texts,
             'metadata': [metadata] * len(texts)
         }
+
+    def generate_image_embeddings(self, image_path: str, metadata: dict) -> dict:
+        """
+        Generate an embedding for an image using Gemini Pro Vision.
+
+        Args:
+            image_path (str): Path to the image file.
+            metadata (dict): Metadata dictionary for the image.
+
+        Returns:
+            dict: Dictionary with keys: 'vectors', 'texts', 'metadata'.
+        """
+        self.logger.debug(f"Called EmbeddingGenerator.generate_image_embeddings(image_path={image_path}, metadata={metadata})")
+        try:
+            # Load image as PIL Image
+            with Image.open(image_path) as img:
+                img = img.convert("RGB")
+                model = genai.GenerativeModel('gemini-pro-vision')
+                # Use a prompt to get a description (can be improved for your use case)
+                response = model.generate_content([img, "Describe this image for retrieval/semantic search."])
+                # Try to extract a vector if available (future-proofing)
+                vector = getattr(response, 'embedding', None)
+                if vector is not None:
+                    # If Gemini returns a vector directly, use it
+                    return {
+                        'vectors': [vector],
+                        'texts': ["[IMAGE EMBEDDING]"],
+                        'metadata': [metadata]
+                    }
+                # Otherwise, fall back to using the generated text description
+                text = getattr(response, 'text', None) or str(response)
+                text_embedding = self.generate_embeddings([text], metadata)
+                return {
+                    'vectors': text_embedding['vectors'],
+                    'texts': [text],
+                    'metadata': [metadata]
+                }
+        except Exception as e:
+            self.logger.error(f"Failed to generate image embedding: {e}")
+            raise EmbeddingError(f"Failed to generate image embedding: {e}")

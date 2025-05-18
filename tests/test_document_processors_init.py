@@ -7,6 +7,7 @@ from qa_system.document_processors import (
     PDFDocumentProcessor
 )
 from PIL import Image
+from qa_system.document_processors.image_processor import ImageDocumentProcessor
 
 class DummyConfig:
     def get_nested(self, key, default=None):
@@ -77,9 +78,9 @@ def test_get_processor_for_file_type_vision(tmp_path):
     img = Image.new('RGB', (1, 1), color='white')
     img.save(str(img_file))
     from qa_system.document_processors import get_processor_for_file_type
-    from qa_system.document_processors.vision_processor import VisionDocumentProcessor
+    from qa_system.document_processors.image_processor import ImageDocumentProcessor
     processor = get_processor_for_file_type(str(img_file), DummyConfig())
-    assert isinstance(processor, VisionDocumentProcessor)
+    assert isinstance(processor, ImageDocumentProcessor)
     result = processor.process(str(img_file))
     meta = result['metadata']
     for field in [

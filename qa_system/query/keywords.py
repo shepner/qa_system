@@ -6,24 +6,25 @@ Utilities for extracting keywords or tags from queries using an LLM.
 
 def derive_keywords(processor, query: str, mode: str = 'keywords', logger: None = None) -> set:
     """
-    Extract keywords or tags from a user query using an LLM.
+    Extract keywords or tags from a user query or caption using an LLM.
 
     Modes:
         - 'keywords': Uses the LLM to extract relevant keywords from the query for search purposes.
         - 'tags': Uses the LLM to extract relevant tags from a predefined set (from the vector store), restricting output to only allowed tags.
+        - 'image_tags': Uses the LLM to extract relevant tags from an image caption (freeform, not restricted to a set).
 
     Args:
         processor: QueryProcessor instance (must have .vector_store and .llm attributes).
-        query: The user query string.
-        mode: Extraction mode ('keywords' or 'tags'). Defaults to 'keywords'.
+        query: The user query string or image caption.
+        mode: Extraction mode ('keywords', 'tags', or 'image_tags'). Defaults to 'keywords'.
         logger: Optional logger for debug and error messages.
 
     Returns:
-        Set[str]: A set of extracted keywords or tags relevant to the query.
+        Set[str]: A set of extracted keywords or tags relevant to the query or caption.
                   Returns an empty set if extraction fails or the LLM response is invalid.
 
     Notes:
-        - Both modes use the LLM for extraction, but with different prompts and constraints.
+        - All modes use the LLM for extraction, but with different prompts and constraints.
         - The function expects the LLM to return a comma-separated string of keywords or tags.
         - Handles and logs errors gracefully, returning an empty set on failure.
     """
@@ -129,6 +130,52 @@ def derive_keywords(processor, query: str, mode: str = 'keywords', logger: None 
         except Exception as e:
             if logger:
                 logger.error(f"[TAGS] Failed to extract tags using Gemini LLM: {e}")
+            return set()
+    elif mode == 'image_tags':
+        # Use Gemini LLM to extract tags from an image caption (freeform, not restricted to a set)
+        system_prompt = (
+            "You are an image tag extraction assistant. "
+            "Given an image caption, extract the most relevant tags (single keywords, not phrases or sentences) that describe the main subjects, objects, or concepts in the image. "
+            "Output only a comma-separated list of tags, or an empty string if none are relevant. "
+            "Example output: tag1,tag2,tag3"
+        )
+        user_prompt = f"Caption: {query}"
+        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+        if logger:
+            logger.debug(f"[IMAGE_TAGS] system_prompt type: {type(system_prompt)}, value: {system_prompt}")
+            logger.debug(f"[IMAGE_TAGS] user_prompt type: {type(user_prompt)}, value: {user_prompt}")
+            logger.debug(f"[IMAGE_TAGS] full_prompt type: {type(full_prompt)}, value: {full_prompt}")
+        try:
+            response = processor.llm.generate_response(
+                user_prompt=full_prompt,
+                temperature=0.0,
+                max_output_tokens=32
+            )
+            if logger:
+                logger.info(f"[IMAGE_TAGS] Gemini LLM image tag extraction response: {response}")
+                logger.debug(f"[IMAGE_TAGS] Gemini LLM image tag extraction response type: {type(response)}")
+            if not response or not isinstance(response, str):
+                if logger:
+                    logger.warning(f"[IMAGE_TAGS] LLM image tag extraction returned non-string or empty response: {type(response)}: {response}")
+                return set()
+            if any(x in response for x in ["=", "None", "candidates=", "usage_metadata=", "prompt_token_count", "response_id", "model_version"]):
+                if logger:
+                    logger.warning(f"[IMAGE_TAGS] LLM image tag extraction returned unexpected format: {response}")
+                return set()
+            response = response.strip().strip('[]')
+            if logger:
+                logger.debug(f"[IMAGE_TAGS] Stripped response: {response}")
+            tags = set()
+            for tag in response.split(','):
+                t = tag.strip().strip('"\'')
+                if t:
+                    tags.add(t)
+            if logger:
+                logger.debug(f"[IMAGE_TAGS] Parsed tags: {tags}")
+            return tags
+        except Exception as e:
+            if logger:
+                logger.error(f"[IMAGE_TAGS] Failed to extract image tags using Gemini LLM: {e}")
             return set()
     else:
         if logger:

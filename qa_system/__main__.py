@@ -137,6 +137,23 @@ def process_add_files(files: List[str], config: dict) -> int:
                     logger.warning(f"Skipping file due to processing issue: {result['path']} (reason: {processed['metadata'].get('skip_reason')})")
                     continue
                 
+                # --- NEW: Handle files with zero chunks (metadata-only entry) ---
+                if not processed['chunks']:
+                    print(f"No chunks generated for: {result['path']}. Adding metadata-only entry to vector store.")
+                    logger.info(f"No chunks generated for {result['path']}. Adding metadata-only entry to vector store.")
+                    zero_vector = [0.0] * generator.dimensions
+                    meta = dict(processed['metadata'])
+                    meta['id'] = f"{meta['path']}:0"
+                    meta['checksum'] = result['checksum']
+                    store.add_embeddings(
+                        embeddings=[zero_vector],
+                        texts=[""],
+                        metadatas=[meta]
+                    )
+                    print(f"Added metadata-only entry to vector store: {result['path']}")
+                    logger.info(f"Added metadata-only entry to vector store: {result['path']}")
+                    continue
+                
                 # Assign unique IDs to each chunk's metadata
                 chunk_metadatas = []
                 for idx, chunk in enumerate(processed['chunks']):
@@ -147,10 +164,17 @@ def process_add_files(files: List[str], config: dict) -> int:
                 
                 print(f"Generating embeddings for: {result['path']}")
                 # Generate embeddings
-                embeddings = generator.generate_embeddings(
-                    texts=[chunk['text'] for chunk in processed['chunks']],
-                    metadata=processed['metadata']
-                )
+                file_type = processed['metadata'].get('file_type', '').lower()
+                if file_type in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
+                    embeddings = generator.generate_image_embeddings(
+                        image_path=processed['metadata']['path'],
+                        metadata=processed['metadata']
+                    )
+                else:
+                    embeddings = generator.generate_embeddings(
+                        texts=[chunk['text'] for chunk in processed['chunks']],
+                        metadata=processed['metadata']
+                    )
                 # Overwrite embeddings['metadata'] with chunk_metadatas
                 embeddings['metadata'] = chunk_metadatas
                 
