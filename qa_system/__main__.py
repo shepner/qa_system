@@ -83,6 +83,15 @@ def parse_args() -> argparse.Namespace:
     
     return parser.parse_args()
 
+def _serialize_metadata(metadata):
+    """
+    Convert all list values in metadata to comma-separated strings.
+    """
+    for k, v in metadata.items():
+        if isinstance(v, list):
+            metadata[k] = ','.join(str(x) for x in v)
+    return metadata
+
 def process_add_files(files: List[str], config: dict) -> int:
     """Process and add files to the system.
     
@@ -98,10 +107,12 @@ def process_add_files(files: List[str], config: dict) -> int:
         from qa_system.document_processors import FileScanner, get_processor_for_file_type
         from qa_system.embedding import EmbeddingGenerator
         from qa_system.vector_store import ChromaVectorStore
+        from qa_system.query import QueryProcessor
         
         scanner = FileScanner(config)
         store = ChromaVectorStore(config)
         generator = EmbeddingGenerator(config)
+        query_processor = QueryProcessor(config)
         
         for file_path in files:
             print(f"\nScanning: {file_path}")
@@ -126,7 +137,11 @@ def process_add_files(files: List[str], config: dict) -> int:
                     continue
                 logger.info(f"File needs processing (not found in vector DB): {result['path']} (checksum={result['checksum']})")
                 # Get appropriate processor for file type
-                processor = get_processor_for_file_type(result['path'], config)
+                ext = str(result['path']).lower().rsplit('.', 1)[-1] if '.' in str(result['path']) else ''
+                if ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
+                    processor = get_processor_for_file_type(result['path'], config, query_processor=query_processor)
+                else:
+                    processor = get_processor_for_file_type(result['path'], config)
                 
                 # Process file into chunks
                 processed = processor.process(result['path'])
@@ -142,7 +157,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                     print(f"No chunks generated for: {result['path']}. Adding metadata-only entry to vector store.")
                     logger.info(f"No chunks generated for {result['path']}. Adding metadata-only entry to vector store.")
                     zero_vector = [0.0] * generator.dimensions
-                    meta = dict(processed['metadata'])
+                    meta = _serialize_metadata(dict(processed['metadata']))
                     meta['id'] = f"{meta['path']}:0"
                     meta['checksum'] = result['checksum']
                     store.add_embeddings(
@@ -157,7 +172,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                 # Assign unique IDs to each chunk's metadata
                 chunk_metadatas = []
                 for idx, chunk in enumerate(processed['chunks']):
-                    meta = dict(processed['metadata'])
+                    meta = _serialize_metadata(dict(processed['metadata']))
                     meta['id'] = f"{meta['path']}:{idx}"
                     meta['checksum'] = result['checksum']  # Ensure checksum is present in every chunk's metadata
                     chunk_metadatas.append(meta)
@@ -188,7 +203,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                         store.add_embeddings(
                             embeddings=[zero_vector for _ in nonempty_texts],
                             texts=nonempty_texts,
-                            metadatas=[m for t, m in zip(embeddings['texts'], embeddings['metadata']) if t and t.strip()]
+                            metadatas=[_serialize_metadata(m) for t, m in zip(embeddings['texts'], embeddings['metadata']) if t and t.strip()]
                         )
                         print(f"Added to vector store (metadata only): {result['path']}")
                         logger.info(f"Added to vector store (metadata only): {result['path']}")
@@ -206,7 +221,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                 store.add_embeddings(
                     embeddings=embeddings['vectors'],
                     texts=embeddings['texts'],
-                    metadatas=embeddings['metadata']
+                    metadatas=[_serialize_metadata(m) for m in embeddings['metadata']]
                 )
                 
                 print(f"Added to vector store: {result['path']}")

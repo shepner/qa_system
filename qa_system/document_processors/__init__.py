@@ -45,9 +45,14 @@ def get_processor_for_file_type(path, config, query_processor=None):
     if ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
         if query_processor is not None:
             logger.debug("Passing query_processor to ImageDocumentProcessor.")
+            return ImageDocumentProcessor(query_processor=query_processor)
         else:
-            logger.warning("No query_processor provided to ImageDocumentProcessor. This may cause errors.")
-        return ImageDocumentProcessor(query_processor=query_processor)
+            logger.warning("No query_processor provided for image file. Skipping image processing.")
+            class SkippedImageProcessor:
+                def process(self, file_path):
+                    logger.warning(f"Skipping image file {file_path} due to missing query_processor.")
+                    return {'chunks': [], 'metadata': {'file_path': file_path, 'skipped': True, 'skip_reason': 'query_processor not available'}}
+            return SkippedImageProcessor()
     class DummyProcessor:
         """Fallback processor for unsupported file types."""
         def process(self):
