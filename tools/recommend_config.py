@@ -156,6 +156,11 @@ def main():
     else:
         report.append(f"- **Total files:** {len(files)}")
         report.append(f"- **File types:** {dict(type_counts)}")
+        # Add a breakdown of file types
+        if type_counts:
+            report.append("\n### File Type Breakdown")
+            for ext, count in sorted(type_counts.items()):
+                report.append(f"- .{ext}: {count} file{'s' if count != 1 else ''}")
         if sizes:
             report.append(f"- **File size (bytes):** min={min(sizes)}, max={max(sizes)}, mean={int(statistics.mean(sizes))}, median={int(statistics.median(sizes))}")
         if line_lens:
