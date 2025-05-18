@@ -18,20 +18,21 @@ from .pdf_processor import PDFDocumentProcessor
 from .csv_processor import CSVDocumentProcessor
 from .image_processor import ImageDocumentProcessor
 
-def get_processor_for_file_type(path, config):
+def get_processor_for_file_type(path, config, query_processor=None):
     """
     Return the appropriate document processor instance for the given file type.
 
     Args:
         path: Path to the document file (str or Path).
         config: Configuration object for the processor.
+        query_processor: Query processor object to be passed to processors that need it (optional).
 
     Returns:
         An instance of a document processor class suitable for the file type.
         If the file type is unsupported, returns a dummy processor.
     """
     logger = logging.getLogger(__name__)
-    logger.info(f"Called get_processor_for_file_type(path={path}, config={config})")
+    logger.info(f"Called get_processor_for_file_type(path={path}, config={config}, query_processor={query_processor})")
     ext = str(path).lower().rsplit('.', 1)[-1] if '.' in str(path) else ''
     if ext == 'txt':
         return TextDocumentProcessor(config)
@@ -42,7 +43,11 @@ def get_processor_for_file_type(path, config):
     if ext == 'csv':
         return CSVDocumentProcessor(config)
     if ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
-        return ImageDocumentProcessor()
+        if query_processor is not None:
+            logger.debug("Passing query_processor to ImageDocumentProcessor.")
+        else:
+            logger.warning("No query_processor provided to ImageDocumentProcessor. This may cause errors.")
+        return ImageDocumentProcessor(query_processor=query_processor)
     class DummyProcessor:
         """Fallback processor for unsupported file types."""
         def process(self):

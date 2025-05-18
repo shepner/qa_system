@@ -40,6 +40,7 @@ class ImageDocumentProcessor:
         Returns:
             dict: {'chunks': [...], 'metadata': {...}}
         """
+        self.logger.debug(f"Starting process for file: {file_path}")
         metadata = {'file_path': file_path}
         metadata['path'] = os.path.abspath(file_path)
         try:
@@ -49,28 +50,48 @@ class ImageDocumentProcessor:
                 metadata['image_height'] = height
                 metadata['image_format'] = img.format
                 metadata['color_profile'] = img.mode
+            self.logger.debug(f"Image opened successfully: width={width}, height={height}, format={img.format}, color_profile={img.mode}")
         except Exception as e:
             self.logger.error(f"Failed to open image: {e}")
             metadata['error'] = str(e)
             return {'chunks': [], 'metadata': metadata}
 
+        # Defensive check for query_processor
+        if self.query_processor is None:
+            self.logger.error("query_processor is not set. Cannot proceed with captioning.")
+            metadata['error'] = "Internal error: query_processor not set."
+            return {'chunks': [], 'metadata': metadata}
+        if not hasattr(self.query_processor, 'llm'):
+            self.logger.error("query_processor is missing required .llm attribute.")
+            metadata['error'] = "Internal error: query_processor missing .llm attribute."
+            return {'chunks': [], 'metadata': metadata}
+
         # Generate caption (for embedding) using generate_image_caption
+        self.logger.debug("Calling generate_image_caption...")
         caption, gemini_file_uri = generate_image_caption(self.query_processor, file_path, logger=self.logger)
         if not caption:
             metadata['error'] = "Caption error: Failed to generate caption."
+            self.logger.error("Caption generation failed for file: %s", file_path)
             return {'chunks': [], 'metadata': metadata}
         metadata['gemini_file_uri'] = gemini_file_uri
         metadata['caption'] = caption
+        self.logger.debug(f"Caption generated: {caption}")
 
         # Generate tags from caption using derive_keywords in 'keywords' mode
+        self.logger.debug("Generating tags from caption...")
         tags = set()
-        if self.query_processor is not None:
+        try:
             tags = derive_keywords(self.query_processor, caption, mode='image_tags', logger=self.logger)
+        except Exception as e:
+            self.logger.error(f"Failed to derive keywords: {e}")
         metadata['tags'] = list(tags)
+        self.logger.debug(f"Tags generated: {tags}")
 
         # Extract URLs from caption
+        self.logger.debug("Extracting URLs from caption...")
         urls = self._extract_urls(caption)
         metadata['urls'] = urls
+        self.logger.debug(f"URLs extracted: {urls}")
 
         chunk = {
             'text': caption,
@@ -85,6 +106,7 @@ class ImageDocumentProcessor:
                 'urls': urls,
             }
         }
+        self.logger.debug(f"Returning processed chunk and metadata for file: {file_path}")
         return {
             'chunks': [chunk],
             'metadata': metadata
