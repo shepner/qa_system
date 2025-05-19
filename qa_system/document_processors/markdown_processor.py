@@ -75,30 +75,23 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                 headers.append((idx, len(m.group(1)), m.group(2).strip()))
         return headers
 
-    def process(self, file_path, metadata=None):
+    def _process_markdown(self, text, metadata=None, file_path=None):
         """
-        Process a markdown file, extracting metadata and splitting into structured chunks.
+        Core logic for processing markdown from a string.
         Args:
-            file_path (str): Path to the markdown file
-            metadata (dict, optional): Additional metadata to include
+            text (str): Markdown content
+            metadata (dict, optional): Additional metadata
+            file_path (str, optional): Path to the file (for logging only)
         Returns:
-            dict: {
-                'chunks': List of chunk dicts with 'text' and 'metadata',
-                'metadata': Document-level metadata
-            }
-        Notes:
-            - If the file only contains a YAML header and no body, no chunks/embeddings will be generated, and a warning will be logged explaining this.
+            dict: { 'chunks': [...], 'metadata': ... }
         """
-        self.logger.debug(f"Processing markdown file: {file_path}")
+        self.logger.debug(f"Processing markdown {'file: ' + file_path if file_path else 'string input'}")
         # Extract or merge metadata
         if metadata is None:
-            metadata = self.extract_metadata(file_path)
+            metadata = self.extract_metadata(file_path) if file_path else {}
         else:
-            extracted = self.extract_metadata(file_path)
+            extracted = self.extract_metadata(file_path) if file_path else {}
             metadata = {**extracted, **metadata}
-        # Read file content
-        with open(file_path, 'r', encoding='utf-8') as f:
-            text = f.read()
         # --- Extract document-level tags (YAML frontmatter) ---
         doc_tags = set()
         yaml_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', text, re.DOTALL)
@@ -120,7 +113,7 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         lines = body.splitlines()
         # If the file only contains a YAML header and no body, log a clear warning
         if not lines or all(not line.strip() for line in lines):
-            self.logger.warning(f"No embeddings generated for {file_path}: file only contains a YAML header and no body text.")
+            self.logger.warning(f"No embeddings generated for {'file ' + file_path if file_path else 'string input'}: only YAML header and no body text.")
             return {
                 'chunks': [],
                 'metadata': metadata
@@ -198,4 +191,36 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         return {
             'chunks': chunk_dicts,
             'metadata': document_metadata
-        } 
+        }
+
+    def process(self, file_path, metadata=None):
+        """
+        Process a markdown file, extracting metadata and splitting into structured chunks.
+        Args:
+            file_path (str): Path to the markdown file
+            metadata (dict, optional): Additional metadata to include
+        Returns:
+            dict: {
+                'chunks': List of chunk dicts with 'text' and 'metadata',
+                'metadata': Document-level metadata
+            }
+        Notes:
+            - If the file only contains a YAML header and no body, no chunks/embeddings will be generated, and a warning will be logged explaining this.
+        """
+        with open(file_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        return self._process_markdown(text, metadata=metadata, file_path=file_path)
+
+    def process_from_string(self, text, metadata=None):
+        """
+        Process a markdown string, extracting metadata and splitting into structured chunks.
+        Args:
+            text (str): Markdown content
+            metadata (dict, optional): Additional metadata to include
+        Returns:
+            dict: {
+                'chunks': List of chunk dicts with 'text' and 'metadata',
+                'metadata': Document-level metadata
+            }
+        """
+        return self._process_markdown(text, metadata=metadata, file_path=None) 

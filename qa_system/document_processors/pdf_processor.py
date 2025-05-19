@@ -33,145 +33,290 @@ from .base_processor import BaseDocumentProcessor
 import re
 import csv
 import io
+import os
+
+def debug_log(message):
+    with open("pdf_debug.log", "a") as debug_file:
+        debug_file.write(message + "\n")
+
+def clean_pdf_text(text):
+    """
+    Cleans up PDF-extracted text by:
+    - Removing hyphenation at line breaks
+    - Joining lines that are split mid-sentence
+    - Collapsing multiple spaces
+    - Preserving paragraph breaks
+    """
+    # Remove hyphenation at line breaks (e.g., "infor-\nmation" -> "information")
+    text = re.sub(r'(\w+)-\n(\w+)', r'\1\2', text)
+    # Join lines that are not paragraph breaks (single newlines not preceded/followed by another newline)
+    text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text)
+    # Collapse multiple spaces
+    text = re.sub(r' +', ' ', text)
+    return text
+
+SECTION_HEADER_REGEX = re.compile(r'^(\d+(?:\.\d+)*)(?:\s+|\.)+(.+)')
+BULLET_CHARS = {'■', '-', '*', '•', 'I', '—', '–', '·', '●'}
+BULLET_REGEX = re.compile(r'^(?:[■\-*•I—–·●]|\d+\.|[a-zA-Z]\))\s+')
+
+def is_section_header(text, size, bold, header1_size):
+    # Heuristic: section headers are often short, large, and/or bold, or match section number pattern
+    if SECTION_HEADER_REGEX.match(text):
+        return True
+    if size >= header1_size or bold:
+        # Also check if the line is not too long
+        return len(text) < 80
+    return False
 
 class PDFDocumentProcessor(BaseDocumentProcessor):
     """
     Processor for PDF (.pdf) files using PyMuPDF (fitz).
 
-    Extracts document-level and chunk-level metadata, splits text into logical chunks based on paragraph boundaries and section headers, and serializes URLs for vector store compatibility.
-
-    Features:
-    - Extracts file metadata and all URLs
-    - Detects section headers and propagates section hierarchy
-    - Assigns chunk-level metadata: urls, url contexts, section headers, section hierarchy, chunk position, and summary
-    - Handles encrypted PDFs that do not require a password
-    - Returns a dictionary with 'chunks', 'metadata', and 'page_texts' keys
+    Converts PDF to Markdown, saving images to output_dir and referencing them in Markdown.
+    Returns a dictionary with 'chunks', 'metadata', and 'page_texts'.
     """
-    def _list_to_csv(self, items):
+    @staticmethod
+    def pdf_to_markdown(pdf_path: str, output_dir: str = './tmp') -> tuple[str, list[str]]:
         """
-        Serialize a list of items as a single CSV string.
+        Convert a PDF file to Markdown, preserving formatting and images.
         Args:
-            items (list): List of items to serialize
+            pdf_path (str): Path to the PDF file.
+            output_dir (str): Directory to save images. Defaults to './tmp'.
         Returns:
-            str: CSV-formatted string
+            tuple: (Markdown string, list of page texts)
         """
-        output = io.StringIO()
-        writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
-        writer.writerow(items)
-        return output.getvalue().strip()
+        import fitz  # PyMuPDF
+        BULLET_CHARS = {'■', '-', '*', '•'}
+        os.makedirs(output_dir, exist_ok=True)
+        doc = fitz.open(pdf_path)
+        markdown_lines = []
+        image_count = 0
+        font_sizes = []
+        page_texts = []
+        for page in doc:
+            page_texts.append(page.get_text() or '')
+            blocks = page.get_text("dict").get("blocks", [])
+            for block in blocks:
+                if block['type'] == 0:
+                    for line in block['lines']:
+                        for span in line['spans']:
+                            font_sizes.append(span['size'])
+        if font_sizes:
+            unique_sizes = sorted(set(font_sizes), reverse=True)
+            header1_size = unique_sizes[0]
+            header2_size = unique_sizes[1] if len(unique_sizes) > 1 else header1_size
+        else:
+            header1_size = header2_size = 12
+        # For robust list nesting, track unique x0 values in order of appearance
+        x0_to_level = []  # List of unique x0 values, in order encountered
+        for page_num, page in enumerate(doc):
+            blocks = page.get_text("dict").get("blocks", [])
+            for block in blocks:
+                if block['type'] == 0:  # text
+                    for line in block['lines']:
+                        # --- Section header merging logic ---
+                        merged_parts = []
+                        for i, span in enumerate(line['spans']):
+                            text = span['text'].strip()
+                            if not text:
+                                continue
+                            if i > 0:
+                                prev = line['spans'][i-1]['text'].strip()
+                                if (prev.replace('.', '').isdigit() and text.replace('.', '').isdigit()) or (prev.endswith('.') and text.isdigit()):
+                                    merged_parts[-1] += text
+                                    continue
+                            merged_parts.append(text)
+                        merged_text = ' '.join(merged_parts)
+                        if not merged_text:
+                            continue
+                        # Debug: log merged_text
+                        debug_log(f"[DEBUG] merged_text: '{merged_text}'")
+                        # Fix for section numbers split by space (repeat until stable)
+                        prev_text = None
+                        while prev_text != merged_text:
+                            prev_text = merged_text
+                            merged_text = re.sub(r'(\d+(?:\.\d+)*)\s+(\d+)', r'\1.\2', merged_text)
+                        debug_log(f"[DEBUG] after section fix: '{merged_text}'")
+                        # Section header detection
+                        section_match = SECTION_HEADER_REGEX.match(merged_text)
+                        if section_match:
+                            section_num = section_match.group(1)
+                            # Always use header level 4 for section headers
+                            header_level = 4
+                            # Font size and x0 clues (still log for debug)
+                            if line['spans']:
+                                font_size = line['spans'][0]['size']
+                                x0 = line['spans'][0]['origin'][0] if 'origin' in line['spans'][0] else line['spans'][0].get('x', 0)
+                            else:
+                                font_size = None
+                                x0 = None
+                            debug_log(f"[DEBUG] Section header detected: '{merged_text}' | section_num: '{section_num}' | font_size: {font_size} | x0: {x0} | header_level: {header_level}")
+                            # Output the header with extra newlines before and after
+                            markdown_lines.append(f"\n{'#' * header_level} {merged_text}\n")
+                            continue
+                        # --- Nested list detection with x0 mapping ---
+                        if line['spans']:
+                            x0 = line['spans'][0]['origin'][0] if 'origin' in line['spans'][0] else line['spans'][0].get('x', 0)
+                        else:
+                            x0 = 0
+                        if BULLET_REGEX.match(merged_text):
+                            debug_log(f"[DEBUG] List item detected: x0={x0}, text='{merged_text}'")
+                            # Remove bullet and leading space
+                            item_text = BULLET_REGEX.sub('', merged_text, count=1)
+                            # Map x0 to indent level (order of appearance)
+                            found = False
+                            for idx, val in enumerate(x0_to_level):
+                                if abs(x0 - val) < 1.0:  # Allow for small floating point differences
+                                    indent_level = idx
+                                    found = True
+                                    break
+                            if not found:
+                                x0_to_level.append(x0)
+                                indent_level = len(x0_to_level) - 1
+                            markdown_lines.append(f"{'  ' * indent_level}- {item_text.strip()}")
+                            continue
+                        # Otherwise, process as before (span-level formatting)
+                        for span in line['spans']:
+                            text = span['text'].strip()
+                            if not text:
+                                continue
+                            size = span['size']
+                            bold = span.get('flags', 0) & 2
+                            italic = span.get('flags', 0) & 1
+                            if size >= header1_size:
+                                markdown_lines.append(f"# {text}")
+                            elif size >= header2_size:
+                                markdown_lines.append(f"## {text}")
+                            elif text and text[0] in BULLET_CHARS:
+                                markdown_lines.append(f"- {text[1:].strip()}")
+                            elif bold and italic:
+                                markdown_lines.append(f"***{text}***")
+                            elif bold:
+                                markdown_lines.append(f"**{text}**")
+                            elif italic:
+                                markdown_lines.append(f"*{text}*")
+                            else:
+                                markdown_lines.append(text)
+                elif block['type'] == 1:  # image
+                    img_xref = block.get('image')
+                    if isinstance(img_xref, int):
+                        try:
+                            img = doc.extract_image(img_xref)
+                            img_bytes = img['image']
+                            ext = img.get('ext', 'png')
+                            img_name = f"image_{page_num+1}_{image_count+1}.{ext}"
+                            img_path = os.path.join(output_dir, img_name)
+                            with open(img_path, 'wb') as f:
+                                f.write(img_bytes)
+                            markdown_lines.append(f"![Image]({img_path})")
+                            image_count += 1
+                        except Exception as e:
+                            markdown_lines.append(f"<!-- Failed to extract image: {e} -->")
+        # Debug: log the final markdown_lines before joining
+        debug_log('[DEBUG] FINAL MARKDOWN_LINES:')
+        for idx, line in enumerate(markdown_lines):
+            debug_log(f'[DEBUG] LINE {idx}: {repr(line)}')
+        # Output exactly as detected, no further reformatting
+        markdown = '\n'.join(markdown_lines)
+        return markdown, page_texts
 
-    def _detect_section_headers(self, text):
+    def process(self, file_path, metadata=None, output_dir: str = './tmp'):
         """
-        Detect lines that look like section headers (e.g., all caps, 'Chapter', 'Section', etc.).
-        Args:
-            text (str): Text to scan for section headers
-        Returns:
-            list: List of (line_idx, header_text) tuples
-        """
-        headers = []
-        for i, line in enumerate(text.splitlines()):
-            if re.match(r'^(CHAPTER|SECTION|[A-Z][A-Z\s\d:,.\-]{5,})$', line.strip()):
-                headers.append((i, line.strip()))
-        return headers
-
-    def process(self, file_path, metadata=None):
-        """
-        Process a PDF file, extracting metadata, text, section headers, and chunked text.
+        Process a PDF file, converting it to Markdown and extracting images.
         Args:
             file_path (str): Path to the PDF file
             metadata (dict, optional): Additional metadata to include
+            output_dir (str): Directory to save images (default: './tmp')
         Returns:
             dict: {
-                'chunks': List of chunk dicts with 'text' and 'metadata',
+                'chunks': List of chunk dicts with 'text' (Markdown) and 'metadata',
                 'metadata': Document-level metadata,
-                'page_texts': List of text per page
+                'page_texts': List of text per page (for reference)
             }
-        Notes:
-            - Encrypted PDFs are only skipped if they cannot be decrypted (i.e., truly password-protected).
-            - Encrypted PDFs that can be opened with an empty password are processed normally.
         """
-        self.logger.debug(f"Processing PDF file with PyMuPDF: {file_path}")
-        try:
-            import fitz  # PyMuPDF
-        except ImportError:
-            raise ImportError("PyMuPDF (fitz) is required for PDF processing. Please install it with 'pip install pymupdf'.")
-        # Extract or merge metadata
+        self.logger.debug(f"Processing PDF file to Markdown: {file_path}")
         if metadata is None:
             metadata = self.extract_metadata(file_path)
         else:
             extracted = self.extract_metadata(file_path)
             metadata = {**extracted, **metadata}
         try:
-            doc = fitz.open(file_path)
+            markdown, page_texts = self.pdf_to_markdown(file_path, output_dir)
         except Exception as e:
-            self.logger.warning(f"File {file_path} could not be opened with PyMuPDF: {e}")
+            self.logger.warning(f"Failed to convert PDF to Markdown: {e}")
             metadata['skipped'] = True
-            metadata['skip_reason'] = f'open-error: {e}'
+            metadata['skip_reason'] = f'conversion-error: {e}'
             return {
                 'metadata': metadata,
                 'chunks': [],
                 'page_texts': []
             }
-        all_text = []
-        chunk_dicts = []
-        section_hierarchy = []
+        
+        # --- Header-based chunking ---
+        import re
+        header_pattern = re.compile(r"^#### (.+)$", re.MULTILINE)
+        lines = markdown.splitlines()
+        header_indices = []
+        headers = []
+        for idx, line in enumerate(lines):
+            m = header_pattern.match(line.strip())
+            if m:
+                header_indices.append(idx)
+                headers.append(m.group(1).strip())
+        # Add a sentinel for the end
+        header_indices.append(len(lines))
+        chunks = []
         chunk_index = 0
-        for i, page in enumerate(doc):
-            text = page.get_text() or ''
-            all_text.append(text)
-            # Detect section headers in this page
-            headers = self._detect_section_headers(text)
-            header_lines = {idx: header for idx, header in headers}
-            lines = text.splitlines()
-            current_section = None
-            current_hierarchy = list(section_hierarchy)
-            start_offset = 0
-            for line_idx, line in enumerate(lines):
-                if line_idx in header_lines:
-                    current_section = header_lines[line_idx]
-                    current_hierarchy = section_hierarchy + [current_section]
-                # Chunk at paragraph boundaries (empty line or end of section)
-                if line.strip() == '' or line_idx == len(lines) - 1:
-                    chunk_text = '\n'.join(lines[start_offset:line_idx+1]).strip()
+        for i in range(len(header_indices) - 1):
+            start = header_indices[i]
+            end = header_indices[i+1]
+            block_lines = lines[start:end]
+            block_text = '\n'.join(block_lines).strip()
+            if not block_text:
+                continue
+            # If block is too large, split further
+            if len(block_text) > self.chunk_size:
+                # Try to split evenly by lines
+                n_splits = (len(block_text) // self.chunk_size) + 1
+                split_size = max(1, len(block_lines) // n_splits)
+                for j in range(0, len(block_lines), split_size):
+                    chunk_lines = block_lines[j:j+split_size]
+                    chunk_text = '\n'.join(chunk_lines).strip()
                     if not chunk_text:
-                        start_offset = line_idx + 1
                         continue
-                    # Find URLs and their context
-                    urls = set()
-                    url_contexts = []
-                    for m in re.finditer(r'(https?://[^\s)\]"\'<>]+|ftp://[^\s)\]"\'<>]+)', chunk_text):
-                        urls.add(m.group(1))
-                        url_contexts.append({'url': m.group(1), 'context': 'paragraph'})
-                    chunk_meta = dict(metadata)
-                    chunk_meta['urls'] = self._list_to_csv(sorted(urls))
-                    chunk_meta['url_contexts'] = url_contexts
-                    chunk_meta['page_number'] = i + 1
-                    chunk_meta['chunk_index'] = chunk_index
-                    chunk_meta['start_offset'] = start_offset
-                    chunk_meta['end_offset'] = line_idx
-                    chunk_meta['section_header'] = current_section if current_section else ''
-                    chunk_meta['section_hierarchy'] = list(current_hierarchy)
-                    chunk_meta['topics'] = ["Unknown"]
                     summary = chunk_text.split(". ")[0]
                     if len(summary.split()) < 5:
                         summary = " ".join(chunk_text.split()[:20])
-                    chunk_meta['summary'] = summary.strip()
-                    chunk_dicts.append({'text': chunk_text, 'metadata': chunk_meta})
+                    chunks.append({
+                        'text': chunk_text,
+                        'metadata': {
+                            **metadata,
+                            'chunk_index': chunk_index,
+                            'section_header': headers[i],
+                            'summary': summary.strip()
+                        }
+                    })
                     chunk_index += 1
-                    start_offset = line_idx + 1
-            section_hierarchy = current_hierarchy
-        # Extract URLs from all text
-        urls = set()
-        full_text = '\n'.join(all_text)
-        for m in re.finditer(r'(https?://[^\s)\]"\'<>]+|ftp://[^\s)\]"\'<>]+)', full_text):
-            urls.add(m.group(1))
-        metadata['urls'] = self._list_to_csv(sorted(urls))
+            else:
+                summary = block_text.split(". ")[0]
+                if len(summary.split()) < 5:
+                    summary = " ".join(block_text.split()[:20])
+                chunks.append({
+                    'text': block_text,
+                    'metadata': {
+                        **metadata,
+                        'chunk_index': chunk_index,
+                        'section_header': headers[i],
+                        'summary': summary.strip()
+                    }
+                })
+                chunk_index += 1
         document_metadata = dict(metadata)
-        document_metadata['chunk_count'] = len(chunk_dicts)
-        document_metadata['total_tokens'] = sum(len(chunk['text']) for chunk in chunk_dicts)
-        document_metadata['page_count'] = len(all_text)
+        document_metadata['chunk_count'] = len(chunks)
+        document_metadata['total_tokens'] = sum(len(chunk['text']) for chunk in chunks)
+        document_metadata['page_count'] = len(page_texts)
         return {
-            'chunks': chunk_dicts,
+            'chunks': chunks,
             'metadata': document_metadata,
-            'page_texts': all_text
+            'page_texts': page_texts
         } 
