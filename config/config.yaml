@@ -141,3 +141,7 @@ QUERY:
   # Number of tokens of context to provide to the model for each query.
   # Do not exceed the model's input token limit: https://ai.google.dev/gemini-api/docs/models#gemini-2.5-flash-preview
   CONTEXT_WINDOW: 8192
+  # User Question File (for capturing user questions as markdown)
+  USER_QUESTION_FILE: "./docs/user_questions_log.md"
+  # Enable/disable user question capture and logging
+  USER_QUESTION_CAPTURE: true

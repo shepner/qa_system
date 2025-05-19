@@ -107,6 +107,10 @@ class QueryProcessor:
                 raise QASystemError("Query must be a non-empty string.")
             self.logger.info(f"process_query called with query: {query!r} [query_id={query_id}]")
 
+            # --- Log and embed user question ---
+            if self.config.get_nested('QUERY.USER_QUESTION_CAPTURE', True):
+                self._log_and_embed_user_question(query)
+
             # --- Derive keywords and tag-matching keywords from query ---
             self._last_query_keywords = derive_keywords(
                 self,
@@ -249,4 +253,35 @@ class QueryProcessor:
                 processing_time=time.time() - start_time,
                 error=str(e),
                 success=False
-            ) 
+            )
+
+    def _log_and_embed_user_question(self, query: str):
+        """
+        Append the user question (with timestamp) to the markdown log file and re-embed it.
+        """
+        import datetime
+        from qa_system.__main__ import process_add_files
+        # Get log file path from config or default
+        log_path = self.config.get_nested('USER_QUESTION_FILE', './docs/user_questions_log.md')
+        log_path = os.path.abspath(log_path)
+        # Ensure parent directory exists
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        # If file does not exist, create with header
+        if not os.path.exists(log_path):
+            with open(log_path, 'w', encoding='utf-8') as f:
+                f.write('# User Questions Log\n')
+                f.write('---\n')
+                f.write('tags: [user-question, qa-log]\n')
+                f.write('created: {}\n'.format(datetime.datetime.now().isoformat()))
+                f.write('---\n\n')
+        # Append question with timestamp
+        timestamp = datetime.datetime.now().isoformat()
+        with open(log_path, 'a', encoding='utf-8') as f:
+            f.write(f'\n## Question ({timestamp})\n')
+            f.write(f'{query.strip()}\n')
+        # Re-embed the log file using the canonical add flow
+        # (This will chunk, embed, and add to the vector store)
+        try:
+            process_add_files([log_path], self.config)
+        except Exception as e:
+            self.logger.error(f"Failed to re-embed user question log file: {e}") 

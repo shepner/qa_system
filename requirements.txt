@@ -88,3 +88,4 @@ reportlab
 coverage>=7.8.0
 dotenv
 scipy
+filetype
