@@ -92,12 +92,13 @@ def _serialize_metadata(metadata):
             metadata[k] = ','.join(str(x) for x in v)
     return metadata
 
-def process_add_files(files: List[str], config: dict) -> int:
+def process_add_files(files: List[str], config: dict, is_cli_add: bool = False) -> int:
     """Process and add files to the system.
     
     Args:
         files: List of file paths to process
         config: Configuration dictionary
+        is_cli_add: If True, print progress to CLI (for --add usage)
     
     Returns:
         int: Exit code (0 for success, 1 for failure)
@@ -115,7 +116,8 @@ def process_add_files(files: List[str], config: dict) -> int:
         query_processor = QueryProcessor(config)
         
         for file_path in files:
-            print(f"\nScanning: {file_path}")
+            if is_cli_add:
+                print(f"\nScanning: {file_path}")
             logger.info(f"Processing file: {file_path}")
             
             # Scan files and check if they need processing
@@ -126,10 +128,11 @@ def process_add_files(files: List[str], config: dict) -> int:
                 hash_exists = store.has_file(result['checksum'])
                 logger.info(f"Checksum check for {result['path']} (checksum={result['checksum']}): {'FOUND' if hash_exists else 'NOT FOUND'} in vector DB")
                 result['needs_processing'] = not hash_exists
-                if not result['needs_processing']:
-                    print('.', end='', flush=True)
-                else:
-                    print(f"\n{result['path']}")
+                if is_cli_add:
+                    if not result['needs_processing']:
+                        print('.', end='', flush=True)
+                    else:
+                        print(f"\n{result['path']}")
             
             for result in scan_results:
                 if not result['needs_processing']:
@@ -144,13 +147,12 @@ def process_add_files(files: List[str], config: dict) -> int:
                 
                 # If the file was skipped (e.g., encrypted PDF), log and continue
                 if processed['metadata'].get('skipped'):
-                    print(f"Skipping (processing issue): {result['path']} (reason: {processed['metadata'].get('skip_reason')})")
+                    logger.info(f"Skipping (processing issue): {result['path']} (reason: {processed['metadata'].get('skip_reason')})")
                     logger.warning(f"Skipping file due to processing issue: {result['path']} (reason: {processed['metadata'].get('skip_reason')})")
                     continue
                 
                 # --- NEW: Handle files with zero chunks (metadata-only entry) ---
                 if not processed['chunks']:
-                    print(f"No chunks generated for: {result['path']}. Adding metadata-only entry to vector store.")
                     logger.info(f"No chunks generated for {result['path']}. Adding metadata-only entry to vector store.")
                     zero_vector = [0.0] * generator.dimensions
                     meta = _serialize_metadata(dict(processed['metadata']))
@@ -161,7 +163,6 @@ def process_add_files(files: List[str], config: dict) -> int:
                         texts=[""],
                         metadatas=[meta]
                     )
-                    print(f"Added metadata-only entry to vector store: {result['path']}")
                     logger.info(f"Added metadata-only entry to vector store: {result['path']}")
                     continue
                 
@@ -173,7 +174,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                     meta['checksum'] = result['checksum']  # Ensure checksum is present in every chunk's metadata
                     chunk_metadatas.append(meta)
                 
-                print(f"Generating embeddings for: {result['path']}")
+                logger.info(f"Generating embeddings for: {result['path']}")
                 # Generate embeddings
                 file_type = processed['metadata'].get('file_type', '').lower()
                 if file_type in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
@@ -193,7 +194,6 @@ def process_add_files(files: List[str], config: dict) -> int:
                 nonempty_texts = [t for t in embeddings['texts'] if t and t.strip()]
                 if not embeddings['vectors'] or not embeddings['texts'] or not embeddings['metadata']:
                     if nonempty_texts:
-                        print(f"No embeddings generated for: {result['path']}, but chunk texts were non-empty. Likely rejected by embedding model (all filetypes). Indexing metadata only.")
                         logger.warning(f"No embeddings generated for {result['path']}, but chunk texts were non-empty. Likely rejected by embedding model (all filetypes). Indexing metadata only.")
                         zero_vector = [0.0] * generator.dimensions
                         store.add_embeddings(
@@ -201,15 +201,12 @@ def process_add_files(files: List[str], config: dict) -> int:
                             texts=nonempty_texts,
                             metadatas=[_serialize_metadata(m) for t, m in zip(embeddings['texts'], embeddings['metadata']) if t and t.strip()]
                         )
-                        print(f"Added to vector store (metadata only): {result['path']}")
                         logger.info(f"Added to vector store (metadata only): {result['path']}")
                         continue
                     else:
-                        print(f"No embeddings generated for: {result['path']}, skipping add to vector store. All chunk texts empty or whitespace.")
                         logger.warning(f"No embeddings generated for {result['path']}, skipping add to vector store. All chunk texts empty or whitespace.")
                         continue
                 if not (len(embeddings['vectors']) == len(embeddings['texts']) == len(embeddings['metadata'])):
-                    print(f"Mismatch in number of vectors, texts, and metadatas for: {result['path']}, skipping.")
                     logger.error(f"Mismatch in number of vectors, texts, and metadatas for {result['path']}, skipping.")
                     continue
 
@@ -220,13 +217,11 @@ def process_add_files(files: List[str], config: dict) -> int:
                     metadatas=[_serialize_metadata(m) for m in embeddings['metadata']]
                 )
                 
-                print(f"Added to vector store: {result['path']}")
-                logger.info(f"Successfully processed and added: {result['path']}")
+                logger.info(f"Added to vector store: {result['path']}")
                 
         return 0
         
     except Exception as e:
-        print(f"Error processing files: {str(e)}")
         logger.error(f"Error processing files: {str(e)}")
         return 1
 
@@ -248,7 +243,7 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
         documents = handler.list_metadata(filter_pattern)
         
         if not documents:
-            print("No documents found")
+            logger.warning("No documents found")
             return 0
             
         # Print document list
@@ -258,7 +253,7 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
         print("-" * 80)
         
         for doc in documents:
-            print(
+            logger.info(
                 f"{doc['path']:<50} "
                 f"{doc['metadata']['file_type']:<10} "
                 f"{doc['metadata'].get('chunk_count', '-'):<8} "
@@ -384,17 +379,17 @@ def main() -> int:
         
         # Process command
         if args.add:
-            return process_add_files(args.add, config)
+            return process_add_files(args.add, config, is_cli_add=True)
         elif args.list is not None:
             list_module = get_list_module(config)
             pattern = args.list if args.list != '*' else None
             docs = list_module.list_metadata(pattern=pattern)
-            print(f"\nDocuments in vector store ({len(docs)} found):")
+            logger.info(f"\nDocuments in vector store ({len(docs)} found):")
             for doc in docs:
-                print(f"- {doc.get('path', '[no path]')} (checksum={doc.get('checksum', '[no checksum]')})")
+                logger.info(f"- {doc.get('path', '[no path]')} (checksum={doc.get('checksum', '[no checksum]')})")
             stats = list_module.get_collection_stats()
-            print(f"\nTotal documents: {stats['total_documents']}")
-            print(f"Document types: {stats['document_types']}")
+            logger.info(f"\nTotal documents: {stats['total_documents']}")
+            logger.info(f"Document types: {stats['document_types']}")
             return 0
         elif args.remove:
             return process_remove(args.remove, args.filter, config)
