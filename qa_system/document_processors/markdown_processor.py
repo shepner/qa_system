@@ -75,6 +75,59 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                 headers.append((idx, len(m.group(1)), m.group(2).strip()))
         return headers
 
+    def _split_section_into_subchunks(self, section_lines, max_chunk_size):
+        """
+        Split a section (list of lines) into sub-chunks as evenly as possible, using sentence boundaries.
+        Try to avoid splitting lists or tables by adjusting split points.
+        Args:
+            section_lines (list[str]): Lines in the section
+            max_chunk_size (int): Maximum chunk size in characters
+        Returns:
+            list[list[str]]: List of sub-chunks (each a list of lines)
+        """
+        import re
+        # Join lines to a single string for sentence splitting
+        section_text = '\n'.join(section_lines)
+        # Split into sentences (keep newlines for list/table detection)
+        # Use a regex that splits on sentence boundaries but keeps newlines
+        sentence_pattern = re.compile(r'(?<=[.!?])\s+(?=[A-Z0-9#*-])')
+        sentences = sentence_pattern.split(section_text)
+        # Reconstruct sentences with their original newlines
+        # (This is a best-effort; for more accuracy, use NLP libraries)
+        # Now group sentences into chunks
+        chunks = []
+        current = []
+        current_len = 0
+        for sent in sentences:
+            sent = sent.rstrip('\n')
+            if not sent.strip():
+                continue
+            if current_len + len(sent) > max_chunk_size and current:
+                # Try to avoid splitting in the middle of a list or table
+                # If the last line in current or the first line in sent is a list/table, adjust
+                def is_list_or_table(line):
+                    return bool(re.match(r'\s*([-*+]|\d+\.|\|)', line.strip()))
+                # Check last line of current and first line of sent
+                last_line = current[-1].split('\n')[-1] if current else ''
+                first_line = sent.split('\n')[0]
+                if is_list_or_table(last_line) or is_list_or_table(first_line):
+                    # Try to move the split point up or down
+                    # If possible, move sent to next chunk
+                    if len(current) > 1:
+                        # Move last sentence to next chunk
+                        sent = current.pop() + ' ' + sent
+                        current_len = sum(len(s) for s in current)
+                    # else: just split here
+                chunks.append(current)
+                current = []
+                current_len = 0
+            current.append(sent)
+            current_len += len(sent)
+        if current:
+            chunks.append(current)
+        # Join sentences back to text
+        return [' '.join(chunk).split('\n') for chunk in chunks if chunk]
+
     def _process_markdown(self, text, metadata=None, file_path=None):
         """
         Core logic for processing markdown from a string.
@@ -124,61 +177,124 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         chunk_index = 0
         section_hierarchy = []  # Stack of (line_idx, header_level, header_text)
         start_offset = 0
-        # Iterate through lines, splitting at headers
-        for idx, line in enumerate(lines + ['']):  # Add sentinel for last chunk
-            header_match = re.match(r'^(#+)\s+(.*)$', line) if idx < len(lines) else None
-            if header_match or idx == len(lines):
-                # Process previous chunk (if any), up to but not including this header
-                if start_offset < idx:
-                    chunk_lines = lines[start_offset:idx]
+        max_chunk_size = getattr(self, 'chunk_size', 3072)
+        header_indices = [h[0] for h in headers]
+        header_indices.append(len(lines))  # Sentinel for last section
+        # If no headers, treat as a single section and break on paragraphs
+        if not headers:
+            # Split on paragraphs (blank lines)
+            para_chunks = []
+            para = []
+            for line in lines + ['']:
+                if not line.strip():
+                    if para:
+                        para_chunks.append(para)
+                        para = []
+                else:
+                    para.append(line)
+            # Now group paragraphs into chunks
+            current = []
+            current_len = 0
+            for para in para_chunks:
+                para_text = '\n'.join(para)
+                if current_len + len(para_text) > max_chunk_size and current:
+                    chunk_lines = current
                     chunk_text = '\n'.join(chunk_lines).strip()
                     if chunk_text:
-                        # --- Extract hashtags ---
-                        hashtags = set(
-                            re.sub(r'\[\^\d+\]$', '', tag)
-                            for tag in re.findall(r'(?<!#)(?<!\w)#([A-Za-z0-9_-]+)\b', chunk_text)
-                        )
-                        # --- Extract URLs (markdown links and raw URLs) ---
-                        urls = set()
-                        url_contexts = []
-                        for m_url in re.finditer(r'\[[^\]]+\]\(([^)\s]+)\)', chunk_text):
-                            urls.add(m_url.group(1))
-                            url_contexts.append({'url': m_url.group(1), 'context': 'markdown_link'})
-                        for m_url in re.finditer(r'(https?://[^\s)\]"\'<>]+|ftp://[^\s)\]"\'<>]+)', chunk_text):
-                            urls.add(m_url.group(1))
-                            url_contexts.append({'url': m_url.group(1), 'context': 'raw_url'})
-                        # --- Compose chunk metadata ---
-                        chunk_meta = dict(metadata)  # inherit document-level metadata
-                        chunk_meta['tags'] = self._list_to_csv(sorted(doc_tags | hashtags))
-                        chunk_meta['urls'] = self._list_to_csv(sorted(urls))
-                        chunk_meta['url_contexts'] = url_contexts
+                        chunk_meta = dict(metadata)
+                        chunk_meta['tags'] = self._list_to_csv(sorted(doc_tags))
+                        chunk_meta['urls'] = ''
+                        chunk_meta['url_contexts'] = []
                         chunk_meta['chunk_index'] = chunk_index
-                        chunk_meta['start_offset'] = start_offset
-                        chunk_meta['end_offset'] = idx - 1
-                        if section_hierarchy:
-                            chunk_meta['section_header'] = section_hierarchy[-1][2]
-                            chunk_meta['section_hierarchy'] = [h[2] for h in section_hierarchy]
-                        else:
-                            chunk_meta['section_header'] = ''
-                            chunk_meta['section_hierarchy'] = []
-                        chunk_meta['topics'] = ["Unknown"]  # Placeholder for topic extraction
-                        # --- Generate summary ---
+                        chunk_meta['start_offset'] = 0
+                        chunk_meta['end_offset'] = 0
+                        chunk_meta['section_header'] = ''
+                        chunk_meta['section_hierarchy'] = []
+                        chunk_meta['topics'] = ["Unknown"]
                         summary = chunk_text.split(". ")[0]
                         if len(summary.split()) < 5:
                             summary = " ".join(chunk_text.split()[:20])
                         chunk_meta['summary'] = summary.strip()
                         chunk_dicts.append({'text': chunk_text, 'metadata': chunk_meta})
                         chunk_index += 1
-                # --- Update section hierarchy for new header ---
-                if header_match:
-                    header_level = len(header_match.group(1))
-                    header_text = header_match.group(2).strip()
-                    # Pop higher/equal level headers
-                    while section_hierarchy and section_hierarchy[-1][1] >= header_level:
-                        section_hierarchy.pop()
-                    section_hierarchy.append((idx, header_level, header_text))
-                # Set start_offset to idx (the header line), so next chunk starts at the header
-                start_offset = idx
+                    current = []
+                    current_len = 0
+                current.extend(para)
+                current_len += len(para_text)
+            if current:
+                chunk_lines = current
+                chunk_text = '\n'.join(chunk_lines).strip()
+                if chunk_text:
+                    chunk_meta = dict(metadata)
+                    chunk_meta['tags'] = self._list_to_csv(sorted(doc_tags))
+                    chunk_meta['urls'] = ''
+                    chunk_meta['url_contexts'] = []
+                    chunk_meta['chunk_index'] = chunk_index
+                    chunk_meta['start_offset'] = 0
+                    chunk_meta['end_offset'] = 0
+                    chunk_meta['section_header'] = ''
+                    chunk_meta['section_hierarchy'] = []
+                    chunk_meta['topics'] = ["Unknown"]
+                    summary = chunk_text.split(". ")[0]
+                    if len(summary.split()) < 5:
+                        summary = " ".join(chunk_text.split()[:20])
+                    chunk_meta['summary'] = summary.strip()
+                    chunk_dicts.append({'text': chunk_text, 'metadata': chunk_meta})
+                    chunk_index += 1
+        else:
+            # There are headers; split into sections at each header
+            for i, header in enumerate(headers):
+                section_start = header[0]
+                section_end = header_indices[i+1] if i+1 < len(header_indices) else len(lines)
+                section_lines = lines[section_start:section_end]
+                # Remove leading/trailing blank lines
+                while section_lines and not section_lines[0].strip():
+                    section_lines = section_lines[1:]
+                while section_lines and not section_lines[-1].strip():
+                    section_lines = section_lines[:-1]
+                if not section_lines:
+                    continue
+                section_text = '\n'.join(section_lines)
+                if len(section_text) <= max_chunk_size:
+                    # Single chunk
+                    chunk_lines_list = [section_lines]
+                else:
+                    # Split into sub-chunks
+                    chunk_lines_list = self._split_section_into_subchunks(section_lines, max_chunk_size)
+                for chunk_lines in chunk_lines_list:
+                    chunk_text = '\n'.join(chunk_lines).strip()
+                    if not chunk_text:
+                        continue
+                    # --- Extract hashtags ---
+                    hashtags = set(
+                        re.sub(r'\[\^\d+\]$', '', tag)
+                        for tag in re.findall(r'(?<!#)(?<!\w)#([A-Za-z0-9_-]+)\b', chunk_text)
+                    )
+                    # --- Extract URLs (markdown links and raw URLs) ---
+                    urls = set()
+                    url_contexts = []
+                    for m_url in re.finditer(r'\[[^\]]+\]\(([^)\s]+)\)', chunk_text):
+                        urls.add(m_url.group(1))
+                        url_contexts.append({'url': m_url.group(1), 'context': 'markdown_link'})
+                    for m_url in re.finditer(r'(https?://[^\s)\]"\'<>]+|ftp://[^\s)\]"\'<>]+)', chunk_text):
+                        urls.add(m_url.group(1))
+                        url_contexts.append({'url': m_url.group(1), 'context': 'raw_url'})
+                    chunk_meta = dict(metadata)
+                    chunk_meta['tags'] = self._list_to_csv(sorted(doc_tags | hashtags))
+                    chunk_meta['urls'] = self._list_to_csv(sorted(urls))
+                    chunk_meta['url_contexts'] = url_contexts
+                    chunk_meta['chunk_index'] = chunk_index
+                    chunk_meta['start_offset'] = section_start
+                    chunk_meta['end_offset'] = section_end - 1
+                    chunk_meta['section_header'] = header[2]
+                    chunk_meta['section_hierarchy'] = [h[2] for h in headers[:i+1]]
+                    chunk_meta['topics'] = ["Unknown"]
+                    summary = chunk_text.split(". ")[0]
+                    if len(summary.split()) < 5:
+                        summary = " ".join(chunk_text.split()[:20])
+                    chunk_meta['summary'] = summary.strip()
+                    chunk_dicts.append({'text': chunk_text, 'metadata': chunk_meta})
+                    chunk_index += 1
         # --- Compose document-level metadata ---
         document_metadata = dict(metadata)
         document_metadata['tags'] = self._list_to_csv(sorted(doc_tags))
