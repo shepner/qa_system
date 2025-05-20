@@ -52,7 +52,7 @@ class FileScanner:
         """
         logger.info(f"Called FileScanner.__init__(config={config})")
         self.config = config.get_nested('FILE_SCANNER') if hasattr(config, 'get_nested') else config.get('FILE_SCANNER', {})
-        self.document_path = Path(self.config.get('DOCUMENT_PATH', './docs'))
+        self.document_path = Path(self.config.get('DOCUMENT_PATH', './docs')).resolve()
         self.allowed_extensions = set(self.config.get('ALLOWED_EXTENSIONS', []))
         self.exclude_patterns = self.config.get('EXCLUDE_PATTERNS', [])
         self.hash_algorithm = self.config.get('HASH_ALGORITHM', 'sha256')
@@ -130,7 +130,11 @@ class FileScanner:
             True if the file matches any exclusion pattern, False otherwise.
         """
         logger.debug(f"Called FileScanner._is_excluded(file_path={file_path})")
-        rel_path = str(file_path.relative_to(self.document_path))
+        try:
+            rel_path = str(file_path.resolve().relative_to(self.document_path))
+        except ValueError:
+            logger.warning(f"File {file_path} is not under document_path {self.document_path}")
+            return False
         # Check all parts of the relative path for exclusion
         parts = rel_path.split(os.sep)
         for pattern in self.exclude_patterns:
