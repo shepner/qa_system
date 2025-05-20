@@ -137,11 +137,7 @@ def process_add_files(files: List[str], config: dict) -> int:
                     continue
                 logger.info(f"File needs processing (not found in vector DB): {result['path']} (checksum={result['checksum']})")
                 # Get appropriate processor for file type
-                ext = str(result['path']).lower().rsplit('.', 1)[-1] if '.' in str(result['path']) else ''
-                if ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
-                    processor = get_processor_for_file_type(result['path'], config, query_processor=query_processor)
-                else:
-                    processor = get_processor_for_file_type(result['path'], config)
+                processor = get_processor_for_file_type(result['path'], config, query_processor=query_processor)
                 
                 # Process file into chunks
                 processed = processor.process(result['path'])

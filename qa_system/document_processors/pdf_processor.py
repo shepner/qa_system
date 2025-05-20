@@ -34,6 +34,8 @@ import re
 import csv
 import io
 import os
+from .pdf_image_extractor import PDFImageExtractor
+from .image_processor import ImageDocumentProcessor
 
 def debug_log(message):
     with open("pdf_debug.log", "a") as debug_file:
@@ -75,6 +77,10 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
     Converts PDF to Markdown, saving images to output_dir and referencing them in Markdown.
     Returns a dictionary with 'chunks', 'metadata', and 'page_texts'.
     """
+    def __init__(self, config, query_processor=None):
+        super().__init__(config)
+        self.query_processor = query_processor
+
     @staticmethod
     def pdf_to_markdown(pdf_path: str, output_dir: str = './tmp') -> tuple[str, list[str]]:
         """
@@ -311,12 +317,35 @@ class PDFDocumentProcessor(BaseDocumentProcessor):
                     }
                 })
                 chunk_index += 1
+        # --- Image extraction and processing ---
+        query_processor = getattr(self, 'query_processor', None)
+        image_extractor = PDFImageExtractor(self.config, logger=self.logger, query_processor=query_processor)
+        image_result = image_extractor.process(file_path, output_dir=output_dir)
+        image_chunks = image_result.get('chunks', [])
+        image_chunk_start = chunk_index
+        for i, img_chunk in enumerate(image_chunks):
+            # Set chunk_index to be after text chunks
+            img_chunk['metadata']['chunk_index'] = image_chunk_start + i
+            # Set section_header to image filename for uniqueness
+            img_name = os.path.basename(img_chunk['metadata'].get('file_path', f'image_{i}'))
+            img_chunk['metadata']['section_header'] = f"[IMAGE] {img_name}"
+            # Optionally, add source_pdf as a string
+            img_chunk['metadata']['source_pdf'] = file_path
+            # Remove any non-simple fields from metadata (defensive)
+            for k in list(img_chunk['metadata'].keys()):
+                v = img_chunk['metadata'][k]
+                if not (isinstance(v, (str, int, float, bool)) or (k in ['tags', 'urls'] and isinstance(v, list) and all(isinstance(x, str) for x in v))):
+                    del img_chunk['metadata'][k]
+        # Combine text and image chunks
+        all_chunks = chunks + image_chunks
         document_metadata = dict(metadata)
-        document_metadata['chunk_count'] = len(chunks)
-        document_metadata['total_tokens'] = sum(len(chunk['text']) for chunk in chunks)
+        document_metadata['chunk_count'] = len(all_chunks)
+        document_metadata['total_tokens'] = sum(len(chunk['text']) for chunk in all_chunks)
         document_metadata['page_count'] = len(page_texts)
+        document_metadata['image_chunk_count'] = len(image_chunks)
+        # Do NOT add image_metadata or image_results to document_metadata
         return {
-            'chunks': chunks,
+            'chunks': all_chunks,
             'metadata': document_metadata,
             'page_texts': page_texts
         } 

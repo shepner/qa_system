@@ -36,7 +36,10 @@ def generate_image_caption(processor, image_path: str, logger: Optional[logging.
             logger.info("Requesting image caption from Gemini API...")
         caption_response = processor.llm.client.models.generate_content(
             model=getattr(processor.llm, 'model_name', 'gemini-2.0-flash'),
-            contents=[my_file, "Caption this image."]
+            contents=[
+                my_file,
+                "Provide a single, direct, descriptive caption for this image. Do not provide options or commentary. Be factual and specific."
+            ]
         )
         caption = getattr(caption_response, 'text', None)
         if not caption:

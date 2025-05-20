@@ -39,7 +39,7 @@ def get_processor_for_file_type(path, config, query_processor=None):
     if ext == 'md':
         return MarkdownDocumentProcessor(config)
     if ext == 'pdf':
-        return PDFDocumentProcessor(config)
+        return PDFDocumentProcessor(config, query_processor=query_processor)
     if ext == 'csv':
         return CSVDocumentProcessor(config)
     if ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
