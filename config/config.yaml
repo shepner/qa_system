@@ -57,18 +57,18 @@ FILE_SCANNER:
 DOCUMENT_PROCESSING:
   # If true, attempts to keep sentence boundaries when chunking documents.
   PRESERVE_SENTENCES: true
-  # Maximum number of characters (or tokens) per document chunk.
+  # Maximum number of tokens per document chunk.
   # NOTE: This value should be less than or equal to EMBEDDING_MODEL.MAX_LENGTH (currently 2048)
   # NOTE: Too small or too large will result in poor results
   # MAX_CHUNK_SIZE: 2048
   MAX_CHUNK_SIZE: 2048
-  # Minimum number of characters (or tokens) per chunk.
+  # Minimum number of tokens per chunk.
   # A ratio of 1/4 to 1/2 of MAX_CHUNK_SIZE is recommended
   # this also sets the minimum size of the document that will be chunked
   # Documents smaller than this will be retained as a single chunk
   # MIN_CHUNK_SIZE: 2048
   MIN_CHUNK_SIZE: 512
-  # Number of characters (or tokens) that overlap between consecutive chunks (for context continuity).
+  # Number of tokens that overlap between consecutive chunks (for context continuity).
   # Start with 10–20% of MAX_CHUNK_SIZE and <= MIN_CHUNK_SIZE.  Increase if retrievals are missing context.  
   CHUNK_OVERLAP: 128
   # Number of parallel tasks to use for document processing (controls concurrency).
