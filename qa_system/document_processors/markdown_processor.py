@@ -47,6 +47,20 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
     - Assigns chunk-level metadata: tags, urls, section headers, section hierarchy, chunk position, and summary
     - Returns a dictionary with 'chunks' and 'metadata' keys
     """
+    def __init__(self, config, chunk_size=3072):
+        super().__init__(config)
+        self.chunk_size = chunk_size
+
+    def count_tokens(self, text):
+        """
+        Estimate the number of tokens in a string for Gemini models.
+        Args:
+            text (str): Input text
+        Returns:
+            int: Estimated number of tokens (1 token ≈ 4 characters)
+        """
+        return max(1, len(text) // 3) # lets be conservative and assume 3 characters per token
+
     def _list_to_csv(self, items):
         """
         Serialize a list of items as a single CSV string.
