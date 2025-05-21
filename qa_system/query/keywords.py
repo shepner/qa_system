@@ -135,7 +135,7 @@ def derive_keywords(processor, query: str, mode: str = 'keywords', logger: None 
         # Use Gemini LLM to extract tags from an image caption (freeform, not restricted to a set)
         system_prompt = (
             "You are an image tag extraction assistant. "
-            "Given an image caption, extract the most relevant tags (single keywords, not phrases or sentences) that describe the main subjects, objects, or concepts in the image. "
+            "Given an image caption, extract the most relevant tags (preferably single keywords, not phrases or sentences, absolutely no more than 2 words) that describe the main subjects, objects, or concepts in the image. "
             "Output only a comma-separated list of tags, or an empty string if none are relevant. "
             "Example output: tag1,tag2,tag3"
         )
