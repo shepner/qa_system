@@ -72,6 +72,12 @@ print("Sources:", [src.document for src in response.sources])
 - Components such as the embedding generator, vector store, and LLM can be swapped or extended by passing custom instances to `QueryProcessor`.
 - Logging is integrated throughout for observability and debugging.
 
+## User Interaction Logging
+
+- User questions and answers are logged to per-day markdown files in the directory specified by `USER_INTERACTION_DIRECTORY` (e.g., `./data/user_interaction/2025-05-20.md`).
+- Each entry in the log contains a timestamp, the user question, and the generated answer, in a structured markdown format.
+- The contextualizer reads all `.md` files in this directory to generate contextual summaries for future queries.
+
 ## File Structure
 
 - `processor.py`: Main pipeline logic (`QueryProcessor`)

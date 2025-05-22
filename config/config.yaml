@@ -75,6 +75,8 @@ DOCUMENT_PROCESSING:
   CONCURRENT_TASKS: 6
   # Number of documents or chunks to process in a single batch.
   BATCH_SIZE: 100
+  # User Context Directory (for storing user context files)
+  USER_CONTEXT_DIRECTORY: "./docs_user_context/"
 
 # Embedding Model Configuration
 EMBEDDING_MODEL:
@@ -142,7 +144,11 @@ QUERY:
   # Number of tokens of context to provide to the model for each query.
   # Do not exceed the model's input token limit: https://ai.google.dev/gemini-api/docs/models#gemini-2.5-flash-preview
   CONTEXT_WINDOW: 8192
-  # User Question File (for capturing user questions as markdown)
-  USER_QUESTION_FILE: "./docs/user_questions_log.md"
   # Enable/disable user question capture and logging
   USER_QUESTION_CAPTURE: true
+  # User Question File (for capturing user questions as markdown)
+  USER_INTERACTION_DIRECTORY: "./data/user_interaction/"
+  # User Context File (resulting context from the user questions)
+  USER_CONTEXT_FILE: "./docs/user_context.md"
+  
+  
