@@ -237,15 +237,34 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
     """
     logger.info(f"Called process_list(filter_pattern={filter_pattern}, config={{...}})")
     try:
-        from qa_system.document_processors import ListHandler
-        
-        handler = ListHandler(config)
-        documents = handler.list_metadata(filter_pattern)
-        
+        from qa_system.list import get_list_module
+        list_module = get_list_module(config)
+        documents = list_module.list_metadata(None if filter_pattern == 'incomplete' else filter_pattern)
+
         if not documents:
             logger.warning("No documents found")
+            print("No documents found")
             return 0
-            
+
+        # --- New: Handle --list incomplete ---
+        if filter_pattern == 'incomplete':
+            def is_incomplete(doc):
+                meta = doc.get('metadata', {})
+                # Skipped or processing error
+                if meta.get('skipped') or meta.get('skip_reason'):
+                    return True
+                # Zero chunks (or chunk_count==0 or missing)
+                if meta.get('chunk_count', 1) == 0:
+                    return True
+                # Images (always candidates for reprocessing)
+                if meta.get('file_type', '').lower() in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
+                    return True
+                return False
+            incomplete = [doc['path'] for doc in documents if is_incomplete(doc)]
+            for path in incomplete:
+                print(path)
+            return 0
+
         # Print document list
         print("\nDocuments in system:")
         print("-" * 80)
@@ -253,17 +272,38 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
         print("-" * 80)
         
         for doc in documents:
-            logger.info(
-                f"{doc['path']:<50} "
-                f"{doc['metadata']['file_type']:<10} "
-                f"{doc['metadata'].get('chunk_count', '-'):<8} "
-                f"{doc['metadata'].get('last_modified', '-'):<20}"
-            )
-        
+            meta = doc.get('metadata', doc)  # fallback to doc itself if 'metadata' missing
+            print(f"{doc.get('path','-'):<50} {meta.get('file_type','-'):<10} {meta.get('chunk_count','-'):<8} {meta.get('last_modified','-'):<20}")
+
+        # Print summary
+        total_docs = len(documents)
+        # Improved: Count how many have metadata (nested or flat)
+        def has_metadata(doc):
+            if 'metadata' in doc and doc['metadata']:
+                return True
+            meta_fields = ['file_type', 'chunk_count', 'last_modified']
+            return any(field in doc and doc[field] not in (None, '', '-') for field in meta_fields)
+        docs_with_metadata = sum(1 for doc in documents if has_metadata(doc))
+        # Count document types, inferring from path if needed
+        type_counts = {}
+        for doc in documents:
+            meta = doc.get('metadata', doc)
+            file_type = meta.get('file_type')
+            if not file_type or file_type == '-':
+                # Try to infer from file extension
+                path = doc.get('path', '')
+                ext = path.rsplit('.', 1)[-1].lower() if '.' in path else '-'
+                file_type = ext
+            type_counts[file_type] = type_counts.get(file_type, 0) + 1
+        print(f"\nTotal documents: {total_docs}")
+        print(f"Documents with metadata: {docs_with_metadata}")
+        print(f"Document types: {type_counts}")
+
         return 0
         
     except Exception as e:
         logger.error(f"Error listing documents: {str(e)}")
+        print(f"Error listing documents: {str(e)}")
         return 1
 
 def process_remove(paths: List[str], filter_pattern: Optional[str], config: dict) -> int:
@@ -381,16 +421,8 @@ def main() -> int:
         if args.add:
             return process_add_files(args.add, config, is_cli_add=True)
         elif args.list is not None:
-            list_module = get_list_module(config)
             pattern = args.list if args.list != '*' else None
-            docs = list_module.list_metadata(pattern=pattern)
-            logger.info(f"\nDocuments in vector store ({len(docs)} found):")
-            for doc in docs:
-                logger.info(f"- {doc.get('path', '[no path]')} (checksum={doc.get('checksum', '[no checksum]')})")
-            stats = list_module.get_collection_stats()
-            logger.info(f"\nTotal documents: {stats['total_documents']}")
-            logger.info(f"Document types: {stats['document_types']}")
-            return 0
+            return process_list(pattern, config)
         elif args.remove:
             return process_remove(args.remove, args.filter, config)
         elif args.query is not None:  # Empty string is valid for interactive mode
