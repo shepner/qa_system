@@ -12,6 +12,7 @@ Classes:
 
 Exceptions:
     EmbeddingError: Raised for embedding generation failures.
+    RateLimitError: Raised for rate limit errors.
 
 Dependencies:
     - google-generativeai (google-genai)
@@ -29,7 +30,7 @@ from typing import List, Dict, Any
 import os
 import threading
 import time
-from qa_system.exceptions import EmbeddingError
+from qa_system.exceptions import EmbeddingError, RateLimitError
 from PIL import Image
 
 try:

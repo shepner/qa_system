@@ -73,4 +73,8 @@ class RemovalError(VectorStoreError):
     def __init__(self, message, requires_cleanup=False, document_id=None):
         super().__init__(message)
         self.requires_cleanup = requires_cleanup
-        self.document_id = document_id 
+        self.document_id = document_id
+
+class RateLimitError(APIError):
+    """Raised when an API call fails due to rate limiting (HTTP 429 or RESOURCE_EXHAUSTED)."""
+    pass 
