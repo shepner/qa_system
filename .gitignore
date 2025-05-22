@@ -54,6 +54,8 @@ secrets/
 *.key
 *.crt
 config_recommendations.md
+tmp/
+tmp/*
 
 # Database
 data/
@@ -70,4 +72,6 @@ Thumbs.db
 
 # ignore all files in the docs directory
 docs/*
+docs*
+user_interaction/
 backups/*

@@ -13,6 +13,7 @@ from .source_filter import filter_sources
 from .context_builder import build_context_window
 from .prompts import build_llm_prompt
 from .gemini_llm import GeminiLLM
+from qa_system.document_processors.user_interaction_processor import UserInteractionProcessor
 
 """
 @file: processor.py
@@ -106,10 +107,6 @@ class QueryProcessor:
                 self.logger.info(f"process_query called with invalid query: {query!r} (type: {type(query)}) [query_id={query_id}]")
                 raise QASystemError("Query must be a non-empty string.")
             self.logger.info(f"process_query called with query: {query!r} [query_id={query_id}]")
-
-            # --- Log and embed user question ---
-            if self.config.get_nested('QUERY.USER_QUESTION_CAPTURE', True):
-                self._log_and_embed_user_question(query)
 
             # --- Derive keywords and tag-matching keywords from query ---
             self._last_query_keywords = derive_keywords(
@@ -221,6 +218,10 @@ class QueryProcessor:
                 self.logger.error(f"LLM call failed: {e}")
                 response_text = ""
 
+            # --- Log and embed user question and answer ---
+            if self.config.get_nested('QUERY.USER_QUESTION_CAPTURE', True):
+                self._log_and_embed_user_interaction(query, response_text)
+
             # --- Prepare and return QueryResponse ---
             confidence = filtered_sources[0].similarity if filtered_sources else 0.0
             processing_time = time.time() - start_time
@@ -255,33 +256,35 @@ class QueryProcessor:
                 success=False
             )
 
-    def _log_and_embed_user_question(self, query: str):
+    def _log_and_embed_user_interaction(self, question: str, answer: str):
         """
-        Append the user question (with timestamp) to the markdown log file and re-embed it.
+        Append the user question and answer (with timestamp) to the per-day markdown log file and update user context files.
         """
         import datetime
-        from qa_system.__main__ import process_add_files
-        # Get log file path from config or default
-        log_path = self.config.get_nested('USER_QUESTION_FILE', './docs/user_questions_log.md')
-        log_path = os.path.abspath(log_path)
-        # Ensure parent directory exists
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        # Get log directory from config or default
+        log_dir = self.config.get_nested('USER_INTERACTION_DIRECTORY', './data/user_interaction/')
+        log_dir = os.path.abspath(log_dir)
+        os.makedirs(log_dir, exist_ok=True)
+        # File name is current date
+        today = datetime.datetime.now().strftime('%Y-%m-%d')
+        log_path = os.path.join(log_dir, f"{today}.md")
         # If file does not exist, create with header
         if not os.path.exists(log_path):
             with open(log_path, 'w', encoding='utf-8') as f:
-                f.write('# User Questions Log\n')
-                f.write('---\n')
-                f.write('tags: [user-question, qa-log]\n')
-                f.write('created: {}\n'.format(datetime.datetime.now().isoformat()))
-                f.write('---\n\n')
-        # Append question with timestamp
+                f.write('---\ntags: [user-question, qa-log]\n---\n\n')
+                f.write('# User Questions Log\n\n')
+                f.write('This document is a log of all user questions and answers submitted to the application in a given day.  The intent is to help provide better contextual information over time.\n\n')
+        # Append question and answer with timestamp
         timestamp = datetime.datetime.now().isoformat()
         with open(log_path, 'a', encoding='utf-8') as f:
-            f.write(f'\n## Question ({timestamp})\n')
-            f.write(f'{query.strip()}\n')
-        # Re-embed the log file using the canonical add flow
-        # (This will chunk, embed, and add to the vector store)
+            f.write(f"## {timestamp}\n\n")
+            f.write("### Question\n\n")
+            f.write(f"```\n{question.strip()}\n```\n\n")
+            f.write("### Answer\n\n")
+            f.write(f"```\n{answer.strip()}\n```\n\n")
+        # After updating the user interaction file, update user context files
         try:
-            process_add_files([log_path], self.config)
+            processor = UserInteractionProcessor(self.config)
+            processor.process()
         except Exception as e:
-            self.logger.error(f"Failed to re-embed user question log file: {e}") 
+            self.logger.error(f"Failed to update user context files: {e}") 
