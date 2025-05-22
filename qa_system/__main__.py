@@ -257,7 +257,13 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
                 if meta.get('chunk_count', 1) == 0:
                     return True
                 # Images (always candidates for reprocessing)
-                if meta.get('file_type', '').lower() in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
+                file_type = meta.get('file_type', '')
+                if not file_type:
+                    # Try to infer from path
+                    path = doc.get('path', '')
+                    ext = path.rsplit('.', 1)[-1].lower() if '.' in path else ''
+                    file_type = ext
+                if file_type in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
                     return True
                 return False
             incomplete = [doc['path'] for doc in documents if is_incomplete(doc)]

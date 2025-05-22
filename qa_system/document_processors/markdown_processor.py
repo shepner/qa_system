@@ -165,6 +165,7 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         if yaml_match:
             try:
                 yaml_data = yaml.safe_load(yaml_match.group(1))
+                self.logger.debug(f"Parsed YAML frontmatter for {file_path if file_path else '[string input]'}: {yaml_data}")
                 if isinstance(yaml_data, dict):
                     for key in ['tags', 'tag', 'categories', 'category']:
                         if key in yaml_data:
@@ -187,6 +188,7 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
             }
         # Parse headers for sectioning
         headers = self._parse_headers(lines)
+        self.logger.debug(f"Parsed {len(headers)} headers in {file_path if file_path else '[string input]'}: {headers}")
         chunk_dicts = []
         chunk_index = 0
         section_hierarchy = []  # Stack of (line_idx, header_level, header_text)
@@ -196,6 +198,7 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         header_indices.append(len(lines))  # Sentinel for last section
         # If no headers, treat as a single section and break on paragraphs
         if not headers:
+            self.logger.debug(f"No headers found, splitting {file_path if file_path else '[string input]'} on paragraphs.")
             # Split on paragraphs (blank lines)
             para_chunks = []
             para = []
@@ -230,6 +233,7 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                             summary = " ".join(chunk_text.split()[:20])
                         chunk_meta['summary'] = summary.strip()
                         chunk_dicts.append({'text': chunk_text, 'metadata': chunk_meta})
+                        self.logger.debug(f"Created chunk {chunk_index} (size {len(chunk_text)}) for {file_path if file_path else '[string input]'}")
                         chunk_index += 1
                     current = []
                     current_len = 0
@@ -254,9 +258,11 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                         summary = " ".join(chunk_text.split()[:20])
                     chunk_meta['summary'] = summary.strip()
                     chunk_dicts.append({'text': chunk_text, 'metadata': chunk_meta})
+                    self.logger.debug(f"Created chunk {chunk_index} (size {len(chunk_text)}) for {file_path if file_path else '[string input]'}")
                     chunk_index += 1
         else:
             # There are headers; split into sections at each header
+            self.logger.debug(f"Splitting {file_path if file_path else '[string input]'} into sections at headers.")
             for i, header in enumerate(headers):
                 section_start = header[0]
                 section_end = header_indices[i+1] if i+1 < len(header_indices) else len(lines)
@@ -308,6 +314,7 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
                         summary = " ".join(chunk_text.split()[:20])
                     chunk_meta['summary'] = summary.strip()
                     chunk_dicts.append({'text': chunk_text, 'metadata': chunk_meta})
+                    self.logger.debug(f"Created chunk {chunk_index} (size {len(chunk_text)}) for {file_path if file_path else '[string input]'}")
                     chunk_index += 1
         # --- Compose document-level metadata ---
         document_metadata = dict(metadata)
@@ -318,6 +325,7 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         for key in ['tags', 'urls']:
             if key not in document_metadata:
                 document_metadata[key] = ''
+        self.logger.info(f"Markdown processing complete for {file_path if file_path else '[string input]'}: {len(chunk_dicts)} chunks, {document_metadata['total_tokens']} total characters.")
         return {
             'chunks': chunk_dicts,
             'metadata': document_metadata
@@ -337,9 +345,23 @@ class MarkdownDocumentProcessor(BaseDocumentProcessor):
         Notes:
             - If the file only contains a YAML header and no body, no chunks/embeddings will be generated, and a warning will be logged explaining this.
         """
-        with open(file_path, 'r', encoding='utf-8') as f:
-            text = f.read()
-        return self._process_markdown(text, metadata=metadata, file_path=file_path)
+        self.logger.info(f"[START] Processing markdown file: {file_path}")
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            self.logger.debug(f"Read {len(text)} characters from {file_path}")
+            result = self._process_markdown(text, metadata=metadata, file_path=file_path)
+            num_chunks = len(result.get('chunks', []))
+            chunk_sizes = [len(chunk['text']) for chunk in result.get('chunks', [])]
+            self.logger.info(f"[END] Processed markdown file: {file_path} | Chunks: {num_chunks} | Chunk sizes: {chunk_sizes}")
+            if num_chunks == 0:
+                self.logger.warning(f"No chunks generated for {file_path}. Check if the file is empty or only contains YAML header.")
+            return result
+        except Exception as e:
+            import traceback
+            self.logger.error(f"Exception while processing markdown file {file_path}: {e}")
+            self.logger.error(traceback.format_exc())
+            return {'chunks': [], 'metadata': {'error': str(e), 'file_path': file_path}}
 
     def process_from_string(self, text, metadata=None):
         """
