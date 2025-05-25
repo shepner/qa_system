@@ -18,6 +18,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import List, Optional
+import os
 
 from qa_system.config import get_config
 from qa_system.exceptions import QASystemError
@@ -25,6 +26,15 @@ from qa_system.logging_setup import setup_logging
 from qa_system.list import get_list_module
 
 logger = logging.getLogger(__name__)
+
+CHECKPOINT_DIR = os.path.join('tmp', 'embedding_checkpoints')
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+def _checkpoint_inprogress_path(checksum):
+    return os.path.join(CHECKPOINT_DIR, f"{checksum}.inprogress")
+
+def _checkpoint_exists(checksum):
+    return os.path.exists(_checkpoint_inprogress_path(checksum))
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments for the QA System CLI.
@@ -120,104 +130,106 @@ def process_add_files(files: List[str], config: dict, is_cli_add: bool = False) 
                 print(f"\nScanning: {file_path}")
             logger.info(f"Processing file: {file_path}")
             
-            # Scan files and check if they need processing
             scan_results = scanner.scan_files(file_path)
             
             for result in scan_results:
-                logger.info(f"Checking if file checksum exists in vector DB: {result['checksum']} for {result['path']}")
-                hash_exists = store.has_file(result['checksum'])
-                logger.info(f"Checksum check for {result['path']} (checksum={result['checksum']}): {'FOUND' if hash_exists else 'NOT FOUND'} in vector DB")
-                result['needs_processing'] = not hash_exists
-                if is_cli_add:
-                    if not result['needs_processing']:
-                        print('.', end='', flush=True)
-                    else:
-                        print(f"\n{result['path']}")
+                inprogress_file = _checkpoint_inprogress_path(result['checksum'])
+                if os.path.exists(inprogress_file):
+                    logger.info(f"Checkpoint IN PROGRESS exists for {result['path']} (checksum={result['checksum']}), will retry file.")
+                    result['needs_processing'] = True
+                else:
+                    logger.info(f"No IN PROGRESS checkpoint for {result['path']} (checksum={result['checksum']}), will process if not in DB.")
+                    result['needs_processing'] = not store.has_file(result['checksum'])
+                    if is_cli_add:
+                        if not result['needs_processing']:
+                            print('.', end='', flush=True)
+                        else:
+                            print(f"\n{result['path']}")
             
             for result in scan_results:
                 if not result['needs_processing']:
-                    logger.info(f"Skipping file (already exists in vector DB by checksum): {result['path']} (checksum={result['checksum']})")
+                    logger.info(f"Skipping file (already exists in vector DB and not in progress): {result['path']} (checksum={result['checksum']})")
                     continue
-                logger.info(f"File needs processing (not found in vector DB): {result['path']} (checksum={result['checksum']})")
-                # Get appropriate processor for file type
-                processor = get_processor_for_file_type(result['path'], config, query_processor=query_processor)
-                
-                # Process file into chunks
-                processed = processor.process(result['path'])
-                
-                # If the file was skipped (e.g., encrypted PDF), log and continue
-                if processed['metadata'].get('skipped'):
-                    logger.info(f"Skipping (processing issue): {result['path']} (reason: {processed['metadata'].get('skip_reason')})")
-                    logger.warning(f"Skipping file due to processing issue: {result['path']} (reason: {processed['metadata'].get('skip_reason')})")
-                    continue
-                
-                # --- NEW: Handle files with zero chunks (metadata-only entry) ---
-                if not processed['chunks']:
-                    logger.info(f"No chunks generated for {result['path']}. Adding metadata-only entry to vector store.")
-                    zero_vector = [0.0] * generator.dimensions
-                    meta = _serialize_metadata(dict(processed['metadata']))
-                    meta['id'] = f"{meta['path']}:0"
-                    meta['checksum'] = result['checksum']
-                    store.add_embeddings(
-                        embeddings=[zero_vector],
-                        texts=[""],
-                        metadatas=[meta]
-                    )
-                    logger.info(f"Added metadata-only entry to vector store: {result['path']}")
-                    continue
-                
-                # Assign unique IDs to each chunk's metadata
-                chunk_metadatas = []
-                for idx, chunk in enumerate(processed['chunks']):
-                    meta = _serialize_metadata(dict(processed['metadata']))
-                    meta['id'] = f"{meta['path']}:{idx}"
-                    meta['checksum'] = result['checksum']  # Ensure checksum is present in every chunk's metadata
-                    chunk_metadatas.append(meta)
-                
-                logger.info(f"Generating embeddings for: {result['path']}")
-                # Generate embeddings
-                file_type = processed['metadata'].get('file_type', '').lower()
-                if file_type in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
-                    embeddings = generator.generate_image_embeddings(
-                        image_path=processed['metadata']['path'],
-                        metadata=processed['metadata']
-                    )
-                else:
-                    embeddings = generator.generate_embeddings(
-                        texts=[chunk['text'] for chunk in processed['chunks']],
-                        metadata=processed['metadata']
-                    )
-                # Overwrite embeddings['metadata'] with chunk_metadatas
-                embeddings['metadata'] = chunk_metadatas
-                
-                # Defensive check before adding to vector store
-                nonempty_texts = [t for t in embeddings['texts'] if t and t.strip()]
-                if not embeddings['vectors'] or not embeddings['texts'] or not embeddings['metadata']:
-                    if nonempty_texts:
-                        logger.warning(f"No embeddings generated for {result['path']}, but chunk texts were non-empty. Likely rejected by embedding model (all filetypes). Indexing metadata only.")
+                # --- Create in-progress checkpoint ---
+                inprogress_file = _checkpoint_inprogress_path(result['checksum'])
+                with open(inprogress_file, 'w') as f:
+                    f.write(result['path'] + '\n')
+                logger.info(f"Created IN PROGRESS checkpoint for {result['path']} (checksum={result['checksum']})")
+                try:
+                    # Get appropriate processor for file type
+                    processor = get_processor_for_file_type(result['path'], config, query_processor=query_processor)
+                    processed = processor.process(result['path'])
+                    if processed['metadata'].get('skipped'):
+                        logger.info(f"Skipping (processing issue): {result['path']} (reason: {processed['metadata'].get('skip_reason')})")
+                        logger.warning(f"Skipping file due to processing issue: {result['path']} (reason: {processed['metadata'].get('skip_reason')})")
+                        os.remove(inprogress_file)
+                        continue
+                    if not processed['chunks']:
+                        logger.info(f"No chunks generated for {result['path']}. Adding metadata-only entry to vector store.")
                         zero_vector = [0.0] * generator.dimensions
+                        meta = _serialize_metadata(dict(processed['metadata']))
+                        meta['id'] = f"{meta['path']}:0"
+                        meta['checksum'] = result['checksum']
                         store.add_embeddings(
-                            embeddings=[zero_vector for _ in nonempty_texts],
-                            texts=nonempty_texts,
-                            metadatas=[_serialize_metadata(m) for t, m in zip(embeddings['texts'], embeddings['metadata']) if t and t.strip()]
+                            embeddings=[zero_vector],
+                            texts=[""],
+                            metadatas=[meta]
                         )
-                        logger.info(f"Added to vector store (metadata only): {result['path']}")
+                        logger.info(f"Added metadata-only entry to vector store: {result['path']}")
+                        os.remove(inprogress_file)
                         continue
+                    chunk_metadatas = []
+                    for idx, chunk in enumerate(processed['chunks']):
+                        meta = _serialize_metadata(dict(processed['metadata']))
+                        meta['id'] = f"{meta['path']}:{idx}"
+                        meta['checksum'] = result['checksum']
+                        chunk_metadatas.append(meta)
+                    logger.info(f"Generating embeddings for: {result['path']}")
+                    file_type = processed['metadata'].get('file_type', '').lower()
+                    if file_type in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
+                        embeddings = generator.generate_image_embeddings(
+                            image_path=processed['metadata']['path'],
+                            metadata=processed['metadata']
+                        )
                     else:
-                        logger.warning(f"No embeddings generated for {result['path']}, skipping add to vector store. All chunk texts empty or whitespace.")
+                        embeddings = generator.generate_embeddings(
+                            texts=[chunk['text'] for chunk in processed['chunks']],
+                            metadata=processed['metadata']
+                        )
+                    embeddings['metadata'] = chunk_metadatas
+                    nonempty_texts = [t for t in embeddings['texts'] if t and t.strip()]
+                    if not embeddings['vectors'] or not embeddings['texts'] or not embeddings['metadata']:
+                        if nonempty_texts:
+                            logger.warning(f"No embeddings generated for {result['path']}, but chunk texts were non-empty. Likely rejected by embedding model (all filetypes). Indexing metadata only.")
+                            zero_vector = [0.0] * generator.dimensions
+                            store.add_embeddings(
+                                embeddings=[zero_vector for _ in nonempty_texts],
+                                texts=nonempty_texts,
+                                metadatas=[_serialize_metadata(m) for t, m in zip(embeddings['texts'], embeddings['metadata']) if t and t.strip()]
+                            )
+                            logger.info(f"Added to vector store (metadata only): {result['path']}")
+                            os.remove(inprogress_file)
+                            continue
+                        else:
+                            logger.warning(f"No embeddings generated for {result['path']}, skipping add to vector store. All chunk texts empty or whitespace.")
+                            os.remove(inprogress_file)
+                            continue
+                    if not (len(embeddings['vectors']) == len(embeddings['texts']) == len(embeddings['metadata'])):
+                        logger.error(f"Mismatch in number of vectors, texts, and metadatas for {result['path']}, skipping.")
+                        os.remove(inprogress_file)
                         continue
-                if not (len(embeddings['vectors']) == len(embeddings['texts']) == len(embeddings['metadata'])):
-                    logger.error(f"Mismatch in number of vectors, texts, and metadatas for {result['path']}, skipping.")
+                    store.add_embeddings(
+                        embeddings=embeddings['vectors'],
+                        texts=embeddings['texts'],
+                        metadatas=[_serialize_metadata(m) for m in embeddings['metadata']]
+                    )
+                    logger.info(f"Added to vector store: {result['path']}")
+                    os.remove(inprogress_file)
+                    logger.info(f"Deleted IN PROGRESS checkpoint for {result['path']} (checksum={result['checksum']})")
+                except Exception as e:
+                    logger.error(f"Error processing or adding to vector store for {result['path']}: {e}")
+                    # Leave the .inprogress file for retry
                     continue
-
-                # Add to vector store
-                store.add_embeddings(
-                    embeddings=embeddings['vectors'],
-                    texts=embeddings['texts'],
-                    metadatas=[_serialize_metadata(m) for m in embeddings['metadata']]
-                )
-                
-                logger.info(f"Added to vector store: {result['path']}")
                 
         return 0
         

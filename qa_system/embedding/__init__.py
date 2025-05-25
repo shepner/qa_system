@@ -171,6 +171,16 @@ class EmbeddingGenerator:
                 if 'quota' in k.lower() or 'limit' in k.lower():
                     self.logger.warning(f"API quota/limit header: {k}: {v}")
 
+    def _reset_client(self):
+        self.logger.info("Resetting Gemini API client due to 429/RESOURCE_EXHAUSTED.")
+        try:
+            del self.client
+        except Exception:
+            pass
+        self.logger.info(f"Recreating Gemini API client with API key: {self._redact_key(self.gemini_api_key)}")
+        from google import genai
+        self.client = genai.Client(api_key=self.gemini_api_key)
+
     def generate_embeddings(self, texts: List[str], metadata: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate embeddings for a list of text chunks using Gemini API.
@@ -196,6 +206,9 @@ class EmbeddingGenerator:
                 batch = texts[i:i+batch_size]
                 retry_start = time.monotonic()
                 attempt = 0
+                delay = 10
+                max_delay = 600
+                total_retry_time = 0
                 while True:
                     try:
                         self.logger.debug(f"Preparing to call Gemini API for batch {i//batch_size+1}, attempt {attempt+1}")
@@ -228,8 +241,13 @@ class EmbeddingGenerator:
                         self.logger.error(f"Exception during embedding batch {i//batch_size+1}, attempt {attempt}: {type(e).__name__}: {msg}\n{traceback.format_exc()}")
                         self._log_quota_headers(e)
                         if (hasattr(e, 'args') and e.args and 'RESOURCE_EXHAUSTED' in str(e.args[0])) or 'RESOURCE_EXHAUSTED' in msg or '429' in msg:
-                            self.logger.warning(f"Rate limit hit (429/RESOURCE_EXHAUSTED). Sleeping for 60 seconds before retrying batch. Attempt {attempt}, elapsed {elapsed:.1f}s.")
-                            time.sleep(60)
+                            total_retry_time = time.monotonic() - retry_start
+                            self.logger.warning(f"Rate limit hit (429/RESOURCE_EXHAUSTED). Sleeping for {delay} seconds before retrying batch. Attempt {attempt}, elapsed {elapsed:.1f}s, total retry time {total_retry_time:.1f}s.")
+                            if total_retry_time > 600:
+                                self.logger.warning(f"Batch {i//batch_size+1} has been retrying for over 10 minutes due to rate limiting.")
+                            self._reset_client()
+                            time.sleep(delay)
+                            delay = min(delay * 2, max_delay)
                             continue
                         else:
                             self.logger.error(f"Non-rate-limit error, aborting batch. Exception: {type(e).__name__}: {msg}\n{traceback.format_exc()}")

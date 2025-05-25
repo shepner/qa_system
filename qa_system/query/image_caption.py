@@ -25,6 +25,19 @@ def _handle_interrupt(signum, frame):
 signal.signal(signal.SIGINT, _handle_interrupt)
 signal.signal(signal.SIGTERM, _handle_interrupt)
 
+def _reset_client(processor, logger=None):
+    if logger:
+        logger.info("Resetting Gemini API client due to 429/RESOURCE_EXHAUSTED.")
+    try:
+        del processor.llm.client
+    except Exception:
+        pass
+    if logger:
+        logger.info(f"Recreating Gemini API client with API key: <redacted>")
+    from google import genai
+    processor.llm.client = genai.Client(api_key=processor.llm.client.api_key)
+
+
 def generate_image_caption(processor, image_path: str, logger: Optional[logging.Logger] = None) -> Tuple[Optional[str], Optional[str]]:
     """
     Generate a caption for an image file using the Gemini LLM API.
@@ -37,39 +50,42 @@ def generate_image_caption(processor, image_path: str, logger: Optional[logging.
     Returns:
         Tuple[str or None, str or None]: (caption, gemini_file_uri). Returns (None, None) on error.
     """
-    max_retries = 5
-    delay = 10  # start with 10 seconds
+    delay = 10
+    max_delay = 600
+    # Upload step
     retry_start = time.monotonic()
-    for attempt in range(max_retries):
+    attempt = 0
+    while True:
         try:
             if logger:
                 logger.info(f"Uploading image file to Gemini: {image_path}")
                 logger.info(f"Gemini API client: {processor.llm.client}, API key: {_redact_key(getattr(processor.llm.client, 'api_key', ''))}")
-            my_file = processor.llm.client.files.upload(file=image_path)
+            my_file = processor.llm.client.files.create(file=image_path)
             gemini_file_uri = getattr(my_file, 'uri', None)
             break
         except Exception as e:
+            attempt += 1
             elapsed = time.monotonic() - retry_start
             msg = str(e)
             if logger:
-                logger.error(f"Exception during image upload, attempt {attempt+1}: {type(e).__name__}: {msg}\n{traceback.format_exc()}")
-            if 'RESOURCE_EXHAUSTED' in msg or '429' in msg:
+                logger.error(f"Exception during Gemini image upload, attempt {attempt}: {type(e).__name__}: {msg}\n{traceback.format_exc()}")
+            if (hasattr(e, 'args') and e.args and 'RESOURCE_EXHAUSTED' in str(e.args[0])) or 'RESOURCE_EXHAUSTED' in msg or '429' in msg:
                 if logger:
-                    logger.warning(f"Rate limit hit (429/RESOURCE_EXHAUSTED) during upload. Sleeping for {delay} seconds before retrying (attempt {attempt+1}/{max_retries}), elapsed {elapsed:.1f}s.")
+                    logger.warning(f"Rate limit hit (429/RESOURCE_EXHAUSTED). Sleeping for {delay} seconds before retrying upload. Attempt {attempt}, elapsed {elapsed:.1f}s.")
+                _reset_client(processor, logger)
                 time.sleep(delay)
-                delay *= 2
+                delay = min(delay * 2, max_delay)
                 continue
-            if logger:
-                logger.error(f"Failed to upload image to Gemini: {e}")
-            return None, None
-    else:
-        if logger:
-            logger.error("Max retries exceeded for Gemini API upload due to rate limiting.")
-        raise RateLimitError("Max retries exceeded for Gemini API upload due to rate limiting.")
+            else:
+                if logger:
+                    logger.error(f"Non-rate-limit error, aborting upload. Exception: {type(e).__name__}: {msg}\n{traceback.format_exc()}")
+                raise
 
-    delay = 10  # reset delay for caption step
+    # Caption step
+    delay = 10
     retry_start = time.monotonic()
-    for attempt in range(max_retries):
+    attempt = 0
+    while True:
         try:
             if logger:
                 logger.info("Requesting image caption from Gemini API...")
@@ -85,20 +101,18 @@ def generate_image_caption(processor, image_path: str, logger: Optional[logging.
                 raise ValueError("No caption returned from Gemini API.")
             return caption, gemini_file_uri
         except Exception as e:
+            attempt += 1
             elapsed = time.monotonic() - retry_start
             msg = str(e)
             if logger:
-                logger.error(f"Exception during caption, attempt {attempt+1}: {type(e).__name__}: {msg}\n{traceback.format_exc()}")
+                logger.error(f"Exception during caption, attempt {attempt}: {type(e).__name__}: {msg}\n{traceback.format_exc()}")
             if 'RESOURCE_EXHAUSTED' in msg or '429' in msg:
                 if logger:
-                    logger.warning(f"Rate limit hit (429/RESOURCE_EXHAUSTED) during caption. Sleeping for {delay} seconds before retrying (attempt {attempt+1}/{max_retries}), elapsed {elapsed:.1f}s.")
+                    logger.warning(f"Rate limit hit (429/RESOURCE_EXHAUSTED) during caption. Sleeping for {delay} seconds before retrying (attempt {attempt}), elapsed {elapsed:.1f}s.")
+                _reset_client(processor, logger)
                 time.sleep(delay)
-                delay *= 2
+                delay = min(delay * 2, max_delay)
                 continue
             if logger:
                 logger.error(f"Failed to get caption from Gemini: {e}")
-            return None, gemini_file_uri
-    else:
-        if logger:
-            logger.error("Max retries exceeded for Gemini API caption due to rate limiting.")
-        raise RateLimitError("Max retries exceeded for Gemini API caption due to rate limiting.") 
+            return None, gemini_file_uri 
