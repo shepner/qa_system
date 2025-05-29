@@ -58,18 +58,19 @@ class FileScanner:
         self.hash_algorithm = self.config.get('HASH_ALGORITHM', 'sha256')
         self.skip_existing = self.config.get('SKIP_EXISTING', True)
 
-    def scan_files(self, path: Optional[str] = None) -> List[Dict[str, Any]]:
+    def scan_files(self, path: Optional[str] = None, pattern: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Scan for files to process, applying extension and exclusion rules.
 
         Args:
             path: Optional override for root directory or file to scan. If None, uses self.document_path.
+            pattern: Optional glob pattern to match files within a directory (e.g., '*.png').
         Returns:
             List of dicts with file metadata (path, hash, size, etc.)
         Raises:
             ValidationError: If the path is invalid or inaccessible.
         """
-        logger.debug(f"Called FileScanner.scan_files(path={path})")
+        logger.debug(f"Called FileScanner.scan_files(path={path}, pattern={pattern})")
         root = Path(path) if path else self.document_path
         found_files = []
         if not root.exists():
@@ -89,7 +90,11 @@ class FileScanner:
             }
             found_files.append(file_info)
         elif root.is_dir():
-            for file_path in root.rglob('*'):
+            if pattern:
+                files_iter = root.rglob(pattern)
+            else:
+                files_iter = root.rglob('*')
+            for file_path in files_iter:
                 if not file_path.is_file():
                     continue
                 if not self._is_allowed(file_path):

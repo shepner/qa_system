@@ -102,6 +102,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Show path and summary for each document (if available)."
     )
+    # Add pattern argument for add/list/remove
+    parser.add_argument(
+        "--pattern",
+        help="Glob pattern to match files within the add/list/remove directory (e.g., '*.png')"
+    )
     
     return parser.parse_args()
 
@@ -114,18 +119,19 @@ def _serialize_metadata(metadata):
             metadata[k] = ','.join(str(x) for x in v)
     return metadata
 
-def process_add_files(files: List[str], config: dict, is_cli_add: bool = False) -> int:
+def process_add_files(files: List[str], config: dict, is_cli_add: bool = False, pattern: str = None) -> int:
     """Process and add files to the system.
     
     Args:
-        files: List of file paths to process
+        files: List of file paths or directories to process
         config: Configuration dictionary
         is_cli_add: If True, print progress to CLI (for --add usage)
+        pattern: Optional glob pattern to match files within directories
     
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
-    logger.info(f"Called process_add_files(files={files}, config={{...}})")
+    logger.info(f"Called process_add_files(files={files}, config={{...}}, pattern={pattern})")
     try:
         from qa_system.document_processors import FileScanner, get_processor_for_file_type
         from qa_system.embedding import EmbeddingGenerator
@@ -142,7 +148,7 @@ def process_add_files(files: List[str], config: dict, is_cli_add: bool = False) 
                 print(f"\nScanning: {file_path}")
             logger.info(f"Processing file: {file_path}")
             
-            scan_results = scanner.scan_files(file_path)
+            scan_results = scanner.scan_files(file_path, pattern=pattern)
             
             for result in scan_results:
                 inprogress_file = _checkpoint_inprogress_path(result['checksum'])
@@ -440,7 +446,7 @@ def main() -> int:
         
         # Process command
         if args.add:
-            return process_add_files(args.add, config, is_cli_add=True)
+            return process_add_files(args.add, config, is_cli_add=True, pattern=args.pattern)
         elif args.list is not None:
             pattern = args.list if args.list != '*' else None
             return process_list(pattern, config, detail=args.detail, summary=args.summary)
