@@ -11,6 +11,7 @@ import time
 from qa_system.exceptions import RateLimitError
 import traceback
 import signal
+from PIL import Image
 
 
 def _redact_key(key):
@@ -25,94 +26,33 @@ def _handle_interrupt(signum, frame):
 signal.signal(signal.SIGINT, _handle_interrupt)
 signal.signal(signal.SIGTERM, _handle_interrupt)
 
-def _reset_client(processor, logger=None):
-    if logger:
-        logger.info("Resetting Gemini API client due to 429/RESOURCE_EXHAUSTED.")
-    try:
-        del processor.llm.client
-    except Exception:
-        pass
-    if logger:
-        logger.info(f"Recreating Gemini API client with API key: <redacted>")
-    from google import genai
-    processor.llm.client = genai.Client(api_key=processor.llm.client.api_key)
-
-
 def generate_image_caption(processor, image_path: str, logger: Optional[logging.Logger] = None) -> Tuple[Optional[str], Optional[str]]:
     """
-    Generate a caption for an image file using the Gemini LLM API.
+    Generate a caption for an image file using the Gemini LLM API via the generic GeminiLLM interface.
 
     Args:
-        processor: QueryProcessor or object with .llm and .llm.client attributes (GeminiLLM and genai.Client).
+        processor: QueryProcessor or object with .llm attribute (GeminiLLM instance).
         image_path (str): Path to the image file to caption.
         logger (Optional[logging.Logger]): Optional logger for debug and error messages.
 
     Returns:
-        Tuple[str or None, str or None]: (caption, gemini_file_uri). Returns (None, None) on error.
+        Tuple[str or None, None]: (caption, None). Returns (None, None) on error.
     """
-    delay = 10
-    max_delay = 600
-    # Upload step
-    retry_start = time.monotonic()
-    attempt = 0
-    while True:
-        try:
-            if logger:
-                logger.info(f"Uploading image file to Gemini: {image_path}")
-                logger.info(f"Gemini API client: {processor.llm.client}, API key: {_redact_key(getattr(processor.llm.client, 'api_key', ''))}")
-            my_file = processor.llm.client.files.create(file=image_path)
-            gemini_file_uri = getattr(my_file, 'uri', None)
-            break
-        except Exception as e:
-            attempt += 1
-            elapsed = time.monotonic() - retry_start
-            msg = str(e)
-            if logger:
-                logger.error(f"Exception during Gemini image upload, attempt {attempt}: {type(e).__name__}: {msg}\n{traceback.format_exc()}")
-            if (hasattr(e, 'args') and e.args and 'RESOURCE_EXHAUSTED' in str(e.args[0])) or 'RESOURCE_EXHAUSTED' in msg or '429' in msg:
-                if logger:
-                    logger.warning(f"Rate limit hit (429/RESOURCE_EXHAUSTED). Sleeping for {delay} seconds before retrying upload. Attempt {attempt}, elapsed {elapsed:.1f}s.")
-                _reset_client(processor, logger)
-                time.sleep(delay)
-                delay = min(delay * 2, max_delay)
-                continue
-            else:
-                if logger:
-                    logger.error(f"Non-rate-limit error, aborting upload. Exception: {type(e).__name__}: {msg}\n{traceback.format_exc()}")
-                raise
-
-    # Caption step
-    delay = 10
-    retry_start = time.monotonic()
-    attempt = 0
-    while True:
-        try:
-            if logger:
-                logger.info("Requesting image caption from Gemini API...")
-            caption_response = processor.llm.client.models.generate_content(
-                model=getattr(processor.llm, 'model_name', 'gemini-2.0-flash'),
-                contents=[
-                    my_file,
-                    "Provide a single, direct, descriptive caption for this image. Do not provide options or commentary. Be factual and specific."
-                ]
+    try:
+        with Image.open(image_path) as img:
+            img = img.convert("RGB")
+            prompt = (
+                "Describe exactly and only what is visible in this image using a literal sentence. "
+                "Do not guess, infer, or add any details that are not clearly present. "
+                "Do not be creative or embellish."
+)
+            caption = processor.llm.generate_response(
+                user_prompt=prompt,
+                system_prompt=None,
+                contents=[img, prompt]
             )
-            caption = getattr(caption_response, 'text', None)
-            if not caption:
-                raise ValueError("No caption returned from Gemini API.")
-            return caption, gemini_file_uri
-        except Exception as e:
-            attempt += 1
-            elapsed = time.monotonic() - retry_start
-            msg = str(e)
-            if logger:
-                logger.error(f"Exception during caption, attempt {attempt}: {type(e).__name__}: {msg}\n{traceback.format_exc()}")
-            if 'RESOURCE_EXHAUSTED' in msg or '429' in msg:
-                if logger:
-                    logger.warning(f"Rate limit hit (429/RESOURCE_EXHAUSTED) during caption. Sleeping for {delay} seconds before retrying (attempt {attempt}), elapsed {elapsed:.1f}s.")
-                _reset_client(processor, logger)
-                time.sleep(delay)
-                delay = min(delay * 2, max_delay)
-                continue
-            if logger:
-                logger.error(f"Failed to get caption from Gemini: {e}")
-            return None, gemini_file_uri 
+            return caption, None
+    except Exception as e:
+        if logger:
+            logger.error(f"Error generating image caption: {e}")
+        return None, None 

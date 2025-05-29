@@ -2,6 +2,7 @@ import logging
 import os
 from typing import Optional
 from dotenv import load_dotenv
+from qa_system.exceptions import RateLimitError
 
 try:
     from google import genai
@@ -82,7 +83,8 @@ class GeminiLLM:
         Raises:
             RuntimeError: If the API key is missing.
             ImportError: If the google-generativeai package is not installed.
-            Exception: For any errors during the LLM call.
+            RateLimitError: If the API call is rate limited (HTTP 429 or RESOURCE_EXHAUSTED).
+            Exception: For any other errors during the LLM call.
 
         Example:
             >>> llm = GeminiLLM(config)
@@ -99,7 +101,7 @@ class GeminiLLM:
 
         gen_config = {
             "temperature": temperature if temperature is not None else float(self.config.get_nested('QUERY.TEMPERATURE', default=0.2)),
-            "max_output_tokens": max_output_tokens if max_output_tokens is not None else int(self.config.get_nested('QUERY.MAX_TOKENS', default=512)),
+            "max_output_tokens": max_output_tokens if max_output_tokens is not None else int(self.config.get_nested('QUERY.MAX_TOKENS', default=1024)),
         }
         gen_config.update(kwargs)
 
@@ -126,5 +128,76 @@ class GeminiLLM:
                 self.logger.error(f"Gemini LLM call failed: {e}")
                 raise
         except Exception as e:
+            # Centralized rate limit handling
+            # Try to detect HTTP 429 or gRPC RESOURCE_EXHAUSTED
+            message = str(e)
+            retry_after = None
+            endpoint = f"gemini.models.generate_content:{self.model_name}"
+            # Check for HTTP 429
+            if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                if e.response.status_code == 429:
+                    # Try to get Retry-After header if present
+                    retry_after = None
+                    if hasattr(e.response, 'headers'):
+                        retry_after = e.response.headers.get('Retry-After')
+                        try:
+                            retry_after = float(retry_after)
+                        except (TypeError, ValueError):
+                            retry_after = None
+                    self.logger.warning(f"Gemini LLM rate limited (HTTP 429) on {endpoint}. Retry-After: {retry_after}")
+                    raise RateLimitError(message, endpoint=endpoint, retry_after=retry_after)
+            # Check for gRPC RESOURCE_EXHAUSTED or explicit 429 in message
+            if 'RESOURCE_EXHAUSTED' in message or '429' in message or 'rate limit' in message.lower():
+                self.logger.warning(f"Gemini LLM rate limited (RESOURCE_EXHAUSTED/429) on {endpoint}.")
+                raise RateLimitError(message, endpoint=endpoint)
+            self.logger.error(f"Gemini LLM call failed: {e}")
+            raise 
+
+    def upload_and_generate(self, file_path: str, prompts, **kwargs):
+        """
+        Generic method to upload a file and generate content using Gemini.
+
+        Args:
+            file_path (str): Path to the file to upload (image, PDF, etc.).
+            prompts (str or list): Prompt(s) to send to the model after the file.
+            **kwargs: Additional parameters for the generate_content call.
+
+        Returns:
+            The Gemini model response (text or object).
+
+        Raises:
+            RateLimitError: If the API call is rate limited.
+            Exception: For other errors.
+        """
+        try:
+            file_handle = self.client.files.upload(file=file_path)
+            # Compose contents: file handle first, then prompt(s)
+            if isinstance(prompts, list):
+                contents = [file_handle] + prompts
+            else:
+                contents = [file_handle, prompts]
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+                **kwargs
+            )
+            return getattr(response, 'text', None) or str(response)
+        except Exception as e:
+            message = str(e)
+            retry_after = None
+            endpoint = f"gemini.models.generate_content:{self.model_name}"
+            if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                if e.response.status_code == 429:
+                    if hasattr(e.response, 'headers'):
+                        retry_after = e.response.headers.get('Retry-After')
+                        try:
+                            retry_after = float(retry_after)
+                        except (TypeError, ValueError):
+                            retry_after = None
+                    self.logger.warning(f"Gemini LLM rate limited (HTTP 429) on {endpoint}. Retry-After: {retry_after}")
+                    raise RateLimitError(message, endpoint=endpoint, retry_after=retry_after)
+            if 'RESOURCE_EXHAUSTED' in message or '429' in message or 'rate limit' in message.lower():
+                self.logger.warning(f"Gemini LLM rate limited (RESOURCE_EXHAUSTED/429) on {endpoint}.")
+                raise RateLimitError(message, endpoint=endpoint)
             self.logger.error(f"Gemini LLM call failed: {e}")
             raise 

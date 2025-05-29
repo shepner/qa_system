@@ -126,7 +126,7 @@ class EmbeddingGenerator:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info(f"Called EmbeddingGenerator.__init__(config={config})")
         self.config = config
-        self.model_name = self.config.get_nested('EMBEDDING_MODEL.MODEL_NAME', 'embedding-001')
+        self.model_name = self.config.get_nested('EMBEDDING_MODEL.MODEL_NAME', 'text-embedding-004')
         self.batch_size = self.config.get_nested('EMBEDDING_MODEL.BATCH_SIZE', 32)
         self.max_length = self.config.get_nested('EMBEDDING_MODEL.MAX_LENGTH', 3072)
         self.dimensions = self.config.get_nested('EMBEDDING_MODEL.DIMENSIONS', 768)
@@ -211,7 +211,7 @@ class EmbeddingGenerator:
                 total_retry_time = 0
                 while True:
                     try:
-                        self.logger.debug(f"Preparing to call Gemini API for batch {i//batch_size+1}, attempt {attempt+1}")
+                        self.logger.debug(f"Preparing to call Gemini API client: {self.client}, model: {self.model_name}, batch size: {len(batch)}")
                         self.logger.debug(f"Rate limiter state before acquire: {self._embedding_rate_limiter.get_period_request_count()}")
                         start_wait = time.monotonic()
                         self._embedding_rate_limiter.acquire()
@@ -222,7 +222,7 @@ class EmbeddingGenerator:
                         result = self.client.models.embed_content(
                             model=self.model_name,
                             contents=batch,
-                            config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
+                            config=types.EmbedContentConfig(task_type="QUESTION_ANSWERING")
                         )
                         if hasattr(result, 'embeddings'):
                             embeddings = result.embeddings

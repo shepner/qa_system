@@ -19,6 +19,7 @@ import sys
 from dotenv import load_dotenv
 from google import genai
 import json
+from PIL import Image
 
 # Load environment variables from .env file
 load_dotenv()
@@ -38,35 +39,36 @@ print(f"Using image: {IMAGE_PATH}")
 if not os.path.exists(IMAGE_PATH):
     raise FileNotFoundError(f"Image not found: {IMAGE_PATH}")
 
-# 1. Upload the image file using the Files API
-print("Uploading image file...")
-my_file = client.files.upload(file=IMAGE_PATH)
-print(f"Uploaded file URI: {my_file.uri}")
+# 1. Open the image file with PIL
+print("Opening image file...")
+with Image.open(IMAGE_PATH) as img:
+    img = img.convert("RGB")
 
-# 2. Image Captioning
-print("\n--- Image Captioning ---")
-caption_response = client.models.generate_content(
-    model="gemini-2.0-flash",
-    contents=[my_file, "Caption this image."]
-)
-print("Caption:", caption_response.text)
+    # 2. Image Captioning
+    print("\n--- Image Captioning ---")
+    model = genai.GenerativeModel("gemini-pro-vision")
+    caption_response = model.generate_content([
+        img,
+        "Caption this image."
+    ])
+    print("Caption:", caption_response.text)
 
-# 3. Object Detection (bounding boxes)
-print("\n--- Object Detection ---")
-object_detection_prompt = (
-    "Detect all of the prominent items in the image. "
-    "The box_2d should be [ymin, xmin, ymax, xmax] normalized to 0-1000. "
-    "Output a JSON list of objects with their labels and bounding boxes."
-)
-object_response = client.models.generate_content(
-    model="gemini-2.0-flash",
-    contents=[my_file, object_detection_prompt]
-)
-try:
-    object_json = json.loads(object_response.text)
-    print(json.dumps(object_json, indent=2))
-except Exception:
-    print("Raw response:", object_response.text)
+    # 3. Object Detection (bounding boxes)
+    print("\n--- Object Detection ---")
+    object_detection_prompt = (
+        "Detect all of the prominent items in the image. "
+        "The box_2d should be [ymin, xmin, ymax, xmax] normalized to 0-1000. "
+        "Output a JSON list of objects with their labels and bounding boxes."
+    )
+    object_response = model.generate_content([
+        img,
+        object_detection_prompt
+    ])
+    try:
+        object_json = json.loads(object_response.text)
+        print(json.dumps(object_json, indent=2))
+    except Exception:
+        print("Raw response:", object_response.text)
 
 """
 # 4. Image Segmentation (masks)

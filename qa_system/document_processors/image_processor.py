@@ -66,9 +66,23 @@ class ImageDocumentProcessor:
             metadata['error'] = "Internal error: query_processor missing .llm attribute."
             return {'chunks': [], 'metadata': metadata}
 
-        # Generate caption (for embedding) using generate_image_caption
-        self.logger.debug("Calling generate_image_caption...")
-        caption, gemini_file_uri = generate_image_caption(self.query_processor, file_path, logger=self.logger)
+        # Generate caption (for embedding) using GeminiLLM.upload_and_generate
+        self.logger.debug("Calling GeminiLLM.upload_and_generate for caption...")
+        caption_prompt = (
+            "Describe exactly and only what is visible in this image using a literal sentence. "
+            "Do not guess, infer, or add any details that are not clearly present. "
+            "Do not be creative or embellish."
+        )
+        try:
+            caption = self.query_processor.llm.upload_and_generate(
+                file_path=file_path,
+                prompts=caption_prompt
+            )
+            gemini_file_uri = None  # Not used in this pipeline, but kept for compatibility
+        except Exception as e:
+            metadata['error'] = f"Caption error: {e}"
+            self.logger.error(f"Caption generation failed for file: {file_path}: {e}")
+            return {'chunks': [], 'metadata': metadata}
         if not caption:
             metadata['error'] = "Caption error: Failed to generate caption."
             self.logger.error("Caption generation failed for file: %s", file_path)
@@ -106,6 +120,10 @@ class ImageDocumentProcessor:
                 'urls': urls,
             }
         }
+        # Clean None values from metadata and chunk['metadata']
+        metadata = {k: v for k, v in metadata.items() if v is not None}
+        chunk_metadata = {k: v for k, v in chunk['metadata'].items() if v is not None}
+        chunk['metadata'] = chunk_metadata
         self.logger.debug(f"Returning processed chunk and metadata for file: {file_path}")
         return {
             'chunks': [chunk],
