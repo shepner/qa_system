@@ -16,7 +16,7 @@ last_updated: 2024-03-20
 2. [System Flow](#2-system-flow)
 3. [Components](#3-components)
    3.1. [List Module](#31-list-module)
-      3.1.1. [API Usage](#311-api-usage)
+      3.1.1. [Output Modes](#311-output-modes)
    3.2. [Vector Store Interface](#32-vector-store-interface)
 
 ## 1. Overview
@@ -54,10 +54,53 @@ sequenceDiagram
 - **Key Functions**:
   - Process search patterns from command line arguments
   - Query vector database for matching documents
-  - Format and display results to the user
-  - Generate basic statistics about the results
+  - Format and display results to the user (with output mode switches)
+  - Generate basic statistics about the results (in detail mode)
 
-#### 3.1.1 API Usage
+#### 3.1.1 Output Modes
+
+The `--list` command now supports output control switches:
+
+- **Default:** Only the full path for each file (one per line).
+- **--detail:** Show a table with columns for path, type, chunk count, and last modified date, plus summary statistics.
+- **--summary:** Show the path and a summary (if available) for each file.
+
+**Example usage:**
+
+```bash
+./run.sh --list "*.pdf"           # just paths
+./run.sh --list "*.pdf" --detail  # table with metadata
+./run.sh --list "*.pdf" --summary # path + summary
+```
+
+**Example output:**
+
+_Default:_
+```
+/docs/a.pdf
+/docs/b.pdf
+```
+
+_With --detail:_
+```
+Path                                              Type       Chunks   Last Modified      
+--------------------------------------------------------------------------------
+/docs/a.pdf                                       pdf        12       2024-06-01         
+/docs/b.pdf                                       pdf        8        2024-05-30         
+...
+
+Total documents: 2
+Documents with metadata: 2
+Document types: {'pdf': 2}
+```
+
+_With --summary:_
+```
+/docs/a.pdf: This document covers the architecture of the QA system...
+/docs/b.pdf: Summary not available.
+```
+
+#### 3.1.2 API Usage
 ```python
 # Import the list module
 from qa_system.list import get_list_module

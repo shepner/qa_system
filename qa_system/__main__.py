@@ -91,6 +91,18 @@ def parse_args() -> argparse.Namespace:
         help="Path to configuration file"
     )
     
+    # Add output control flags
+    parser.add_argument(
+        "--detail",
+        action="store_true",
+        help="Show detailed table with metadata for each document."
+    )
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="Show path and summary for each document (if available)."
+    )
+    
     return parser.parse_args()
 
 def _serialize_metadata(metadata):
@@ -237,17 +249,9 @@ def process_add_files(files: List[str], config: dict, is_cli_add: bool = False) 
         logger.error(f"Error processing files: {str(e)}")
         return 1
 
-def process_list(filter_pattern: Optional[str], config: dict) -> int:
-    """List documents in the system.
-    
-    Args:
-        filter_pattern: Optional pattern to filter documents
-        config: Configuration dictionary
-    
-    Returns:
-        int: Exit code (0 for success, 1 for failure)
-    """
-    logger.info(f"Called process_list(filter_pattern={filter_pattern}, config={{...}})")
+def process_list(filter_pattern: Optional[str], config: dict, detail: bool = False, summary: bool = False) -> int:
+    """List documents in the system with output control."""
+    logger.info(f"Called process_list(filter_pattern={filter_pattern}, config={{...}}, detail={detail}, summary={summary})")
     try:
         from qa_system.list import get_list_module
         list_module = get_list_module(config)
@@ -258,20 +262,15 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
             print("No documents found")
             return 0
 
-        # --- New: Handle --list incomplete ---
         if filter_pattern == 'incomplete':
             def is_incomplete(doc):
                 meta = doc.get('metadata', {})
-                # Skipped or processing error
                 if meta.get('skipped') or meta.get('skip_reason'):
                     return True
-                # Zero chunks (or chunk_count==0 or missing)
                 if meta.get('chunk_count', 1) == 0:
                     return True
-                # Images (always candidates for reprocessing)
                 file_type = meta.get('file_type', '')
                 if not file_type:
-                    # Try to infer from path
                     path = doc.get('path', '')
                     ext = path.rsplit('.', 1)[-1].lower() if '.' in path else ''
                     file_type = ext
@@ -283,42 +282,46 @@ def process_list(filter_pattern: Optional[str], config: dict) -> int:
                 print(path)
             return 0
 
-        # Print document list
-        print("\nDocuments in system:")
-        print("-" * 80)
-        print(f"{'Path':<50} {'Type':<10} {'Chunks':<8} {'Last Modified':<20}")
-        print("-" * 80)
-        
-        for doc in documents:
-            meta = doc.get('metadata', doc)  # fallback to doc itself if 'metadata' missing
-            print(f"{doc.get('path','-'):<50} {meta.get('file_type','-'):<10} {meta.get('chunk_count','-'):<8} {meta.get('last_modified','-'):<20}")
+        # Output modes
+        if detail:
+            print("\nDocuments in system:")
+            print("-" * 80)
+            print(f"{'Path':<50} {'Type':<10} {'Chunks':<8} {'Last Modified':<20}")
+            print("-" * 80)
+            for doc in documents:
+                meta = doc.get('metadata', doc)
+                print(f"{doc.get('path','-'):<50} {meta.get('file_type','-'):<10} {meta.get('chunk_count','-'):<8} {meta.get('last_modified','-'):<20}")
+        elif summary:
+            for doc in documents:
+                meta = doc.get('metadata', doc)
+                summary_text = meta.get('summary', 'Summary not available.')
+                print(f"{doc.get('path','-')}: {summary_text}")
+        else:
+            for doc in documents:
+                print(doc.get('path', '-'))
 
-        # Print summary
-        total_docs = len(documents)
-        # Improved: Count how many have metadata (nested or flat)
-        def has_metadata(doc):
-            if 'metadata' in doc and doc['metadata']:
-                return True
-            meta_fields = ['file_type', 'chunk_count', 'last_modified']
-            return any(field in doc and doc[field] not in (None, '', '-') for field in meta_fields)
-        docs_with_metadata = sum(1 for doc in documents if has_metadata(doc))
-        # Count document types, inferring from path if needed
-        type_counts = {}
-        for doc in documents:
-            meta = doc.get('metadata', doc)
-            file_type = meta.get('file_type')
-            if not file_type or file_type == '-':
-                # Try to infer from file extension
-                path = doc.get('path', '')
-                ext = path.rsplit('.', 1)[-1].lower() if '.' in path else '-'
-                file_type = ext
-            type_counts[file_type] = type_counts.get(file_type, 0) + 1
-        print(f"\nTotal documents: {total_docs}")
-        print(f"Documents with metadata: {docs_with_metadata}")
-        print(f"Document types: {type_counts}")
-
+        # Print summary (only in detail mode)
+        if detail:
+            total_docs = len(documents)
+            def has_metadata(doc):
+                if 'metadata' in doc and doc['metadata']:
+                    return True
+                meta_fields = ['file_type', 'chunk_count', 'last_modified']
+                return any(field in doc and doc[field] not in (None, '', '-') for field in meta_fields)
+            docs_with_metadata = sum(1 for doc in documents if has_metadata(doc))
+            type_counts = {}
+            for doc in documents:
+                meta = doc.get('metadata', doc)
+                file_type = meta.get('file_type')
+                if not file_type or file_type == '-':
+                    path = doc.get('path', '')
+                    ext = path.rsplit('.', 1)[-1].lower() if '.' in path else '-'
+                    file_type = ext
+                type_counts[file_type] = type_counts.get(file_type, 0) + 1
+            print(f"\nTotal documents: {total_docs}")
+            print(f"Documents with metadata: {docs_with_metadata}")
+            print(f"Document types: {type_counts}")
         return 0
-        
     except Exception as e:
         logger.error(f"Error listing documents: {str(e)}")
         print(f"Error listing documents: {str(e)}")
@@ -440,7 +443,7 @@ def main() -> int:
             return process_add_files(args.add, config, is_cli_add=True)
         elif args.list is not None:
             pattern = args.list if args.list != '*' else None
-            return process_list(pattern, config)
+            return process_list(pattern, config, detail=args.detail, summary=args.summary)
         elif args.remove:
             return process_remove(args.remove, args.filter, config)
         elif args.query is not None:  # Empty string is valid for interactive mode
