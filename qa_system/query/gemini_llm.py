@@ -176,6 +176,8 @@ class GeminiLLM:
                 contents = [file_handle] + prompts
             else:
                 contents = [file_handle, prompts]
+            # --- INFO log before model call ---
+            self.logger.info(f"Calling Gemini model '{self.model_name}'")
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=contents,
