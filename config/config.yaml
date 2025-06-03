@@ -3,7 +3,8 @@
 # Logging Configuration
 LOGGING:
   # The minimum severity of log messages to record (e.g., "INFO", "DEBUG", "WARNING", "ERROR"). Controls verbosity.
-  LEVEL: "WARNING"
+  # LEVEL: "WARNING"
+  LEVEL: "INFO"
   # The file path where logs will be written.
   LOG_FILE: "logs/qa_system.log"
 
