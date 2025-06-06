@@ -141,4 +141,4 @@ python -m qa_system --query  # Enter interactive chat mode
 
 ## Architecture
 
-For detailed architecture information, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For detailed architecture information, see [ARCHITECTURE.md](architecture/ARCHITECTURE.md).
